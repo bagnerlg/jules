@@ -325,17 +325,16 @@ async function moduloCatalogo(message, contact, env, trace) {
     const catDisplayName = cat === "muebles" ? "muebles" : cat.toUpperCase();
     return { text: "¿Busca opciones de " + catDisplayName + " en tamaño " + (genero === "a" ? "mediana" : "mediano") + " o grande? 😉" };
   }
-  const resultadosBase = (cat === "muebles") ? listado : listado.filter(p => normalizarTextoGlobal(p.nombre || p.titulo).includes(cat));
-  const combos = resultadosBase.filter(p => (p.key || "").startsWith("combo:"));
-  const itemsUnicos = combos.length > 0 ? combos : resultadosBase;
-  let resultados = itemsUnicos;
-  if (tamano === "mediano") resultados = itemsUnicos.filter(p => (parseFloat(p.precio) || 0) <= 5000);
-  else if (tamano === "grande") resultados = itemsUnicos.filter(p => (parseFloat(p.precio) || 0) > 5000);
+  const filteredList = (cat === "muebles") ? listado : listado.filter(p => normalizarTextoGlobal(p.nombre || p.titulo).includes(cat));
+  const combos = filteredList.filter(p => (p.key || "").startsWith("combo:"));
+  let resultados = combos;
+  if (tamano === "mediano") resultados = combos.filter(p => (parseFloat(p.precio) || 0) <= 5000);
+  else if (tamano === "grande") resultados = combos.filter(p => (parseFloat(p.precio) || 0) > 5000);
 
   let preMsg = "";
   if (resultados.length === 0 && tamano) {
     preMsg = "Por el momento no tengo opciones de " + cat.toUpperCase() + " en tamaño " + tamano.toUpperCase() + " disponibles, pero aquí le muestro las opciones de " + cat.toUpperCase() + " que tenemos para usted:\n\n";
-    resultados = resultadosBase;
+    resultados = combos;
   }
 
   resultados = resultados.slice(0, 4);
