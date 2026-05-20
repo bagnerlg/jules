@@ -69,7 +69,7 @@ async function setCustomFieldValue(contact, fieldId, value, env, trace) { if (!f
 
 async function addToWorkflow(contactId, workflowId, env, trace) { try { const eventStartTime = new Date().toISOString().split(".")[0] + "+00:00"; await fetch("https://services.leadconnectorhq.com/contacts/" + contactId + "/workflow/" + workflowId, { method: "POST", headers: { "Authorization": "Bearer " + env.GHL_API_KEY, "Content-Type": "application/json", "Version": "2021-07-28" }, body: JSON.stringify({ eventStartTime }) }); } catch (err) {} }
 
-async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], locationId = null) {
+async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], locationId = null, conversationId = null) {
   if (!text && (!imagenes || imagenes.length === 0)) return false;
   const filtradas = (Array.isArray(imagenes) ? imagenes : [imagenes])
     .map(img => typeof img === "string" ? img : (img?.url || img?.link || img?.link_publico || img?.imagen1 || img?.imagen2 || img?.imagen))
@@ -82,6 +82,7 @@ async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], loca
     try {
       const payload = { type: "WhatsApp", contactId: contactId, message: text };
       if (locationId) payload.locationId = locationId;
+      if (conversationId) payload.conversationId = conversationId;
       const res = await fetch("https://services.leadconnectorhq.com/conversations/messages", {
         method: "POST", headers: { "Authorization": "Bearer " + env.GHL_API_KEY, "Content-Type": "application/json", "Version": "2021-04-15" },
         body: JSON.stringify(payload)
@@ -96,6 +97,7 @@ async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], loca
       await new Promise(r => setTimeout(r, 1500));
       const payload = { type: "WhatsApp", contactId: contactId, attachments: [imgUrl] };
       if (locationId) payload.locationId = locationId;
+      if (conversationId) payload.conversationId = conversationId;
       const res = await fetch("https://services.leadconnectorhq.com/conversations/messages", {
         method: "POST", headers: { "Authorization": "Bearer " + env.GHL_API_KEY, "Content-Type": "application/json", "Version": "2021-04-15" },
         body: JSON.stringify(payload)
@@ -348,7 +350,7 @@ async function moduloCatalogo(message, contact, env, trace) {
   return { text: resp };
 }
 
-async function processFullFlow(rawMsg, contactId, contact, env, trace) {
+async function processFullFlow(rawMsg, contactId, contact, env, trace, conversationId = null) {
   try {
     trace.add("Iniciando processFullFlow...");
     const metaMatch = rawMsg.match(/\b(B[A-Z0-9]{5,})\b/i);
@@ -467,7 +469,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace) {
       finalMsg = "*" + caption + "*\n\n" + responseText;
     }
     const locationId = contact.locationId || null;
-    await sendMessageToGHL(contactId, finalMsg, env, trace, responseImgs, locationId);
+    await sendMessageToGHL(contactId, finalMsg, env, trace, responseImgs, locationId, conversationId);
     if (pideCompra && !pideInformacion) await triggerHandover(contactId, env, trace);
   } catch (err) { if (trace) trace.error("Error processFullFlow: ", err); await triggerHandover(contactId, env, trace); }
 }
@@ -490,6 +492,7 @@ export default {
       }
 
       const rawMsg = body.message?.body || body.message?.text || "";
+      const convId = body.conversation_id || body.message?.conversationId;
       const bKey = "buffer:" + contactId;
       const lKey = "last:" + contactId;
       const now = Date.now();
@@ -506,7 +509,7 @@ export default {
             const consolidatedMsg = await env.PRODUCTS_DB.get(bKey);
             await env.PRODUCTS_DB.delete(bKey);
             await env.PRODUCTS_DB.delete(lKey);
-            await processFullFlow(consolidatedMsg, contactId, contact, env, trace);
+            await processFullFlow(consolidatedMsg, contactId, contact, env, trace, convId);
             trace.add("Flujo completado.");
           }
         } catch (err) {
