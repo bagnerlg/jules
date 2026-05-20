@@ -80,7 +80,7 @@ async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], loca
 
   if (text && text.trim()) {
     try {
-      const payload = { type: "WhatsApp", contactId: contactId, message: text };
+      const payload = { type: "WhatsApp", contactId: contactId, message: text, direction: "outbound" };
       if (locationId) payload.locationId = locationId;
       if (conversationId) payload.conversationId = conversationId;
       const res = await fetch("https://services.leadconnectorhq.com/conversations/messages", {
@@ -95,7 +95,7 @@ async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], loca
   for (let imgUrl of filtradas.slice(0, 5)) {
     try {
       await new Promise(r => setTimeout(r, 1500));
-      const payload = { type: "WhatsApp", contactId: contactId, attachments: [imgUrl] };
+      const payload = { type: "WhatsApp", contactId: contactId, message: "", attachments: [imgUrl], direction: "outbound" };
       if (locationId) payload.locationId = locationId;
       if (conversationId) payload.conversationId = conversationId;
       const res = await fetch("https://services.leadconnectorhq.com/conversations/messages", {
@@ -287,7 +287,7 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
     "8. SALUDO: " + instruccionSaludo
   ];
 
-  const prompt = "Eres un asesor amable de La Mueblería. REGLAS:\n" + reglas.join("\n") + "\n\nIMPORTANTE: esNuevoProducto es " + esNuevoProducto + ". Si es TRUE, presenta el producto con su resumen de descripción.\n\nDATOS PRODUCTO:\n" + info + (mostrarMenu ? "\n\nMENÚ DE AYUDA:\n" + helpMenu : "") + "\n\nMensaje del cliente: " + message;
+  const prompt = "Eres un asesor amable de La Mueblería. REGLAS:\n" + reglas.join("\n") + "\n\nIMPORTANTE: esNuevoProducto es " + esNuevoProducto + ". Si es TRUE, DEBES resumir la 'Descripción' que aparece abajo en los DATOS DEL PRODUCTO usando una lista atractiva.\n\nDATOS PRODUCTO:\n" + info + (mostrarMenu ? "\n\nMENÚ DE AYUDA:\n" + helpMenu : "") + "\n\nMensaje del cliente: " + message;
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -297,7 +297,10 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
     const data = await res.json();
     let content = data.choices[0].message.content;
     if (!mostrarMenu) {
-      content = content.replace(/\*Puedo informarle sobre:\*[\s\S]*/gi, "").trim();
+      content = content.replace(/\*Puedo informarle sobre:\*[\s\S]*/gi, "")
+                       .replace(/MENÚ DE AYUDA:[\s\S]*/gi, "")
+                       .replace(/✅.*/g, "")
+                       .trim();
     }
     return content;
   } catch (err) { return "Con gusto le ayudo. Permítame un momento para confirmarle la información exacta."; }
@@ -468,7 +471,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     if (caption && !responseText.toUpperCase().includes(caption)) {
       finalMsg = "*" + caption + "*\n\n" + responseText;
     }
-    const locationId = contact.locationId || null;
+    const locationId = env.GHL_LOCATION_ID || contact.locationId || null;
     await sendMessageToGHL(contactId, finalMsg, env, trace, responseImgs, locationId, conversationId);
     if (pideCompra && !pideInformacion) await triggerHandover(contactId, env, trace);
   } catch (err) { if (trace) trace.error("Error processFullFlow: ", err); await triggerHandover(contactId, env, trace); }
