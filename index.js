@@ -80,7 +80,7 @@ async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], loca
 
   if (text && text.trim()) {
     try {
-      const payload = { type: "WhatsApp", contactId: contactId, message: text };
+      const payload = { type: "WhatsApp", contactId: contactId, message: text, status: "delivered" };
       if (locationId) payload.locationId = locationId;
       const res = await fetch("https://services.leadconnectorhq.com/conversations/messages", {
         method: "POST", headers: { "Authorization": "Bearer " + env.GHL_API_KEY, "Content-Type": "application/json", "Version": "2021-04-15" },
@@ -94,7 +94,7 @@ async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], loca
   for (let imgUrl of filtradas.slice(0, 5)) {
     try {
       await new Promise(r => setTimeout(r, 1500));
-      const payload = { type: "WhatsApp", contactId: contactId, attachments: [imgUrl] };
+      const payload = { type: "WhatsApp", contactId: contactId, attachments: [imgUrl], status: "delivered" };
       if (locationId) payload.locationId = locationId;
       const res = await fetch("https://services.leadconnectorhq.com/conversations/messages", {
         method: "POST", headers: { "Authorization": "Bearer " + env.GHL_API_KEY, "Content-Type": "application/json", "Version": "2021-04-15" },
@@ -270,14 +270,11 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
   }
 
   const mostrarMenu = !!productoActual && !esSoloSaludo;
-  const helpMenu = mostrarMenu ? "\n\nAl final del mensaje añade EXACTAMENTE esta línea: Puedo informarle sobre: Medidas, Colores, Materiales, Precios, Envío y Cuotas. 😉" : "";
+  const helpMenu = mostrarMenu ? "\n\n*Puedo informarle sobre:*\n✅ Medidas\n✅ Colores\n✅ Materiales\n✅ Precios\n✅ Envío\n✅ Cuotas" : "";
 
-  let instruccionSaludo = "";
-  if (esSoloSaludo) {
-    instruccionSaludo = esPrimerMensaje ? "Saluda cordialmente al cliente." : "Responde de forma muy breve sin saludar de nuevo, ya estamos en una conversación.";
-  }
+  const instruccionSaludo = esPrimerMensaje ? "Saluda cordialmente al cliente al inicio." : "NO saludes, ya estamos en una conversación.";
 
-  const prompt = "Eres un asesor amable de La Mueblería. REGLAS:\n1. BREVEDAD TOTAL: Máximo 2 oraciones.\n2. SOLO LO SOLICITADO.\n3. MENÚ DE AYUDA: " + (mostrarMenu ? "Añade el menú al final." : "NO añadas menú de ayuda.") + "\n4. EMOJIS: Máximo uno.\n5. CIERRE: NUNCA pidas datos de compra si el cliente hizo una pregunta en este mensaje (medidas, fotos, precio, etc). Responde primero la duda. Solo pide Nombre, DPI, Dirección y Teléfono si el cliente explícitamente dice que quiere comprar y no tiene más dudas.\n6. SALUDO: " + instruccionSaludo + "\nPUNTOS VENTA: Envío GRATIS (" + (coverage || "Toda Guatemala") + "), Pago Contra Entrega, Cuotas SIN RECARGO.\n\n" + info + helpMenu + "\n\nMensaje del cliente: " + message;
+  const prompt = "Eres un asesor amable de La Mueblería. REGLAS:\n1. BREVEDAD TOTAL: Máximo 2 oraciones.\n2. SOLO LO SOLICITADO.\n3. MENÚ DE AYUDA: " + (mostrarMenu ? "Añade el menú de ayuda al final." : "NO añadas menú de ayuda.") + "\n4. EMOJIS: Máximo uno.\n5. CIERRE: NUNCA pidas datos de compra si el cliente hizo una pregunta en este mensaje (medidas, fotos, precio, etc). Responde primero la duda. Solo pide Nombre, DPI, Dirección y Teléfono si el cliente explícitamente dice que quiere comprar y no tiene más dudas.\n6. SALUDO: " + instruccionSaludo + "\nPUNTOS VENTA: Envío GRATIS (" + (coverage || "Toda Guatemala") + "), Pago Contra Entrega, Cuotas SIN RECARGO.\n\n" + info + (mostrarMenu ? "\n\nMENÚ DE AYUDA:\n" + helpMenu : "") + "\n\nMensaje del cliente: " + message;
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -286,7 +283,9 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
     });
     const data = await res.json();
     let content = data.choices[0].message.content;
-    if (!mostrarMenu) content = content.replace(/Puedo informarle sobre: Medidas, Colores, Materiales, Precios, Envío y Cuotas.*/gi, "").trim();
+    if (!mostrarMenu) {
+      content = content.replace(/\*Puedo informarle sobre:\*[\s\S]*/gi, "").trim();
+    }
     return content;
   } catch (err) { return "Con gusto le ayudo. Permítame un momento para confirmarle la información exacta."; }
 }
@@ -446,7 +445,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace) {
     await setCustomFieldValue(contact, fEstado, estadoPropuesto, env, trace);
     const caption = targetProduct ? (targetProduct.titulo || "").toUpperCase() : "";
     let finalMsg = responseText;
-    if (caption && responseImgs.length > 0 && !responseText.includes(caption)) {
+    if (caption && !responseText.toUpperCase().includes(caption)) {
       finalMsg = "*" + caption + "*\n\n" + responseText;
     }
     const locationId = contact.locationId || null;
