@@ -244,7 +244,7 @@ function detectarSeleccionNatural(mensaje, lista) {
   return (ganador && ganador.score >= 10) ? ganador.index : null;
 }
 
-async function callVendedorElitePro(message, contact, env, productoActual, intencionCierre, coverage, esSoloSaludo = false, esPrimerMensaje = false, yaEnvioMenu = false) {
+async function callVendedorElitePro(message, contact, env, productoActual, intencionCierre, coverage, esSoloSaludo = false, esPrimerMensaje = false, yaEnvioMenu = false, esNuevoProducto = false) {
   let info = "";
   if (productoActual) {
     const p = productoActual;
@@ -269,12 +269,23 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
     }
   }
 
-  const mostrarMenu = !!productoActual && !esSoloSaludo && !yaEnvioMenu;
+  const mostrarMenu = !!productoActual && !esSoloSaludo && (!yaEnvioMenu || esNuevoProducto);
   const helpMenu = mostrarMenu ? "\n\n*Puedo informarle sobre:*\n✅ Medidas\n✅ Colores\n✅ Materiales\n✅ Precios\n✅ Envío\n✅ Cuotas" : "";
 
   const instruccionSaludo = esPrimerMensaje ? "Saluda cordialmente al cliente al inicio." : "NO saludes, ya estamos en una conversación.";
 
-  const prompt = "Eres un asesor amable de La Mueblería. REGLAS:\n1. BREVEDAD TOTAL: Máximo 2 oraciones.\n2. LISTAS: Si describes características o detalles del mueble, usa una lista con viñetas (ej: ✨ o 📍) para que sea atractivo.\n3. SOLO LO SOLICITADO.\n4. MENÚ DE AYUDA: " + (mostrarMenu ? "Añade el menú de ayuda al final." : "NO añadas menú de ayuda.") + "\n5. EMOJIS: Máximo uno (fuera de las listas).\n6. CIERRE: NUNCA pidas datos de compra si el cliente hizo una pregunta en este mensaje (medidas, fotos, precio, etc). Responde primero la duda. Solo pide Nombre, DPI, Dirección y Teléfono si el cliente explícitamente dice que quiere comprar y no tiene más dudas.\n7. SALUDO: " + instruccionSaludo + "\nPUNTOS VENTA: Envío GRATIS (" + (coverage || "Toda Guatemala") + "), Pago Contra Entrega, Cuotas SIN RECARGO.\n\n" + info + (mostrarMenu ? "\n\nMENÚ DE AYUDA:\n" + helpMenu : "") + "\n\nMensaje del cliente: " + message;
+  const reglas = [
+    "1. BREVEDAD: Máximo 2 oraciones normalmente.",
+    "2. LISTAS: Usa viñetas atractivas (ej: ✨ o 📍) para características y descripción.",
+    "3. PRESENTACIÓN: Si esNuevoProducto es TRUE, debes resumir la Descripción del producto usando una lista atractiva.",
+    "4. SOLO LO SOLICITADO: No divagues.",
+    "5. MENÚ DE AYUDA: " + (mostrarMenu ? "Añade el menú de ayuda al final." : "NO lo añadas."),
+    "6. EMOJIS: Máximo uno (fuera de las listas).",
+    "7. CIERRE: NUNCA pidas datos si el cliente tiene dudas. Responde primero la duda.",
+    "8. SALUDO: " + instruccionSaludo
+  ];
+
+  const prompt = "Eres un asesor amable de La Mueblería. REGLAS:\n" + reglas.join("\n") + "\n\nIMPORTANTE: esNuevoProducto es " + esNuevoProducto + ". Si es TRUE, presenta el producto con su resumen de descripción.\n\nDATOS PRODUCTO:\n" + info + (mostrarMenu ? "\n\nMENÚ DE AYUDA:\n" + helpMenu : "") + "\n\nMensaje del cliente: " + message;
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -354,6 +365,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace) {
     const yaEnvioMenu = getCustomFieldValue(contact, fMenuEnviado) === "true";
     const esPrimerMensaje = (currentEstado === "nuevo");
     const fProductoId = getFieldId(env, "producto_id");
+    const prevProductoId = getCustomFieldValue(contact, fProductoId);
     const fUltimaCat = getFieldId(env, "ultima_categoria");
     const fCatInteres = getFieldId(env, "categoria_interes");
     const fTamanoCat = getFieldId(env, "tamaño_categoria");
@@ -422,9 +434,10 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace) {
       responseImgs = (esSeleccionReciente || pideFotos) ? (targetProduct.imagenes || []) : [];
       if (pideFotos && responseImgs.length === 0) { await triggerHandover(contactId, env, trace); return; }
       const coverage = await obtenerRespuestaCoverage(rawMsg, env, trace);
-      trace.add("Llamando a OpenAI (Producto)...");
-      responseText = await callVendedorElitePro(message, contact, env, targetProduct, pideCompra, coverage, esSoloSaludo, esPrimerMensaje, yaEnvioMenu);
-      if (!yaEnvioMenu && responseText.includes("Puedo informarle sobre")) {
+      const esNuevoProducto = targetProduct.id !== prevProductoId;
+      trace.add("Llamando a OpenAI (Producto)... " + (esNuevoProducto ? "[NUEVO]" : ""));
+      responseText = await callVendedorElitePro(message, contact, env, targetProduct, pideCompra, coverage, esSoloSaludo, esPrimerMensaje, yaEnvioMenu, esNuevoProducto);
+      if ((esNuevoProducto || !yaEnvioMenu) && responseText.includes("Puedo informarle sobre")) {
         await setCustomFieldValue(contact, fMenuEnviado, "true", env, trace);
       }
       await setCustomFieldValue(contact, fProductoId, targetProduct.id, env, trace);
@@ -444,7 +457,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace) {
       trace.add("[ROUTER] Ruta: Respuesta General (OpenAI).");
       const coverage = await obtenerRespuestaCoverage(rawMsg, env, trace);
       trace.add("Llamando a OpenAI (General)...");
-      responseText = await callVendedorElitePro(message, contact, env, null, pideCompra, coverage, esSoloSaludo, esPrimerMensaje, yaEnvioMenu);
+      responseText = await callVendedorElitePro(message, contact, env, null, pideCompra, coverage, esSoloSaludo, esPrimerMensaje, yaEnvioMenu, false);
     }
     if (responseText && responseText.includes("[TRANSFERIR]")) { trace.add("IA pidió transferencia."); await triggerHandover(contactId, env, trace); return; }
     await setCustomFieldValue(contact, fEstado, estadoPropuesto, env, trace);
