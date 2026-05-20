@@ -80,13 +80,13 @@ async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], loca
 
   if (text && text.trim()) {
     try {
-      const payload = { type: "WhatsApp", contactId: contactId, message: text, status: "delivered" };
+      const payload = { type: "WhatsApp", contactId: contactId, message: text };
       if (locationId) payload.locationId = locationId;
       const res = await fetch("https://services.leadconnectorhq.com/conversations/messages", {
         method: "POST", headers: { "Authorization": "Bearer " + env.GHL_API_KEY, "Content-Type": "application/json", "Version": "2021-04-15" },
         body: JSON.stringify(payload)
       });
-      if (res.ok) { success = true; if (trace) trace.add("[API GHL] Mensaje de texto enviado satisfactoriamente."); }
+      if (res.ok) { success = true; if (trace) trace.add("[API GHL] Mensaje de texto enviado."); }
       else if (trace) { const errTxt = await res.text(); trace.add("[API GHL] Error enviando texto (Status " + res.status + "): " + errTxt); }
     } catch (err) { if (trace) trace.error("Excepción enviando texto: ", err); }
   }
@@ -94,13 +94,13 @@ async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], loca
   for (let imgUrl of filtradas.slice(0, 5)) {
     try {
       await new Promise(r => setTimeout(r, 1500));
-      const payload = { type: "WhatsApp", contactId: contactId, attachments: [imgUrl], status: "delivered" };
+      const payload = { type: "WhatsApp", contactId: contactId, attachments: [imgUrl] };
       if (locationId) payload.locationId = locationId;
       const res = await fetch("https://services.leadconnectorhq.com/conversations/messages", {
         method: "POST", headers: { "Authorization": "Bearer " + env.GHL_API_KEY, "Content-Type": "application/json", "Version": "2021-04-15" },
         body: JSON.stringify(payload)
       });
-      if (res.ok) { success = true; if (trace) trace.add("[API GHL] Adjunto enviado satisfactoriamente: " + imgUrl); }
+      if (res.ok) { success = true; if (trace) trace.add("[API GHL] Adjunto enviado: " + imgUrl); }
       else if (trace) { const errTxt = await res.text(); trace.add("[API GHL] Error enviando adjunto (" + res.status + "): " + errTxt); }
     } catch (err) { if (trace) trace.error("Excepción enviando imagen: ", err); }
   }
@@ -244,7 +244,7 @@ function detectarSeleccionNatural(mensaje, lista) {
   return (ganador && ganador.score >= 10) ? ganador.index : null;
 }
 
-async function callVendedorElitePro(message, contact, env, productoActual, intencionCierre, coverage, esSoloSaludo = false, esPrimerMensaje = false) {
+async function callVendedorElitePro(message, contact, env, productoActual, intencionCierre, coverage, esSoloSaludo = false, esPrimerMensaje = false, yaEnvioMenu = false) {
   let info = "";
   if (productoActual) {
     const p = productoActual;
@@ -269,12 +269,12 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
     }
   }
 
-  const mostrarMenu = !!productoActual && !esSoloSaludo;
+  const mostrarMenu = !!productoActual && !esSoloSaludo && !yaEnvioMenu;
   const helpMenu = mostrarMenu ? "\n\n*Puedo informarle sobre:*\n✅ Medidas\n✅ Colores\n✅ Materiales\n✅ Precios\n✅ Envío\n✅ Cuotas" : "";
 
   const instruccionSaludo = esPrimerMensaje ? "Saluda cordialmente al cliente al inicio." : "NO saludes, ya estamos en una conversación.";
 
-  const prompt = "Eres un asesor amable de La Mueblería. REGLAS:\n1. BREVEDAD TOTAL: Máximo 2 oraciones.\n2. SOLO LO SOLICITADO.\n3. MENÚ DE AYUDA: " + (mostrarMenu ? "Añade el menú de ayuda al final." : "NO añadas menú de ayuda.") + "\n4. EMOJIS: Máximo uno.\n5. CIERRE: NUNCA pidas datos de compra si el cliente hizo una pregunta en este mensaje (medidas, fotos, precio, etc). Responde primero la duda. Solo pide Nombre, DPI, Dirección y Teléfono si el cliente explícitamente dice que quiere comprar y no tiene más dudas.\n6. SALUDO: " + instruccionSaludo + "\nPUNTOS VENTA: Envío GRATIS (" + (coverage || "Toda Guatemala") + "), Pago Contra Entrega, Cuotas SIN RECARGO.\n\n" + info + (mostrarMenu ? "\n\nMENÚ DE AYUDA:\n" + helpMenu : "") + "\n\nMensaje del cliente: " + message;
+  const prompt = "Eres un asesor amable de La Mueblería. REGLAS:\n1. BREVEDAD TOTAL: Máximo 2 oraciones.\n2. LISTAS: Si describes características o detalles del mueble, usa una lista con viñetas (ej: ✨ o 📍) para que sea atractivo.\n3. SOLO LO SOLICITADO.\n4. MENÚ DE AYUDA: " + (mostrarMenu ? "Añade el menú de ayuda al final." : "NO añadas menú de ayuda.") + "\n5. EMOJIS: Máximo uno (fuera de las listas).\n6. CIERRE: NUNCA pidas datos de compra si el cliente hizo una pregunta en este mensaje (medidas, fotos, precio, etc). Responde primero la duda. Solo pide Nombre, DPI, Dirección y Teléfono si el cliente explícitamente dice que quiere comprar y no tiene más dudas.\n7. SALUDO: " + instruccionSaludo + "\nPUNTOS VENTA: Envío GRATIS (" + (coverage || "Toda Guatemala") + "), Pago Contra Entrega, Cuotas SIN RECARGO.\n\n" + info + (mostrarMenu ? "\n\nMENÚ DE AYUDA:\n" + helpMenu : "") + "\n\nMensaje del cliente: " + message;
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -349,7 +349,9 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace) {
     const message = limpiarMensaje(rawMsg);
     const norm = normalizarTextoGlobal(message);
     const fEstado = getFieldId(env, "estado_actual");
+    const fMenuEnviado = getFieldId(env, "menu_ayuda_enviado");
     const currentEstado = getCustomFieldValue(contact, fEstado) || "nuevo";
+    const yaEnvioMenu = getCustomFieldValue(contact, fMenuEnviado) === "true";
     const esPrimerMensaje = (currentEstado === "nuevo");
     const fProductoId = getFieldId(env, "producto_id");
     const fUltimaCat = getFieldId(env, "ultima_categoria");
@@ -421,7 +423,10 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace) {
       if (pideFotos && responseImgs.length === 0) { await triggerHandover(contactId, env, trace); return; }
       const coverage = await obtenerRespuestaCoverage(rawMsg, env, trace);
       trace.add("Llamando a OpenAI (Producto)...");
-      responseText = await callVendedorElitePro(message, contact, env, targetProduct, pideCompra, coverage, esSoloSaludo, esPrimerMensaje);
+      responseText = await callVendedorElitePro(message, contact, env, targetProduct, pideCompra, coverage, esSoloSaludo, esPrimerMensaje, yaEnvioMenu);
+      if (!yaEnvioMenu && responseText.includes("Puedo informarle sobre")) {
+        await setCustomFieldValue(contact, fMenuEnviado, "true", env, trace);
+      }
       await setCustomFieldValue(contact, fProductoId, targetProduct.id, env, trace);
       await setCustomFieldValue(contact, getFieldId(env, "total_pedido"), targetProduct.precio || 0, env, trace);
       if (targetProduct.tipo === "combo") {
@@ -439,7 +444,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace) {
       trace.add("[ROUTER] Ruta: Respuesta General (OpenAI).");
       const coverage = await obtenerRespuestaCoverage(rawMsg, env, trace);
       trace.add("Llamando a OpenAI (General)...");
-      responseText = await callVendedorElitePro(message, contact, env, null, pideCompra, coverage, esSoloSaludo, esPrimerMensaje);
+      responseText = await callVendedorElitePro(message, contact, env, null, pideCompra, coverage, esSoloSaludo, esPrimerMensaje, yaEnvioMenu);
     }
     if (responseText && responseText.includes("[TRANSFERIR]")) { trace.add("IA pidió transferencia."); await triggerHandover(contactId, env, trace); return; }
     await setCustomFieldValue(contact, fEstado, estadoPropuesto, env, trace);
