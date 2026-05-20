@@ -95,7 +95,8 @@ async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], loca
   for (let imgUrl of filtradas.slice(0, 5)) {
     try {
       await new Promise(r => setTimeout(r, 1500));
-      const payload = { type: "WhatsApp", contactId: contactId, message: ".", attachments: [imgUrl], direction: "outbound" };
+      const caption = text ? (text.length > 50 ? text.substring(0, 50) + "..." : text) : "Imagen de producto";
+      const payload = { type: "WhatsApp", contactId: contactId, message: caption, attachments: [imgUrl], direction: "outbound" };
       if (locationId) payload.locationId = locationId;
       if (conversationId) payload.conversationId = conversationId;
       const res = await fetch("https://services.leadconnectorhq.com/conversations/messages", {
@@ -277,17 +278,17 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
 
   const reglas = [
     "1. BREVEDAD: Máximo 2 oraciones normalmente.",
-    "2. LISTAS: Usa viñetas atractivas (ej: ✨ o 📍) para características y descripción.",
-    "3. PRESENTACIÓN: Si esNuevoProducto es TRUE, debes resumir la Descripción del producto usando una lista atractiva. PROHIBIDO dar Medidas, Material, Colores, Resistencia o Garantía en este primer mensaje de presentación (a menos que el cliente haya preguntado específicamente por ellas en este mensaje).",
+    "2. LISTAS: Usa viñetas atractivas (ej: ✨ o 📍) para características y descripciones.",
+    "3. PRESENTACIÓN: Si esNuevoProducto es TRUE, DEBES resumir la 'Descripción' o 'Componentes' del producto usando una lista atractiva. PROHIBIDO dar Medidas, Material, Colores, Resistencia o Garantía en este mensaje a menos que el cliente lo haya preguntado.",
     "4. SOLO LO SOLICITADO: No divagues.",
-    "5. AYUDA: " + (mostrarMenu ? "Al final añade una frase amable y variable que indique que puedes informar sobre: Medidas, Colores, Materiales, Precios, Envío y Cuotas." : "NO añadas temas de ayuda."),
-    "6. COMPRA: Si esNuevoProducto es TRUE, al final añade una frase amable y variable pidiendo Nombre, DPI, Dirección y Teléfono si desea comprar.",
+    "5. AYUDA: " + (mostrarMenu ? "Al final añade una frase amable indicando que puedes informar sobre: Medidas, Colores, Materiales, Precios, Envío y Cuotas. DEBES poner un doble salto de línea después de esta frase." : "NO añadas temas de ayuda."),
+    "6. COMPRA: " + (esNuevoProducto ? "Después de la ayuda, añade una invitación para comprar solicitando estos datos en listado vertical:\n- Nombre\n- DPI\n- Dirección\n- Teléfono" : ""),
     "7. EMOJIS: Máximo uno (fuera de las listas).",
     "8. CIERRE: NUNCA pidas datos si el cliente tiene dudas. Responde primero la duda.",
     "9. SALUDO: " + instruccionSaludo
   ];
 
-  const prompt = "Eres un asesor amable de La Mueblería. REGLAS:\n" + reglas.join("\n") + "\n\nIMPORTANTE: esNuevoProducto es " + esNuevoProducto + ". Si es TRUE, DEBES resumir la 'Descripción' que aparece abajo en los DATOS DEL PRODUCTO usando una lista atractiva.\n\nDATOS PRODUCTO:\n" + info + "\n\nMensaje del cliente: " + message;
+  const prompt = "Eres un asesor amable de La Mueblería. REGLAS:\n" + reglas.join("\n") + "\n\nIMPORTANTE: esNuevoProducto es " + esNuevoProducto + ". Si es TRUE, presenta el producto con un resumen atractivo.\n\nDATOS PRODUCTO:\n" + info + "\n\nMensaje del cliente: " + message;
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -297,7 +298,7 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
     const data = await res.json();
     let content = data.choices[0].message.content;
     if (!mostrarMenu) {
-      content = content.replace(/(Medidas|Colores|Materiales|Precios|Envío|Cuotas).*/gi, "").trim();
+      content = content.replace(/.*(informar sobre|ayudarte con|detalles sobre).*(Medidas|Colores|Materiales|Precios|Envío|Cuotas).*/gi, "").trim();
     }
     return content;
   } catch (err) { return "Con gusto le ayudo. Permítame un momento para confirmarle la información exacta."; }
