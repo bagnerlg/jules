@@ -453,7 +453,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
         await setCustomFieldValue(contact, fComboPadre, targetProduct.id, env, trace);
         if (Array.isArray(targetProduct.items)) { await setCustomFieldValue(contact, fComboComp, JSON.stringify(targetProduct.items.map(i => i.id)), env, trace); }
       }
-    } else if (pideCatalogo || tieneCategoria || /\b(mediano|grande)\b/i.test(norm)) {
+    } else if (pideCatalogo || tieneCategoria || /\b(mediano|mediana|grande|pequeño|pequeña)\b/i.test(norm)) {
       trace.add("[ROUTER] Ruta: Catálogo / Categoría.");
       estadoPropuesto = "catalogo";
       const resCat = await moduloCatalogo(message, contact, env, trace);
