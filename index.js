@@ -69,7 +69,7 @@ async function setCustomFieldValue(contact, fieldId, value, env, trace) { if (!f
 
 async function addToWorkflow(contactId, workflowId, env, trace) { try { const eventStartTime = new Date().toISOString().split(".")[0] + "+00:00"; await fetch("https://services.leadconnectorhq.com/contacts/" + contactId + "/workflow/" + workflowId, { method: "POST", headers: { "Authorization": "Bearer " + env.GHL_API_KEY, "Content-Type": "application/json", "Version": "2021-07-28" }, body: JSON.stringify({ eventStartTime }) }); } catch (err) {} }
 
-async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], caption = "") {
+async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], locationId = null) {
   if (!text && (!imagenes || imagenes.length === 0)) return false;
   const filtradas = (Array.isArray(imagenes) ? imagenes : [imagenes])
     .map(img => typeof img === "string" ? img : (img?.url || img?.link || img?.link_publico || img?.imagen1 || img?.imagen2 || img?.imagen))
@@ -80,9 +80,11 @@ async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], capt
 
   if (text && text.trim()) {
     try {
+      const payload = { type: "WhatsApp", contactId: contactId, message: text };
+      if (locationId) payload.locationId = locationId;
       const res = await fetch("https://services.leadconnectorhq.com/conversations/messages", {
         method: "POST", headers: { "Authorization": "Bearer " + env.GHL_API_KEY, "Content-Type": "application/json", "Version": "2021-04-15" },
-        body: JSON.stringify({ type: "WhatsApp", contactId: contactId, message: text, status: "delivered" })
+        body: JSON.stringify(payload)
       });
       if (res.ok) { success = true; if (trace) trace.add("[API GHL] Mensaje de texto enviado satisfactoriamente."); }
       else if (trace) { const errTxt = await res.text(); trace.add("[API GHL] Error enviando texto (Status " + res.status + "): " + errTxt); }
@@ -91,11 +93,14 @@ async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], capt
 
   for (let imgUrl of filtradas.slice(0, 5)) {
     try {
+      await new Promise(r => setTimeout(r, 1500));
+      const payload = { type: "WhatsApp", contactId: contactId, attachments: [imgUrl] };
+      if (locationId) payload.locationId = locationId;
       const res = await fetch("https://services.leadconnectorhq.com/conversations/messages", {
         method: "POST", headers: { "Authorization": "Bearer " + env.GHL_API_KEY, "Content-Type": "application/json", "Version": "2021-04-15" },
-        body: JSON.stringify({ type: "WhatsApp", contactId: contactId, message: "", attachments: [imgUrl], status: "delivered" })
+        body: JSON.stringify(payload)
       });
-      if (res.ok) { success = true; if (trace) trace.add("[API GHL] Adjunto enviado: " + imgUrl); }
+      if (res.ok) { success = true; if (trace) trace.add("[API GHL] Adjunto enviado satisfactoriamente: " + imgUrl); }
       else if (trace) { const errTxt = await res.text(); trace.add("[API GHL] Error enviando adjunto (" + res.status + "): " + errTxt); }
     } catch (err) { if (trace) trace.error("Excepción enviando imagen: ", err); }
   }
@@ -272,7 +277,7 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
     instruccionSaludo = esPrimerMensaje ? "Saluda cordialmente al cliente." : "Responde de forma muy breve sin saludar de nuevo, ya estamos en una conversación.";
   }
 
-  const prompt = "Eres un asesor amable de La Mueblería. REGLAS:\n1. BREVEDAD TOTAL: Máximo 2 oraciones.\n2. SOLO LO SOLICITADO.\n3. MENÚ DE AYUDA: " + (mostrarMenu ? "Añade el menú al final." : "NO añadas menú de ayuda.") + "\n4. EMOJIS: Máximo uno.\n5. CIERRE: SI EL CLIENTE TIENE DUDAS (medidas, precio, material, etc), responde la duda y NO pidas datos de compra. Solo pide Nombre, DPI, Dirección y Teléfono si el cliente ya no tiene dudas y confirmó que quiere comprar.\n6. SALUDO: " + instruccionSaludo + "\nPUNTOS VENTA: Envío GRATIS (" + (coverage || "Toda Guatemala") + "), Pago Contra Entrega, Cuotas SIN RECARGO.\n\n" + info + helpMenu + "\n\nMensaje del cliente: " + message;
+  const prompt = "Eres un asesor amable de La Mueblería. REGLAS:\n1. BREVEDAD TOTAL: Máximo 2 oraciones.\n2. SOLO LO SOLICITADO.\n3. MENÚ DE AYUDA: " + (mostrarMenu ? "Añade el menú al final." : "NO añadas menú de ayuda.") + "\n4. EMOJIS: Máximo uno.\n5. CIERRE: NUNCA pidas datos de compra si el cliente hizo una pregunta en este mensaje (medidas, fotos, precio, etc). Responde primero la duda. Solo pide Nombre, DPI, Dirección y Teléfono si el cliente explícitamente dice que quiere comprar y no tiene más dudas.\n6. SALUDO: " + instruccionSaludo + "\nPUNTOS VENTA: Envío GRATIS (" + (coverage || "Toda Guatemala") + "), Pago Contra Entrega, Cuotas SIN RECARGO.\n\n" + info + helpMenu + "\n\nMensaje del cliente: " + message;
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -377,12 +382,18 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace) {
     if (targetProduct) {
       trace.add("Producto objetivo: " + targetProduct.titulo);
       await setCustomFieldValue(contact, fProductoId, targetProduct.id, env, trace);
+    } else {
+      const pid = getCustomFieldValue(contact, fProductoId);
+      if (pid) {
+        targetProduct = await obtenerProductoSeguro(pid, env);
+        if (targetProduct) trace.add("Producto recuperado de persistencia: " + targetProduct.titulo);
+      }
     }
 
     let responseText, responseImgs = [], estadoPropuesto = currentEstado === "nuevo" ? "interaccion" : currentEstado;
     const pideFotos = /fotos?|imagenes?|verlo|verla|mostrar|enviame|fts/i.test(message);
-    const pideCompra = /\b(quiero comprar|lo quiero|la quiero|comprarlo|comprarla|quiero el pedido|hacer el pedido|quiero ordenar|proceder con la compra)\b/i.test(norm);
-    const pideInformacion = /\b(medida|cuanto mide|dimensi|precio|cuanto vale|cuanto cuesta|costo|valor|material|color|envio|flete|cuota|pago)\b/i.test(norm);
+    const pideCompra = /\b(quiero comprar|lo quiero|la quiero|comprarlo|comprarla|quiero el pedido|hacer el pedido|quiero ordenar|proceder con la compra|donde deposito|metodo de pago|cuenta para depositar|como pago|pagar)\b/i.test(norm);
+    const pideInformacion = /\b(medida|cuanto mide|dimensi|precio|cuanto vale|cuanto cuesta|costo|valor|material|color|envio|flete|cuota|pago|informaci|detalle|mas fotos|verlo|verla|especificaciones|garantia|resiste)\b/i.test(norm);
     const pideDuda = /\b(unidad|separado|aparte|solo la|solo el|venden solo|venden solamente)\b/i.test(norm);
     const pideGarantia = /\b(compre|adquiri|garantia|rompio|arruino|dañado|defectuoso|malo|reclamo|fallo|falla)\b/i.test(norm);
     const esAfirmacionGenerica = /^(ok|vale|esta bien|muy bien|si gracias|de acuerdo|perfecto|entendido|así es|esta ok|está ok|si|sii|por favor|porfavor|claro|envia|mandame)$/i.test(norm.trim());
@@ -436,9 +447,10 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace) {
     const caption = targetProduct ? (targetProduct.titulo || "").toUpperCase() : "";
     let finalMsg = responseText;
     if (caption && responseImgs.length > 0 && !responseText.includes(caption)) {
-      finalMsg = caption + "\n\n" + responseText;
+      finalMsg = "*" + caption + "*\n\n" + responseText;
     }
-    await sendMessageToGHL(contactId, finalMsg, env, trace, responseImgs);
+    const locationId = contact.locationId || null;
+    await sendMessageToGHL(contactId, finalMsg, env, trace, responseImgs, locationId);
     if (pideCompra && !pideInformacion) await triggerHandover(contactId, env, trace);
   } catch (err) { if (trace) trace.error("Error processFullFlow: ", err); await triggerHandover(contactId, env, trace); }
 }
