@@ -95,7 +95,7 @@ async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], loca
   for (let imgUrl of filtradas.slice(0, 5)) {
     try {
       await new Promise(r => setTimeout(r, 1500));
-      const payload = { type: "WhatsApp", contactId: contactId, message: "", attachments: [imgUrl], direction: "outbound" };
+      const payload = { type: "WhatsApp", contactId: contactId, message: "Imagen de producto", attachments: [imgUrl], direction: "outbound" };
       if (locationId) payload.locationId = locationId;
       if (conversationId) payload.conversationId = conversationId;
       const res = await fetch("https://services.leadconnectorhq.com/conversations/messages", {
@@ -390,7 +390,9 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       if (prodFromSel) { targetProduct = prodFromSel; esSeleccionReciente = true; }
     }
 
-    if (!targetProduct) targetProduct = await buscarProductoPorNombreEnMensaje(message, env, trace);
+    if (!targetProduct && currentEstado !== "catalogo") {
+      targetProduct = await buscarProductoPorNombreEnMensaje(message, env, trace);
+    }
 
     if (!targetProduct) {
       const pid = getCustomFieldValue(contact, fProductoId);
