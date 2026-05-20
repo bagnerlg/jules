@@ -95,7 +95,7 @@ async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], loca
   for (let imgUrl of filtradas.slice(0, 5)) {
     try {
       await new Promise(r => setTimeout(r, 1500));
-      const payload = { type: "WhatsApp", contactId: contactId, message: "Imagen de producto", attachments: [imgUrl], direction: "outbound" };
+      const payload = { type: "WhatsApp", contactId: contactId, message: ".", attachments: [imgUrl], direction: "outbound" };
       if (locationId) payload.locationId = locationId;
       if (conversationId) payload.conversationId = conversationId;
       const res = await fetch("https://services.leadconnectorhq.com/conversations/messages", {
@@ -279,7 +279,7 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
   const reglas = [
     "1. BREVEDAD: Máximo 2 oraciones normalmente.",
     "2. LISTAS: Usa viñetas atractivas (ej: ✨ o 📍) para características y descripción.",
-    "3. PRESENTACIÓN: Si esNuevoProducto es TRUE, debes resumir la Descripción del producto usando una lista atractiva.",
+    "3. PRESENTACIÓN: Si esNuevoProducto es TRUE, debes resumir la Descripción del producto usando una lista atractiva. PROHIBIDO dar Medidas, Material, Colores, Resistencia o Garantía en este primer mensaje de presentación (a menos que el cliente haya preguntado específicamente por ellas en este mensaje).",
     "4. SOLO LO SOLICITADO: No divagues.",
     "5. MENÚ DE AYUDA: " + (mostrarMenu ? "Añade el menú de ayuda al final." : "NO lo añadas."),
     "6. EMOJIS: Máximo uno (fuera de las listas).",
@@ -329,9 +329,11 @@ async function moduloCatalogo(message, contact, env, trace) {
     return { text: "¿Busca opciones de " + catDisplayName + " en tamaño " + (genero === "a" ? "mediana" : "mediano") + " o grande? 😉" };
   }
   const resultadosBase = (cat === "muebles") ? listado : listado.filter(p => normalizarTextoGlobal(p.nombre || p.titulo).includes(cat));
-  let resultados = resultadosBase;
-  if (tamano === "mediano") resultados = resultadosBase.filter(p => (parseFloat(p.precio) || 0) <= 5000);
-  else if (tamano === "grande") resultados = resultadosBase.filter(p => (parseFloat(p.precio) || 0) > 5000);
+  const combos = resultadosBase.filter(p => (p.key || "").startsWith("combo:"));
+  const itemsUnicos = combos.length > 0 ? combos : resultadosBase;
+  let resultados = itemsUnicos;
+  if (tamano === "mediano") resultados = itemsUnicos.filter(p => (parseFloat(p.precio) || 0) <= 5000);
+  else if (tamano === "grande") resultados = itemsUnicos.filter(p => (parseFloat(p.precio) || 0) > 5000);
 
   let preMsg = "";
   if (resultados.length === 0 && tamano) {
