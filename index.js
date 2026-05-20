@@ -438,4 +438,56 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace) {
   } catch (err) { if (trace) trace.error("Error processFullFlow: ", err); await triggerHandover(contactId, env, trace); }
 }
 
-export default { async fetch(request, env, ctx) { if (request.method !== "POST") return new Response("OK"); const trace = new TraceLog(); let contactId; try { const rawBody = await request.text(); const body = JSON.parse(rawBody); contactId = body.contact_id || body.contact?.id; if (!contactId) return new Response("OK"); const contact = await getContactFromGHL(contactId, env, trace); if (!contact || contact.tags?.includes("humano") || contact.assignedTo) { trace.flush(); return new Response("OK"); } const rawMsg = body.message?.body || body.message?.text || ""; const bKey = "buffer:" + contactId; const lKey = "last:" + contactId; const now = Date.now(); const old = await env.PRODUCTS_DB.get(bKey) || ""; await env.PRODUCTS_DB.put(bKey, old + " " + rawMsg, { expirationTtl: 60 }); await env.PRODUCTS_DB.put(lKey, now.toString(), { expirationTtl: 60 }); ctx.waitUntil((async () => { try { await new Promise(r => setTimeout(r, 2500)); const latestTs = await env.PRODUCTS_DB.get(lKey); if (latestTs === now.toString()) { trace.add("Procesando mensaje consolidado..."); const consolidatedMsg = await env.PRODUCTS_DB.get(bKey); await env.PRODUCTS_DB.delete(bKey); await env.PRODUCTS_DB.delete(lKey); await processFullFlow(consolidatedMsg, contactId, contact, env, trace); trace.add("Flujo completado."); } } catch (err) { trace.error("Error en waitUntil: ", err); } finally { trace.flush(); } })()); return new Response("OK"); } catch (e) { trace.error("Error crítico en fetch: ", e); if (contactId) try { await triggerHandover(contactId, env, trace); } catch (err) {} trace.flush(); return new Response("OK"); } } };
+export default {
+  async fetch(request, env, ctx) {
+    if (request.method !== "POST") return new Response("OK");
+    const trace = new TraceLog();
+    let contactId;
+    try {
+      const rawBody = await request.text();
+      const body = JSON.parse(rawBody);
+      contactId = body.contact_id || body.contact?.id;
+      if (!contactId) return new Response("OK");
+
+      const contact = await getContactFromGHL(contactId, env, trace);
+      if (!contact || contact.tags?.includes("humano") || contact.assignedTo) {
+        trace.flush();
+        return new Response("OK");
+      }
+
+      const rawMsg = body.message?.body || body.message?.text || "";
+      const bKey = "buffer:" + contactId;
+      const lKey = "last:" + contactId;
+      const now = Date.now();
+      const old = await env.PRODUCTS_DB.get(bKey) || "";
+      await env.PRODUCTS_DB.put(bKey, old + " " + rawMsg, { expirationTtl: 60 });
+      await env.PRODUCTS_DB.put(lKey, now.toString(), { expirationTtl: 60 });
+
+      ctx.waitUntil((async () => {
+        try {
+          await new Promise(r => setTimeout(r, 2500));
+          const latestTs = await env.PRODUCTS_DB.get(lKey);
+          if (latestTs === now.toString()) {
+            trace.add("Procesando mensaje consolidado...");
+            const consolidatedMsg = await env.PRODUCTS_DB.get(bKey);
+            await env.PRODUCTS_DB.delete(bKey);
+            await env.PRODUCTS_DB.delete(lKey);
+            await processFullFlow(consolidatedMsg, contactId, contact, env, trace);
+            trace.add("Flujo completado.");
+          }
+        } catch (err) {
+          trace.error("Error en waitUntil: ", err);
+        } finally {
+          trace.flush();
+        }
+      })());
+
+      return new Response("OK");
+    } catch (e) {
+      trace.error("Error crítico en fetch: ", e);
+      if (contactId) { try { await triggerHandover(contactId, env, trace); } catch (err) {} }
+      trace.flush();
+      return new Response("OK");
+    }
+  }
+};
