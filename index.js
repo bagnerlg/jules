@@ -93,7 +93,7 @@ async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], capt
     try {
       const res = await fetch("https://services.leadconnectorhq.com/conversations/messages", {
         method: "POST", headers: { "Authorization": "Bearer " + env.GHL_API_KEY, "Content-Type": "application/json", "Version": "2021-04-15" },
-        body: JSON.stringify({ type: "WhatsApp", contactId: contactId, message: caption, attachments: [imgUrl], status: "delivered" })
+        body: JSON.stringify({ type: "WhatsApp", contactId: contactId, message: "", attachments: [imgUrl], status: "delivered" })
       });
       if (res.ok) { success = true; if (trace) trace.add("[API GHL] Adjunto enviado: " + imgUrl); }
       else if (trace) { const errTxt = await res.text(); trace.add("[API GHL] Error enviando adjunto (" + res.status + "): " + errTxt); }
@@ -272,7 +272,7 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
     instruccionSaludo = esPrimerMensaje ? "Saluda cordialmente al cliente." : "Responde de forma muy breve sin saludar de nuevo, ya estamos en una conversación.";
   }
 
-  const prompt = "Eres un asesor amable de La Mueblería. REGLAS:\n1. BREVEDAD TOTAL: Máximo 2 oraciones.\n2. SOLO LO SOLICITADO.\n3. MENÚ DE AYUDA: " + (mostrarMenu ? "Añade el menú al final." : "NO añadas menú de ayuda.") + "\n4. EMOJIS: Máximo uno.\n5. CIERRE: Nombre, DPI, Dirección y Teléfono juntos si quiere comprar.\n6. SALUDO: " + instruccionSaludo + "\nPUNTOS VENTA: Envío GRATIS (" + (coverage || "Toda Guatemala") + "), Pago Contra Entrega, Cuotas SIN RECARGO.\n\n" + info + helpMenu + "\n\nMensaje del cliente: " + message;
+  const prompt = "Eres un asesor amable de La Mueblería. REGLAS:\n1. BREVEDAD TOTAL: Máximo 2 oraciones.\n2. SOLO LO SOLICITADO.\n3. MENÚ DE AYUDA: " + (mostrarMenu ? "Añade el menú al final." : "NO añadas menú de ayuda.") + "\n4. EMOJIS: Máximo uno.\n5. CIERRE: SI EL CLIENTE TIENE DUDAS (medidas, precio, material, etc), responde la duda y NO pidas datos de compra. Solo pide Nombre, DPI, Dirección y Teléfono si el cliente ya no tiene dudas y confirmó que quiere comprar.\n6. SALUDO: " + instruccionSaludo + "\nPUNTOS VENTA: Envío GRATIS (" + (coverage || "Toda Guatemala") + "), Pago Contra Entrega, Cuotas SIN RECARGO.\n\n" + info + helpMenu + "\n\nMensaje del cliente: " + message;
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -381,7 +381,8 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace) {
 
     let responseText, responseImgs = [], estadoPropuesto = currentEstado === "nuevo" ? "interaccion" : currentEstado;
     const pideFotos = /fotos?|imagenes?|verlo|verla|mostrar|enviame|fts/i.test(message);
-    const pideCompra = /\b(comprar|adquirir|interesa|ordenar|pedido|quiero el|quiero la|llevarmelo|llevarmela|apartar|reservar|informacion para compra|proceder|comprarla|comprarlo)\b/i.test(norm);
+    const pideCompra = /\b(quiero comprar|lo quiero|la quiero|comprarlo|comprarla|quiero el pedido|hacer el pedido|quiero ordenar|proceder con la compra)\b/i.test(norm);
+    const pideInformacion = /\b(medida|cuanto mide|dimensi|precio|cuanto vale|cuanto cuesta|costo|valor|material|color|envio|flete|cuota|pago)\b/i.test(norm);
     const pideDuda = /\b(unidad|separado|aparte|solo la|solo el|venden solo|venden solamente)\b/i.test(norm);
     const pideGarantia = /\b(compre|adquiri|garantia|rompio|arruino|dañado|defectuoso|malo|reclamo|fallo|falla)\b/i.test(norm);
     const esAfirmacionGenerica = /^(ok|vale|esta bien|muy bien|si gracias|de acuerdo|perfecto|entendido|así es|esta ok|está ok|si|sii|por favor|porfavor|claro|envia|mandame)$/i.test(norm.trim());
@@ -433,8 +434,12 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace) {
     if (responseText && responseText.includes("[TRANSFERIR]")) { trace.add("IA pidió transferencia."); await triggerHandover(contactId, env, trace); return; }
     await setCustomFieldValue(contact, fEstado, estadoPropuesto, env, trace);
     const caption = targetProduct ? (targetProduct.titulo || "").toUpperCase() : "";
-    await sendMessageToGHL(contactId, responseText, env, trace, responseImgs, caption);
-    if (pideCompra) await triggerHandover(contactId, env, trace);
+    let finalMsg = responseText;
+    if (caption && responseImgs.length > 0 && !responseText.includes(caption)) {
+      finalMsg = caption + "\n\n" + responseText;
+    }
+    await sendMessageToGHL(contactId, finalMsg, env, trace, responseImgs);
+    if (pideCompra && !pideInformacion) await triggerHandover(contactId, env, trace);
   } catch (err) { if (trace) trace.error("Error processFullFlow: ", err); await triggerHandover(contactId, env, trace); }
 }
 
