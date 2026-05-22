@@ -95,8 +95,8 @@ async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], loca
   for (let imgUrl of filtradas.slice(0, 5)) {
     try {
       await new Promise(r => setTimeout(r, 1500));
-      const caption = text ? (text.length > 50 ? text.substring(0, 50) + "..." : text) : "Imagen de producto";
-      const payload = { type: "WhatsApp", contactId: contactId, message: caption, attachments: [imgUrl], direction: "outbound" };
+      const caption = (text && text.length > 5) ? (text.length > 60 ? text.substring(0, 60) + "..." : text) : "Imagen de producto";
+      const payload = { type: "WhatsApp", contactId: contactId, message: caption, text: caption, attachments: [imgUrl], direction: "outbound" };
       if (locationId) payload.locationId = locationId;
       if (conversationId) payload.conversationId = conversationId;
       const res = await fetch("https://services.leadconnectorhq.com/conversations/messages", {
@@ -251,24 +251,21 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
   let info = "";
   if (productoActual) {
     const p = productoActual;
-    if (p.tipo === "combo") {
+    const fullSpecs = "Medidas: " + (p.medidas || "N/A") + "\nMaterial: " + (p.estructura || "N/A") + "\nColores: " + (p.colores || "N/A") + "\nResistencia: " + (p.resistencia_peso || "N/A") + "\nGarantía: " + (p.garantia || "N/A");
+
+    if (esNuevoProducto) {
+       info = "PRODUCTO: " + p.titulo + "\nPrecio: Q" + p.precio + "\nDescripción: " + (p.descripcion || "N/A") + "\n(NOTA: El resto de especificaciones técnicas están ocultas para esta primera respuesta, solo da el resumen)";
+    } else if (p.tipo === "combo") {
       info = "PRODUCTO: " + p.titulo + " (Combo de " + p.conteo_piezas + " piezas)\n" +
              "Precio: Q" + p.precio + "\n" +
              "Descripción: " + (p.descripcion || "N/A") + "\n" +
-             "Medidas: " + (p.medidas || "N/A") + "\n" +
-             "Material: " + (p.estructura || "N/A") + "\n" +
-             "Colores: " + (p.colores || "N/A") + "\n" +
-             "Garantía: " + (p.garantia || "N/A") + "\n" +
+             fullSpecs + "\n" +
              "Componentes del combo:\n" + p.ficha_combinada;
     } else {
       info = "PRODUCTO: " + p.titulo + "\n" +
              "Precio: Q" + p.precio + "\n" +
              "Descripción: " + (p.descripcion || "N/A") + "\n" +
-             "Medidas: " + (p.medidas || "N/A") + "\n" +
-             "Material: " + (p.estructura || "N/A") + "\n" +
-             "Colores: " + (p.colores || "N/A") + "\n" +
-             "Resistencia: " + (p.resistencia_peso || "N/A") + "\n" +
-             "Garantía: " + (p.garantia || "N/A");
+             fullSpecs;
     }
   }
 
@@ -327,7 +324,11 @@ async function moduloCatalogo(message, contact, env, trace) {
     return { text: "¿Busca opciones de " + catDisplayName + " en tamaño " + (genero === "a" ? "mediana" : "mediano") + " o grande? 😉" };
   }
   const filteredList = (cat === "muebles") ? listado : listado.filter(p => normalizarTextoGlobal(p.nombre || p.titulo).includes(cat));
-  const combos = filteredList.filter(p => (p.key || "").startsWith("combo:"));
+  const combos = filteredList.filter(p => {
+    const key = (p.key || "").toLowerCase();
+    const name = (p.nombre || p.titulo || "").toLowerCase();
+    return key.startsWith("combo:") || name.includes("combo") || name.includes("amueblado");
+  });
   let resultados = combos;
   if (tamano === "mediano") resultados = combos.filter(p => (parseFloat(p.precio) || 0) <= 5000);
   else if (tamano === "grande") resultados = combos.filter(p => (parseFloat(p.precio) || 0) > 5000);
