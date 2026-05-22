@@ -121,6 +121,18 @@ async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], loca
   return success;
 }
 
+async function getProductList(env, trace) {
+  try {
+    const raw = await env.PRODUCTS_DB.get("productos:listado");
+    if (!raw) return [];
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    if (trace) trace.error("Error getProductList: ", e);
+    return [];
+  }
+}
+
 async function triggerHandover(contactId, env, trace) {
   try {
     await fetch("https://services.leadconnectorhq.com/contacts/" + contactId, {
@@ -194,8 +206,7 @@ async function obtenerProductoSeguro(id, env) {
 
 async function buscarProductoPorNombreEnMensaje(mensaje, env, trace) {
   try {
-    const listadoRaw = await env.PRODUCTS_DB.get("productos:listado");
-    const listado = JSON.parse(listadoRaw || "[]");
+    const listado = await getProductList(env, trace);
     const m = normalizarTextoGlobal(mensaje);
     const ignorar = ["cocina", "ropero", "cama", "mueble", "amueblado", "comedor", "sofa", "gavetero", "tocador", "cabecera", "mesita", "librera"];
     if (m.length < 4) return null;
@@ -227,7 +238,7 @@ async function buscarProductoPorNombreEnMensaje(mensaje, env, trace) {
   return null;
 }
 
-async function buscarProductoPorCodigoEnMensaje(mensaje, env, trace) { try { const listadoRaw = await env.PRODUCTS_DB.get("productos:listado"); const listado = JSON.parse(listadoRaw || "[]"); const m = mensaje.toUpperCase(); for (const p of listado) { const fullKey = (p.key || "").toUpperCase(); const idFromKey = fullKey.split(':').pop(); const sku = (p.sku || "").toUpperCase(); const codigo = sku || idFromKey; if (codigo && codigo.length > 4 && m.includes(codigo)) { if (trace) trace.add("Producto encontrado por codigo: " + codigo); const kvProd = await obtenerProductoSeguro(codigo, env); return kvProd || { ...p, titulo: p.nombre || p.titulo }; } } } catch (e) { if (trace) trace.error("Error en buscarProductoPorCodigoEnMensaje", e); } return null; }
+async function buscarProductoPorCodigoEnMensaje(mensaje, env, trace) { try { const listado = await getProductList(env, trace); const m = mensaje.toUpperCase(); for (const p of listado) { const fullKey = (p.key || "").toUpperCase(); const idFromKey = fullKey.split(':').pop(); const sku = (p.sku || "").toUpperCase(); const codigo = sku || idFromKey; if (codigo && codigo.length > 4 && m.includes(codigo)) { if (trace) trace.add("Producto encontrado por codigo: " + codigo); const kvProd = await obtenerProductoSeguro(codigo, env); return kvProd || { ...p, titulo: p.nombre || p.titulo }; } } } catch (e) { if (trace) trace.error("Error en buscarProductoPorCodigoEnMensaje", e); } return null; }
 
 function detectarSeleccionNatural(mensaje, lista) {
   if (!Array.isArray(lista) || lista.length === 0) return null;
@@ -319,8 +330,7 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
 
 async function moduloCatalogo(message, contact, env, trace) {
   const m = normalizarEntradaAvanzada(message);
-  const listadoRaw = await env.PRODUCTS_DB.get("productos:listado");
-  const listado = JSON.parse(listadoRaw || "[]");
+  const listado = await getProductList(env, trace);
   const categorias = ["cama", "cocina", "ropero", "sofa", "comedor", "gavetero", "tocador", "cabecera", "mesita", "librera", "mesa", "trinchante", "platera", "mueble", "amueblado"];
   const fUltimaCat = getFieldId(env, "ultima_categoria");
   const fFiltroTamano = getFieldId(env, "filtro_tamano");
