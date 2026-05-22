@@ -253,7 +253,7 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
     const fullSpecs = "Medidas: " + (p.medidas || "N/A") + "\nMaterial: " + (p.estructura || "N/A") + "\nColores: " + (p.colores || "N/A") + "\nResistencia: " + (p.resistencia_peso || "N/A") + "\nGarantía: " + (p.garantia || "N/A");
 
     if (esNuevoProducto) {
-       info = "PRODUCTO: " + p.titulo + "\nPrecio: Q" + p.precio + "\nDescripción: " + (p.descripcion || "N/A") + "\n(NOTA: El resto de especificaciones técnicas están ocultas para esta primera respuesta, solo da el resumen)";
+       info = "PRODUCTO: " + p.titulo + "\nPrecio: Q" + p.precio + "\nDescripción: " + (p.descripcion || "N/A") + (p.tipo === "combo" ? "\nComponentes: " + (p.ficha_combinada || "N/A") : "") + "\n(NOTA: El resto de especificaciones técnicas están ocultas para esta primera respuesta, solo da el resumen)";
     } else if (p.tipo === "combo") {
       info = "PRODUCTO: " + p.titulo + " (Combo de " + p.conteo_piezas + " piezas)\n" +
              "Precio: Q" + p.precio + "\n" +
@@ -273,10 +273,10 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
   const instruccionSaludo = esPrimerMensaje ? "Saluda cordialmente al cliente al inicio." : "NO saludes, ya estamos en una conversación.";
 
   const reglas = [
-    "1. BREVEDAD: Máximo 2 oraciones normalmente.",
-    "2. LISTAS: Usa viñetas atractivas (ej: ✨ o 📍) para características y descripciones.",
-    "3. PRESENTACIÓN: Si esNuevoProducto es TRUE, DEBES resumir la 'Descripción' o 'Componentes' del producto usando una lista atractiva. PROHIBIDO dar Medidas, Material, Colores, Resistencia o Garantía en este mensaje a menos que el cliente lo haya preguntado.",
-    "4. SOLO LO SOLICITADO: No divagues.",
+    "1. BREVEDAD: Máximo 2 oraciones normalmente. Evita saltos de línea excesivos.",
+    "2. LISTAS: Usa viñetas atractivas (ej: ✨ o 📍) para características y componentes.",
+    "3. PRESENTACIÓN: Si esNuevoProducto es TRUE, DEBES resumir la 'Descripción' y mencionar brevemente los 'Componentes' usando una lista atractiva. PROHIBIDO dar Medidas, Material, Colores, Resistencia o Garantía en este primer mensaje.",
+    "4. SOLO LO SOLICITADO: No divagues. Mantén el mensaje compacto.",
     "5. AYUDA: " + (mostrarMenu ? "Al final añade una frase amable indicando que puedes informar sobre: Medidas, Colores, Materiales, Precios, Envío y Cuotas. DEBES poner un doble salto de línea después de esta frase." : "NO añadas temas de ayuda."),
     "6. COMPRA: " + (esNuevoProducto ? "Después de la ayuda, añade una invitación para comprar solicitando estos datos en listado vertical:\n- Nombre\n- DPI\n- Dirección\n- Teléfono" : ""),
     "7. EMOJIS: Máximo uno (fuera de las listas).",
@@ -326,7 +326,7 @@ async function moduloCatalogo(message, contact, env, trace) {
   const combos = filteredList.filter(p => {
     const key = (p.key || "").toLowerCase();
     const name = (p.nombre || p.titulo || "").toLowerCase();
-    return key.startsWith("combo:") || name.includes("combo") || name.includes("amueblado");
+    return key.includes("combo") || name.includes("combo") || name.includes("amueblado");
   });
   let resultados = combos;
   if (tamano === "mediano") resultados = combos.filter(p => (parseFloat(p.precio) || 0) <= 5000);
@@ -440,9 +440,10 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       if (esSeleccionReciente || pideFotos) {
         if (targetProduct.tipo === "combo" && Array.isArray(targetProduct.items) && targetProduct.items.length >= 3) {
           trace.add("Combo con >= 3 componentes detectado. Enviando fotos de componentes.");
-          responseImgs = targetProduct.items.map(item => {
+          const rawImgs = targetProduct.items.map(item => {
              return item.imagen1 || item.imagen2 || item.imagen || item.url || item.link || item.link_publico;
           }).filter(url => typeof url === "string" && url.length > 10 && url.startsWith("http"));
+          responseImgs = [...new Set(rawImgs)];
         } else {
           responseImgs = targetProduct.imagenes || [];
         }
