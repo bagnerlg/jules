@@ -80,7 +80,13 @@ async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], loca
 
   if (text && text.trim()) {
     try {
-      const payload = { type: "WhatsApp", contactId: contactId, message: text, direction: "outbound" };
+      const payload = {
+        type: "WhatsApp",
+        contactId: contactId,
+        message: text,
+        text: { body: text },
+        direction: "outbound"
+      };
       if (locationId) payload.locationId = locationId;
       if (conversationId) payload.conversationId = conversationId;
       const res = await fetch("https://services.leadconnectorhq.com/conversations/messages", {
@@ -95,7 +101,13 @@ async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], loca
   for (let imgUrl of filtradas.slice(0, 5)) {
     try {
       await new Promise(r => setTimeout(r, 1500));
-      const payload = { type: "WhatsApp", contactId: contactId, message: imgUrl, text: imgUrl, direction: "outbound" };
+      const payload = {
+        type: "WhatsApp",
+        contactId: contactId,
+        message: imgUrl,
+        text: { body: imgUrl },
+        direction: "outbound"
+      };
       if (locationId) payload.locationId = locationId;
       if (conversationId) payload.conversationId = conversationId;
       const res = await fetch("https://services.leadconnectorhq.com/conversations/messages", {
@@ -278,12 +290,12 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
     "2. LISTAS: Usa viñetas atractivas (ej: ✨ o 📍) para características y componentes.",
     "3. PRESENTACIÓN: Si esNuevoProducto es TRUE, DEBES resumir la 'Descripción' y mencionar brevemente los 'Componentes' usando una lista atractiva. PROHIBIDO dar Medidas, Material, Colores, Resistencia o Garantía en este primer mensaje a menos que el cliente ya haya preguntado.",
     "4. COMBOS: Si el cliente pide Medidas, Colores o Materiales de un COMBO, debes revisar la información de cada componente en los DATOS PRODUCTO y dar una respuesta detallada para cada uno.",
-    "4. SOLO LO SOLICITADO: No divagues. Mantén el mensaje compacto.",
-    "5. AYUDA: " + (mostrarMenu ? "Al final añade una frase amable indicando que puedes informar sobre: Medidas, Colores, Materiales, Precios, Envío y Cuotas. DEBES poner un doble salto de línea después de esta frase." : "NO añadas temas de ayuda."),
-    "6. COMPRA: " + (esNuevoProducto ? "Después de la ayuda, añade una invitación para comprar solicitando estos datos en listado vertical:\n- Nombre\n- DPI\n- Dirección\n- Teléfono" : ""),
-    "7. EMOJIS: Máximo uno (fuera de las listas).",
-    "8. CIERRE: NUNCA pidas datos si el cliente tiene dudas. Responde primero la duda.",
-    "9. SALUDO: " + instruccionSaludo
+    "5. SOLO LO SOLICITADO: No divagues. Mantén el mensaje compacto.",
+    "6. AYUDA: " + (mostrarMenu ? "Al final añade una frase amable indicando que puedes informar sobre: Medidas, Colores, Materiales, Precios, Envío y Cuotas. DEBES poner un doble salto de línea después de esta frase." : "NO añadas temas de ayuda."),
+    "7. COMPRA: " + (esNuevoProducto ? "Después de la ayuda, añade una invitación para comprar solicitando estos datos en listado vertical:\n- Nombre\n- DPI\n- Dirección\n- Teléfono" : ""),
+    "8. EMOJIS: Máximo uno (fuera de las listas).",
+    "9. CIERRE: NUNCA pidas datos si el cliente tiene dudas. Responde primero la duda.",
+    "10. SALUDO: " + instruccionSaludo
   ];
 
   const prompt = "Eres un asesor amable de La Mueblería. REGLAS:\n" + reglas.join("\n") + "\n\nIMPORTANTE: esNuevoProducto es " + esNuevoProducto + ". Si es TRUE, presenta el producto con un resumen atractivo.\n\nDATOS PRODUCTO:\n" + info + "\n\nMensaje del cliente: " + message;
@@ -365,6 +377,9 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     }
     const message = limpiarMensaje(rawMsg);
     const norm = normalizarTextoGlobal(message);
+    const pideFotos = /fotos?|imagenes?|verlo|verla|mostrar|enviame|fts/i.test(message);
+    const pideCompra = /\b(quiero comprar|lo quiero|la quiero|comprarlo|comprarla|quiero el pedido|hacer el pedido|quiero ordenar|proceder con la compra|donde deposito|metodo de pago|cuenta para depositar|como pago|pagar)\b/i.test(norm);
+    const pideInformacion = /\b(medida|dimension|precio|vale|cuesta|costo|valor|material|color|envio|flete|cuota|pago|informacion|detalle|fotos|verlo|verla|especificacion|garantia|resiste)/i.test(norm);
     const fEstado = getFieldId(env, "estado_actual");
     const fMenuEnviado = getFieldId(env, "menu_ayuda_enviado");
     const currentEstado = getCustomFieldValue(contact, fEstado) || "nuevo";
@@ -398,14 +413,14 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       }
     }
 
-    // 4. Persistencia: Si pide información y ya tenemos un producto, lo mantenemos
+    // 4. Persistencia: Si pide información y ya tenemos un producto, lo mantenemos RIGIDAMENTE
     if (!targetProduct && prevProductoId) {
        targetProduct = await obtenerProductoSeguro(prevProductoId, env);
        if (targetProduct) trace.add("Persistencia activa: " + targetProduct.titulo);
     }
 
-    // 5. Búsqueda por nombre (Último recurso, solo fuera de catálogo para evitar switches accidentales)
-    if (!targetProduct && currentEstado !== "catalogo") {
+    // 5. Búsqueda por nombre (Último recurso, NO se activa si ya tenemos producto y pide información)
+    if (!targetProduct && currentEstado !== "catalogo" && !pideInformacion) {
       targetProduct = await buscarProductoPorNombreEnMensaje(message, env, trace);
     }
 
@@ -421,9 +436,6 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     }
 
     let responseText, responseImgs = [], estadoPropuesto = currentEstado === "nuevo" ? "interaccion" : currentEstado;
-    const pideFotos = /fotos?|imagenes?|verlo|verla|mostrar|enviame|fts/i.test(message);
-    const pideCompra = /\b(quiero comprar|lo quiero|la quiero|comprarlo|comprarla|quiero el pedido|hacer el pedido|quiero ordenar|proceder con la compra|donde deposito|metodo de pago|cuenta para depositar|como pago|pagar)\b/i.test(norm);
-    const pideInformacion = /\b(medida|cuanto mide|dimensi|precio|cuanto vale|cuanto cuesta|costo|valor|material|color|envio|flete|cuota|pago|informaci|detalle|mas fotos|verlo|verla|especificaciones|garantia|resiste)\b/i.test(norm);
     const pideDuda = /\b(unidad|separado|aparte|solo la|solo el|venden solo|venden solamente)\b/i.test(norm);
     const pideGarantia = /\b(compre|adquiri|garantia|rompio|arruino|dañado|defectuoso|malo|reclamo|fallo|falla)\b/i.test(norm);
     const esAfirmacionGenerica = /^(ok|vale|esta bien|muy bien|si gracias|de acuerdo|perfecto|entendido|así es|esta ok|está ok|si|sii|por favor|porfavor|claro|envia|mandame)$/i.test(norm.trim());
@@ -476,7 +488,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
         await setCustomFieldValue(contact, fComboPadre, targetProduct.id, env, trace);
         if (Array.isArray(targetProduct.items)) { await setCustomFieldValue(contact, fComboComp, JSON.stringify(targetProduct.items.map(i => i.id)), env, trace); }
       }
-    } else if (pideCatalogo || tieneCategoria || /\b(mediano|mediana|grande|pequeño|pequeña)\b/i.test(norm)) {
+    } else if ((pideCatalogo || tieneCategoria || /\b(mediano|mediana|grande|pequeño|pequeña)\b/i.test(norm)) && !pideInformacion) {
       trace.add("[ROUTER] Ruta: Catálogo / Categoría.");
       estadoPropuesto = "catalogo";
       const resCat = await moduloCatalogo(message, contact, env, trace);
