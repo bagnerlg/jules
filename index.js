@@ -197,10 +197,11 @@ async function buscarProductoPorNombreEnMensaje(mensaje, env, trace) {
       let score = 0;
       const palabras = nombre.split(" ");
       for (let pal of palabras) {
-        if (pal.length > 3 && m.includes(pal)) score += pal.length;
+        if (pal.length > 4 && m.includes(pal)) score += pal.length;
       }
 
-      if (score > maxScore && score >= 8) {
+      // Aumentamos el umbral para evitar que palabras comunes como "cocina" activen el cambio
+      if (score > maxScore && score >= 12) {
         maxScore = score;
         mejorMatch = p;
       }
@@ -381,22 +382,31 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     let targetProduct = null;
     let esSeleccionReciente = false;
 
+    // 1. Detección por Meta/Anuncio
     if (metaMatch) targetProduct = await obtenerProductoSeguro(metaMatch[1], env);
+
+    // 2. Detección por Código/SKU en mensaje
     if (!targetProduct) targetProduct = await buscarProductoPorCodigoEnMensaje(rawMsg, env, trace);
 
-    let selIdx = detectarSeleccionNatural(message, carrito);
-    if (selIdx !== null && carrito[selIdx]) {
-      const prodFromSel = await obtenerProductoSeguro(carrito[selIdx].key.split(':').pop(), env);
-      if (prodFromSel) { targetProduct = prodFromSel; esSeleccionReciente = true; }
+    // 3. Selección natural (numérica) sobre el carrito/catálogo
+    if (!targetProduct) {
+      let selIdx = detectarSeleccionNatural(message, carrito);
+      if (selIdx !== null && carrito[selIdx]) {
+        const prodId = carrito[selIdx].key.split(":").pop();
+        const prodFromSel = await obtenerProductoSeguro(prodId, env);
+        if (prodFromSel) { targetProduct = prodFromSel; esSeleccionReciente = true; }
+      }
     }
 
+    // 4. Persistencia: Si pide información y ya tenemos un producto, lo mantenemos
+    if (!targetProduct && prevProductoId) {
+       targetProduct = await obtenerProductoSeguro(prevProductoId, env);
+       if (targetProduct) trace.add("Persistencia activa: " + targetProduct.titulo);
+    }
+
+    // 5. Búsqueda por nombre (Último recurso, solo fuera de catálogo para evitar switches accidentales)
     if (!targetProduct && currentEstado !== "catalogo") {
       targetProduct = await buscarProductoPorNombreEnMensaje(message, env, trace);
-    }
-
-    if (!targetProduct) {
-      const pid = getCustomFieldValue(contact, fProductoId);
-      if (pid) targetProduct = await obtenerProductoSeguro(pid, env);
     }
 
     if (targetProduct) {
