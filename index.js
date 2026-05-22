@@ -1,11 +1,10 @@
 /* =========================================================
-   SISTEMA DE MUEBLERÍA IA - Versión Maestro Integrada (Final V4)
-   - Fix: Saludos limpios y reducción de emojis
-   - Fix: Selección numérica mejorada (ej: "La 4", "4")
-   - Fix: Fallback de catálogo (si no hay tamaño, muestra generales)
-   - Fix: Persistencia de producto (mantiene el mueble seleccionado)
+   SISTEMA DE MUEBLERÍA IA - Versión Maestro Integrada (Final V5)
+   - Fix: listado.filter is not a function (Safe retrieval)
+   - Fix: Context lock (Prioritizes technical info over catalog)
+   - Fix: Strict Combo filtering in catalog
+   - Fix: Info hierarchy (Specs hidden on first discovery)
    - Envío de imágenes individual para WhatsApp
-   - 100% Compatible con Cloudflare (Sin comillas invertidas)
 ========================================================= */
 
 const ordenEstados = { nuevo: 0, catalogo: 1, producto: 2, precio: 3, objecion: 4, cierre: 5 };
@@ -386,7 +385,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     const message = limpiarMensaje(rawMsg);
     const norm = normalizarTextoGlobal(message);
 
-    // Intenciones (Declaradas al inicio para evitar ReferenceErrors)
+    // Intenciones
     const pideFotos = /fotos?|imagenes?|verlo|verla|mostrar|enviame|fts/i.test(message);
     const pideCompra = /\b(quiero comprar|lo quiero|la quiero|comprarlo|comprarla|quiero el pedido|hacer el pedido|quiero ordenar|proceder con la compra|donde deposito|metodo de pago|cuenta para depositar|como pago|pagar)\b/i.test(norm);
     const pideInformacion = /(medida|dimension|precio|vale|cuesta|costo|valor|material|color|envio|flete|cuota|pago|informacion|detalle|fotos|verlo|verla|especificacion|garantia|resiste)/i.test(norm);
@@ -414,22 +413,22 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     let targetProduct = null;
     let esSeleccionReciente = false;
 
-    // Prioridad 1: Persistencia RÍGIDA si está preguntando detalles
-    if (prevProductoId && pideInformacion) {
+    // 1. Persistencia RÍGIDA
+    if (prevProductoId && (pideInformacion || esAfirmacionGenerica)) {
       targetProduct = await obtenerProductoSeguro(prevProductoId, env);
-      if (targetProduct) trace.add("Locked to persistence (Info request): " + targetProduct.titulo);
+      if (targetProduct) trace.add("Locked to persistence: " + targetProduct.titulo);
     }
 
-    // Prioridad 2: Detección por Meta/Anuncio (Solo si no hay lock de info)
+    // 2. Detección por Meta/Anuncio
     if (!targetProduct && metaMatch) {
        targetProduct = await obtenerProductoSeguro(metaMatch[1], env);
        if (targetProduct) await setCustomFieldValue(contact, getFieldId(env, "Anuncio"), metaMatch[1], env, trace);
     }
 
-    // Prioridad 3: Detección por Código/SKU en mensaje
+    // 3. Detección por Código/SKU
     if (!targetProduct) targetProduct = await buscarProductoPorCodigoEnMensaje(rawMsg, env, trace);
 
-    // Prioridad 4: Selección natural (numérica) sobre el carrito/catálogo
+    // 4. Selección natural
     if (!targetProduct) {
       let selIdx = detectarSeleccionNatural(message, carrito);
       if (selIdx !== null && carrito[selIdx]) {
@@ -439,14 +438,13 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       }
     }
 
-    // Prioridad 5: Persistencia normal (Si no hay nada nuevo detectado)
+    // 5. Persistencia normal
     if (!targetProduct && prevProductoId) {
        targetProduct = await obtenerProductoSeguro(prevProductoId, env);
-       if (targetProduct) trace.add("Persistence context: " + targetProduct.titulo);
     }
 
-    // Prioridad 6: Búsqueda por nombre (Último recurso)
-    if (!targetProduct && currentEstado !== "catalogo" && !pideInformacion) {
+    // 6. Búsqueda por nombre
+    if (!targetProduct && !pideCatalogo && !pideInformacion) {
       targetProduct = await buscarProductoPorNombreEnMensaje(message, env, trace);
     }
 
@@ -455,13 +453,13 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       await setCustomFieldValue(contact, fProductoId, targetProduct.id, env, trace);
     }
 
-    if (pideGarantia) { trace.add("[ROUTER] Intención: Garantía. Iniciando traspaso."); await triggerHandover(contactId, env, trace); return; }
+    if (pideGarantia) { await triggerHandover(contactId, env, trace); return; }
 
     let responseText, responseImgs = [], estadoPropuesto = currentEstado === "nuevo" ? "interaccion" : currentEstado;
 
-    // LÓGICA DE ENRUTAMIENTO (Router)
+    // ROUTER
     if (targetProduct && !pideCatalogo && !pideDuda) {
-      trace.add("[ROUTER] Ruta: Ficha de Producto / Cierre. Producto: " + targetProduct.titulo);
+      trace.add("[ROUTER] Ruta: Ficha de Producto.");
       estadoPropuesto = pideCompra ? "cierre" : "producto";
       const tituloProd = normalizarTextoGlobal(targetProduct.titulo || "");
       const cats = ["cama", "cocina", "ropero", "sofa", "comedor", "gavetero", "tocador", "cabecera", "mesita", "librera", "mesa"];
@@ -482,15 +480,13 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
         }
       }
 
-      if (pideFotos && responseImgs.length === 0) { await triggerHandover(contactId, env, trace); return; }
-
       const coverage = await obtenerRespuestaCoverage(rawMsg, env, trace);
       const esNuevoProducto = targetProduct.id !== prevProductoId && !pideInformacion;
-      trace.add("Llamando a OpenAI (Producto)...");
       responseText = await callVendedorElitePro(message, contact, env, targetProduct, pideCompra, coverage, esSoloSaludo, esPrimerMensaje, yaEnvioMenu, esNuevoProducto);
 
-      const containsHelpTopics = /Medidas|Colores|Materiales|Precios|Envío|Cuotas/i.test(responseText);
-      if ((esNuevoProducto || !yaEnvioMenu) && containsHelpTopics) { await setCustomFieldValue(contact, fMenuEnviado, "true", env, trace); }
+      if ((esNuevoProducto || !yaEnvioMenu) && /Medidas|Colores|Materiales|Precios|Envío|Cuotas/i.test(responseText)) {
+        await setCustomFieldValue(contact, fMenuEnviado, "true", env, trace);
+      }
 
       await setCustomFieldValue(contact, getFieldId(env, "total_pedido"), targetProduct.precio || 0, env, trace);
       if (targetProduct.tipo === "combo") {
@@ -498,28 +494,26 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
         if (Array.isArray(targetProduct.items)) await setCustomFieldValue(contact, fComboComp, JSON.stringify(targetProduct.items.map(i => i.id)), env, trace);
       }
     } else if ((pideCatalogo || tieneCategoria || /\b(mediano|mediana|grande|pequeño|pequeña)\b/i.test(norm)) && !pideInformacion) {
-      trace.add("[ROUTER] Ruta: Catálogo / Categoría.");
+      trace.add("[ROUTER] Ruta: Catálogo.");
       estadoPropuesto = "catalogo";
       const resCat = await moduloCatalogo(message, contact, env, trace);
       if (resCat.text) await sendMessageToGHL(contactId, resCat.text, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
       if (resCat.handover) { await triggerHandover(contactId, env, trace); return; }
       if (resCat.text) return;
     } else {
-      trace.add("[ROUTER] Ruta: Respuesta General (OpenAI).");
+      trace.add("[ROUTER] Ruta: General.");
       const coverage = await obtenerRespuestaCoverage(rawMsg, env, trace);
       responseText = await callVendedorElitePro(message, contact, env, targetProduct, pideCompra, coverage, esSoloSaludo, esPrimerMensaje, yaEnvioMenu, false);
     }
-    if (responseText && responseText.includes("[TRANSFERIR]")) { trace.add("IA pidió transferencia."); await triggerHandover(contactId, env, trace); return; }
+
+    if (responseText && responseText.includes("[TRANSFERIR]")) { await triggerHandover(contactId, env, trace); return; }
     await setCustomFieldValue(contact, fEstado, estadoPropuesto, env, trace);
     const caption = targetProduct ? (targetProduct.titulo || "").toUpperCase() : "";
     let finalMsg = responseText;
-    if (caption && !responseText.toUpperCase().includes(caption)) {
-      finalMsg = "*" + caption + "*\n\n" + responseText;
-    }
-    const locationId = env.GHL_LOCATION_ID || contact.locationId || null;
-    await sendMessageToGHL(contactId, finalMsg, env, trace, responseImgs, locationId, conversationId);
+    if (caption && !responseText.toUpperCase().includes(caption)) finalMsg = "*" + caption + "*\n\n" + responseText;
+    await sendMessageToGHL(contactId, finalMsg, env, trace, responseImgs, (env.GHL_LOCATION_ID || contact.locationId), conversationId);
     if (pideCompra && !pideInformacion) await triggerHandover(contactId, env, trace);
-  } catch (err) { if (trace) trace.error("Error processFullFlow: ", err); await triggerHandover(contactId, env, trace); }
+  } catch (err) { trace.error("Error processFullFlow: ", err); await triggerHandover(contactId, env, trace); }
 }
 
 export default {
@@ -532,13 +526,8 @@ export default {
       const body = JSON.parse(rawBody);
       contactId = body.contact_id || body.contact?.id;
       if (!contactId) return new Response("OK");
-
       const contact = await getContactFromGHL(contactId, env, trace);
-      if (!contact || contact.tags?.includes("humano") || contact.assignedTo) {
-        trace.flush();
-        return new Response("OK");
-      }
-
+      if (!contact || contact.tags?.includes("humano") || contact.assignedTo) { trace.flush(); return new Response("OK"); }
       const rawMsg = body.message?.body || body.message?.text || "";
       const convId = body.conversation_id || body.message?.conversationId;
       const bKey = "buffer:" + contactId;
@@ -547,32 +536,19 @@ export default {
       const old = await env.PRODUCTS_DB.get(bKey) || "";
       await env.PRODUCTS_DB.put(bKey, old + " " + rawMsg, { expirationTtl: 60 });
       await env.PRODUCTS_DB.put(lKey, now.toString(), { expirationTtl: 60 });
-
       ctx.waitUntil((async () => {
         try {
           await new Promise(r => setTimeout(r, 2500));
           const latestTs = await env.PRODUCTS_DB.get(lKey);
           if (latestTs === now.toString()) {
-            trace.add("Procesando mensaje consolidado...");
             const consolidatedMsg = await env.PRODUCTS_DB.get(bKey);
             await env.PRODUCTS_DB.delete(bKey);
             await env.PRODUCTS_DB.delete(lKey);
             await processFullFlow(consolidatedMsg, contactId, contact, env, trace, convId);
-            trace.add("Flujo completado.");
           }
-        } catch (err) {
-          trace.error("Error en waitUntil: ", err);
-        } finally {
-          trace.flush();
-        }
+        } catch (err) { trace.error("Error en waitUntil: ", err); } finally { trace.flush(); }
       })());
-
       return new Response("OK");
-    } catch (e) {
-      trace.error("Error crítico en fetch: ", e);
-      if (contactId) { try { await triggerHandover(contactId, env, trace); } catch (err) {} }
-      trace.flush();
-      return new Response("OK");
-    }
+    } catch (e) { trace.error("Error crítico en fetch: ", e); if (contactId) { try { await triggerHandover(contactId, env, trace); } catch (err) {} } trace.flush(); return new Response("OK"); }
   }
 };
