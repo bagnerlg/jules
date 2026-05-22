@@ -197,6 +197,7 @@ async function buscarProductoPorNombreEnMensaje(mensaje, env, trace) {
     const listadoRaw = await env.PRODUCTS_DB.get("productos:listado");
     const listado = JSON.parse(listadoRaw || "[]");
     const m = normalizarTextoGlobal(mensaje);
+    const ignorar = ["cocina", "ropero", "cama", "mueble", "amueblado", "comedor", "sofa", "gavetero", "tocador", "cabecera", "mesita", "librera"];
     if (m.length < 4) return null;
 
     let mejorMatch = null;
@@ -209,11 +210,10 @@ async function buscarProductoPorNombreEnMensaje(mensaje, env, trace) {
       let score = 0;
       const palabras = nombre.split(" ");
       for (let pal of palabras) {
-        if (pal.length > 4 && m.includes(pal)) score += pal.length;
+        if (pal.length > 4 && !ignorar.includes(pal) && m.includes(pal)) score += pal.length;
       }
 
-      // Aumentamos el umbral para evitar que palabras comunes como "cocina" activen el cambio
-      if (score > maxScore && score >= 12) {
+      if (score > maxScore && score >= 10) {
         maxScore = score;
         mejorMatch = p;
       }
@@ -249,14 +249,17 @@ function detectarSeleccionNatural(mensaje, lista) {
   const scores = lista.map((item, index) => {
     const textoBase = normalizarTextoGlobal(item.nombre || item.titulo || "");
     let score = 0;
+    const ignorar = ["cocina", "ropero", "cama", "mueble", "amueblado", "comedor", "sofa", "gavetero", "tocador", "cabecera", "mesita", "librera"];
     const pesos = { "arisona": 60, "frostmont": 60, "wengue": 60, "slah": 60, "estandar": 30 };
     Object.keys(pesos).forEach(p => { if (m.includes(p) && textoBase.includes(p)) score += pesos[p]; });
-    m.split(/\s+/).forEach(word => { if (word.length > 3 && textoBase.includes(word)) score += 15; });
+    m.split(/\s+/).forEach(word => {
+      if (word.length >= 5 && !ignorar.includes(word) && textoBase.includes(word)) score += 15;
+    });
     return { index, score };
   });
 
   const ganador = scores.sort((a, b) => b.score - a.score)[0];
-  return (ganador && ganador.score >= 10) ? ganador.index : null;
+  return (ganador && ganador.score >= 15) ? ganador.index : null;
 }
 
 async function callVendedorElitePro(message, contact, env, productoActual, intencionCierre, coverage, esSoloSaludo = false, esPrimerMensaje = false, yaEnvioMenu = false, esNuevoProducto = false) {
@@ -373,10 +376,10 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     const message = limpiarMensaje(rawMsg);
     const norm = normalizarTextoGlobal(message);
 
-    // Intenciones
+    // Intenciones (Declaradas al inicio para evitar ReferenceErrors)
     const pideFotos = /fotos?|imagenes?|verlo|verla|mostrar|enviame|fts/i.test(message);
     const pideCompra = /\b(quiero comprar|lo quiero|la quiero|comprarlo|comprarla|quiero el pedido|hacer el pedido|quiero ordenar|proceder con la compra|donde deposito|metodo de pago|cuenta para depositar|como pago|pagar)\b/i.test(norm);
-    const pideInformacion = /\b(medida|dimension|precio|vale|cuesta|costo|valor|material|color|envio|flete|cuota|pago|informacion|detalle|fotos|verlo|verla|especificacion|garantia|resiste)/i.test(norm);
+    const pideInformacion = /(medida|dimension|precio|vale|cuesta|costo|valor|material|color|envio|flete|cuota|pago|informacion|detalle|fotos|verlo|verla|especificacion|garantia|resiste)/i.test(norm);
     const pideCatalogo = /catalogo|modelos|opciones|variedad|otros|ver mas|muestreme|mostrame|muestreme mas|oferta|ofertas|otra|otras|venden|vende|que mas/i.test(norm);
     const tieneCategoria = /cama|ropero|cocina|mueble|amueblado|comedor|mesa|gavetero|tocador|trinchante|platera|marquesa|cabecera|mesita|librera/i.test(norm);
     const pideDuda = /\b(unidad|separado|aparte|solo la|solo el|venden solo|venden solamente)\b/i.test(norm);
@@ -401,14 +404,22 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     let targetProduct = null;
     let esSeleccionReciente = false;
 
-    // LÓGICA DE DETECCIÓN DE PRODUCTO (Cadena de prioridad)
-    if (metaMatch) {
+    // Prioridad 1: Persistencia RÍGIDA si está preguntando detalles
+    if (prevProductoId && pideInformacion) {
+      targetProduct = await obtenerProductoSeguro(prevProductoId, env);
+      if (targetProduct) trace.add("Locked to persistence (Info request): " + targetProduct.titulo);
+    }
+
+    // Prioridad 2: Detección por Meta/Anuncio (Solo si no hay lock de info)
+    if (!targetProduct && metaMatch) {
        targetProduct = await obtenerProductoSeguro(metaMatch[1], env);
        if (targetProduct) await setCustomFieldValue(contact, getFieldId(env, "Anuncio"), metaMatch[1], env, trace);
     }
 
+    // Prioridad 3: Detección por Código/SKU en mensaje
     if (!targetProduct) targetProduct = await buscarProductoPorCodigoEnMensaje(rawMsg, env, trace);
 
+    // Prioridad 4: Selección natural (numérica) sobre el carrito/catálogo
     if (!targetProduct) {
       let selIdx = detectarSeleccionNatural(message, carrito);
       if (selIdx !== null && carrito[selIdx]) {
@@ -418,17 +429,19 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       }
     }
 
+    // Prioridad 5: Persistencia normal (Si no hay nada nuevo detectado)
     if (!targetProduct && prevProductoId) {
        targetProduct = await obtenerProductoSeguro(prevProductoId, env);
-       if (targetProduct) trace.add("Persistencia activa: " + targetProduct.titulo);
+       if (targetProduct) trace.add("Persistence context: " + targetProduct.titulo);
     }
 
+    // Prioridad 6: Búsqueda por nombre (Último recurso)
     if (!targetProduct && currentEstado !== "catalogo" && !pideInformacion) {
       targetProduct = await buscarProductoPorNombreEnMensaje(message, env, trace);
     }
 
     if (targetProduct) {
-      trace.add("Producto objetivo: " + targetProduct.titulo);
+      trace.add("Target Product: " + targetProduct.titulo);
       await setCustomFieldValue(contact, fProductoId, targetProduct.id, env, trace);
     }
 
