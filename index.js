@@ -95,17 +95,16 @@ async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], loca
   for (let imgUrl of filtradas.slice(0, 5)) {
     try {
       await new Promise(r => setTimeout(r, 1500));
-      const caption = (text && text.length > 5) ? (text.length > 60 ? text.substring(0, 60) + "..." : text) : "Imagen de producto";
-      const payload = { type: "WhatsApp", contactId: contactId, message: caption, text: caption, attachments: [imgUrl], direction: "outbound" };
+      const payload = { type: "WhatsApp", contactId: contactId, message: imgUrl, text: imgUrl, direction: "outbound" };
       if (locationId) payload.locationId = locationId;
       if (conversationId) payload.conversationId = conversationId;
       const res = await fetch("https://services.leadconnectorhq.com/conversations/messages", {
         method: "POST", headers: { "Authorization": "Bearer " + env.GHL_API_KEY, "Content-Type": "application/json", "Version": "2021-04-15" },
         body: JSON.stringify(payload)
       });
-      if (res.ok) { success = true; if (trace) trace.add("[API GHL] Adjunto enviado: " + imgUrl); }
-      else if (trace) { const errTxt = await res.text(); trace.add("[API GHL] Error enviando adjunto (" + res.status + "): " + errTxt); }
-    } catch (err) { if (trace) trace.error("Excepción enviando imagen: ", err); }
+      if (res.ok) { success = true; if (trace) trace.add("[API GHL] URL enviado: " + imgUrl); }
+      else if (trace) { const errTxt = await res.text(); trace.add("[API GHL] Error enviando URL (" + res.status + "): " + errTxt); }
+    } catch (err) { if (trace) trace.error("Excepción enviando URL: ", err); }
   }
   return success;
 }
@@ -438,7 +437,18 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
         else if (catProd === "cocina") { await addToWorkflow(contactId, "a2fca18f-d0c7-4c97-8185-7926540bf2de", env, trace); }
       }
 
-      responseImgs = (esSeleccionReciente || pideFotos) ? (targetProduct.imagenes || []) : [];
+      if (esSeleccionReciente || pideFotos) {
+        if (targetProduct.tipo === "combo" && Array.isArray(targetProduct.items) && targetProduct.items.length >= 3) {
+          trace.add("Combo con >= 3 componentes detectado. Enviando fotos de componentes.");
+          responseImgs = targetProduct.items.map(item => {
+             return item.imagen1 || item.imagen2 || item.imagen || item.url || item.link || item.link_publico;
+          }).filter(url => typeof url === "string" && url.length > 10 && url.startsWith("http"));
+        } else {
+          responseImgs = targetProduct.imagenes || [];
+        }
+      } else {
+        responseImgs = [];
+      }
       if (pideFotos && responseImgs.length === 0) { await triggerHandover(contactId, env, trace); return; }
       const coverage = await obtenerRespuestaCoverage(rawMsg, env, trace);
       const esNuevoProducto = targetProduct.id !== prevProductoId;
