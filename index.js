@@ -370,16 +370,21 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
   try {
     trace.add("Iniciando processFullFlow...");
     const metaMatch = rawMsg.match(/\b(B[A-Z0-9]{5,})\b/i);
-    if (metaMatch && metaMatch[1]) {
-      const detectedCode = metaMatch[1];
-      trace.add("Código detectado: " + detectedCode);
-      await setCustomFieldValue(contact, getFieldId(env, "Anuncio"), detectedCode, env, trace);
-    }
     const message = limpiarMensaje(rawMsg);
     const norm = normalizarTextoGlobal(message);
+
+    // Intenciones
     const pideFotos = /fotos?|imagenes?|verlo|verla|mostrar|enviame|fts/i.test(message);
     const pideCompra = /\b(quiero comprar|lo quiero|la quiero|comprarlo|comprarla|quiero el pedido|hacer el pedido|quiero ordenar|proceder con la compra|donde deposito|metodo de pago|cuenta para depositar|como pago|pagar)\b/i.test(norm);
     const pideInformacion = /\b(medida|dimension|precio|vale|cuesta|costo|valor|material|color|envio|flete|cuota|pago|informacion|detalle|fotos|verlo|verla|especificacion|garantia|resiste)/i.test(norm);
+    const pideCatalogo = /catalogo|modelos|opciones|variedad|otros|ver mas|muestreme|mostrame|muestreme mas|oferta|ofertas|otra|otras|venden|vende|que mas/i.test(norm);
+    const tieneCategoria = /cama|ropero|cocina|mueble|amueblado|comedor|mesa|gavetero|tocador|trinchante|platera|marquesa|cabecera|mesita|librera/i.test(norm);
+    const pideDuda = /\b(unidad|separado|aparte|solo la|solo el|venden solo|venden solamente)\b/i.test(norm);
+    const pideGarantia = /\b(compre|adquiri|garantia|rompio|arruino|dañado|defectuoso|malo|reclamo|fallo|falla)\b/i.test(norm);
+    const esAfirmacionGenerica = /^(ok|vale|esta bien|muy bien|si gracias|de acuerdo|perfecto|entendido|así es|esta ok|está ok|si|sii|por favor|porfavor|claro|envia|mandame)$/i.test(norm.trim());
+    const esSoloSaludo = /^(hola|buen|buena|buenas|tarde|dia|dias|noche|noches|buena tarde|buen dia|buenos dias|buenas noches|buenas tardes|\s)+$/i.test(norm.trim());
+
+    // Campos GHL
     const fEstado = getFieldId(env, "estado_actual");
     const fMenuEnviado = getFieldId(env, "menu_ayuda_enviado");
     const currentEstado = getCustomFieldValue(contact, fEstado) || "nuevo";
@@ -389,7 +394,6 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     const prevProductoId = getCustomFieldValue(contact, fProductoId);
     const fUltimaCat = getFieldId(env, "ultima_categoria");
     const fCatInteres = getFieldId(env, "categoria_interes");
-    const fTamanoCat = getFieldId(env, "tamaño_categoria");
     const fComboPadre = getFieldId(env, "GHL_combo_padre_FIELD_ID");
     const fComboComp = getFieldId(env, "GHL_combo_componentes_FIELD_ID");
 
@@ -397,29 +401,28 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     let targetProduct = null;
     let esSeleccionReciente = false;
 
-    // 1. Detección por Meta/Anuncio
-    if (metaMatch) targetProduct = await obtenerProductoSeguro(metaMatch[1], env);
+    // LÓGICA DE DETECCIÓN DE PRODUCTO (Cadena de prioridad)
+    if (metaMatch) {
+       targetProduct = await obtenerProductoSeguro(metaMatch[1], env);
+       if (targetProduct) await setCustomFieldValue(contact, getFieldId(env, "Anuncio"), metaMatch[1], env, trace);
+    }
 
-    // 2. Detección por Código/SKU en mensaje
     if (!targetProduct) targetProduct = await buscarProductoPorCodigoEnMensaje(rawMsg, env, trace);
 
-    // 3. Selección natural (numérica) sobre el carrito/catálogo
     if (!targetProduct) {
       let selIdx = detectarSeleccionNatural(message, carrito);
       if (selIdx !== null && carrito[selIdx]) {
         const prodId = carrito[selIdx].key.split(":").pop();
-        const prodFromSel = await obtenerProductoSeguro(prodId, env);
-        if (prodFromSel) { targetProduct = prodFromSel; esSeleccionReciente = true; }
+        targetProduct = await obtenerProductoSeguro(prodId, env);
+        if (targetProduct) esSeleccionReciente = true;
       }
     }
 
-    // 4. Persistencia: Si pide información y ya tenemos un producto, lo mantenemos RIGIDAMENTE
     if (!targetProduct && prevProductoId) {
        targetProduct = await obtenerProductoSeguro(prevProductoId, env);
        if (targetProduct) trace.add("Persistencia activa: " + targetProduct.titulo);
     }
 
-    // 5. Búsqueda por nombre (Último recurso, NO se activa si ya tenemos producto y pide información)
     if (!targetProduct && currentEstado !== "catalogo" && !pideInformacion) {
       targetProduct = await buscarProductoPorNombreEnMensaje(message, env, trace);
     }
@@ -427,26 +430,13 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     if (targetProduct) {
       trace.add("Producto objetivo: " + targetProduct.titulo);
       await setCustomFieldValue(contact, fProductoId, targetProduct.id, env, trace);
-    } else {
-      const pid = getCustomFieldValue(contact, fProductoId);
-      if (pid) {
-        targetProduct = await obtenerProductoSeguro(pid, env);
-        if (targetProduct) trace.add("Producto recuperado de persistencia: " + targetProduct.titulo);
-      }
     }
-
-    let responseText, responseImgs = [], estadoPropuesto = currentEstado === "nuevo" ? "interaccion" : currentEstado;
-    const pideDuda = /\b(unidad|separado|aparte|solo la|solo el|venden solo|venden solamente)\b/i.test(norm);
-    const pideGarantia = /\b(compre|adquiri|garantia|rompio|arruino|dañado|defectuoso|malo|reclamo|fallo|falla)\b/i.test(norm);
-    const esAfirmacionGenerica = /^(ok|vale|esta bien|muy bien|si gracias|de acuerdo|perfecto|entendido|así es|esta ok|está ok|si|sii|por favor|porfavor|claro|envia|mandame)$/i.test(norm.trim());
-    const pideCatalogo = /catalogo|modelos|opciones|variedad|otros|ver mas|muestreme|mostrame|muestreme mas|oferta|ofertas|otra|otras|venden|vende|que mas/i.test(norm);
-    const tieneCategoria = /cama|ropero|cocina|mueble|amueblado|comedor|mesa|gavetero|tocador|trinchante|platera|marquesa|cabecera|mesita|librera/i.test(norm);
-    const esSoloSaludo = /^(hola|buen|buena|buenas|tarde|dia|dias|noche|noches|buena tarde|buen dia|buenos dias|buenas noches|buenas tardes|\s)+$/i.test(norm.trim());
 
     if (pideGarantia) { trace.add("[ROUTER] Intención: Garantía. Iniciando traspaso."); await triggerHandover(contactId, env, trace); return; }
 
-    // LÓGICA DE FLUJO: Priorizar el producto si ya existe uno identificado
-    // Solo entramos al catálogo si el usuario no tiene un producto seleccionado O si pide el catálogo explícitamente.
+    let responseText, responseImgs = [], estadoPropuesto = currentEstado === "nuevo" ? "interaccion" : currentEstado;
+
+    // LÓGICA DE ENRUTAMIENTO (Router)
     if (targetProduct && !pideCatalogo && !pideDuda) {
       trace.add("[ROUTER] Ruta: Ficha de Producto / Cierre. Producto: " + targetProduct.titulo);
       estadoPropuesto = pideCompra ? "cierre" : "producto";
@@ -456,50 +446,45 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       if (catProd) { await setCustomFieldValue(contact, fUltimaCat, catProd, env, trace); await setCustomFieldValue(contact, fCatInteres, catProd, env, trace); }
 
       if ((pideFotos || pideCompra || esAfirmacionGenerica) && (!targetProduct.imagenes || targetProduct.imagenes.length === 0)) {
-        if (catProd === "ropero") { await addToWorkflow(contactId, "9b36093c-f008-4261-b2ba-bc54a0cdd9c9", env, trace); }
-        else if (catProd === "cocina") { await addToWorkflow(contactId, "a2fca18f-d0c7-4c97-8185-7926540bf2de", env, trace); }
+        if (catProd === "ropero") await addToWorkflow(contactId, "9b36093c-f008-4261-b2ba-bc54a0cdd9c9", env, trace);
+        else if (catProd === "cocina") await addToWorkflow(contactId, "a2fca18f-d0c7-4c97-8185-7926540bf2de", env, trace);
       }
 
       if (esSeleccionReciente || pideFotos) {
         if (targetProduct.tipo === "combo" && Array.isArray(targetProduct.items) && targetProduct.items.length >= 3) {
-          trace.add("Combo con >= 3 componentes detectado. Enviando fotos de componentes.");
-          const rawImgs = targetProduct.items.map(item => {
-             return item.imagen1 || item.imagen2 || item.imagen || item.url || item.link || item.link_publico;
-          }).filter(url => typeof url === "string" && url.length > 10 && url.startsWith("http"));
+          const rawImgs = targetProduct.items.map(item => item.imagen1 || item.imagen2 || item.imagen || item.url || item.link || item.link_publico).filter(url => typeof url === "string" && url.length > 10 && url.startsWith("http"));
           responseImgs = [...new Set(rawImgs)];
         } else {
           responseImgs = targetProduct.imagenes || [];
         }
-      } else {
-        responseImgs = [];
       }
+
       if (pideFotos && responseImgs.length === 0) { await triggerHandover(contactId, env, trace); return; }
+
       const coverage = await obtenerRespuestaCoverage(rawMsg, env, trace);
       const esNuevoProducto = targetProduct.id !== prevProductoId && !pideInformacion;
-      trace.add("Llamando a OpenAI (Producto)... " + (esNuevoProducto ? "[NUEVO]" : "[INFO/EXISTENTE]"));
+      trace.add("Llamando a OpenAI (Producto)...");
       responseText = await callVendedorElitePro(message, contact, env, targetProduct, pideCompra, coverage, esSoloSaludo, esPrimerMensaje, yaEnvioMenu, esNuevoProducto);
+
       const containsHelpTopics = /Medidas|Colores|Materiales|Precios|Envío|Cuotas/i.test(responseText);
-      if ((esNuevoProducto || !yaEnvioMenu) && containsHelpTopics) {
-        await setCustomFieldValue(contact, fMenuEnviado, "true", env, trace);
-      }
-      await setCustomFieldValue(contact, fProductoId, targetProduct.id, env, trace);
+      if ((esNuevoProducto || !yaEnvioMenu) && containsHelpTopics) { await setCustomFieldValue(contact, fMenuEnviado, "true", env, trace); }
+
       await setCustomFieldValue(contact, getFieldId(env, "total_pedido"), targetProduct.precio || 0, env, trace);
       if (targetProduct.tipo === "combo") {
         await setCustomFieldValue(contact, fComboPadre, targetProduct.id, env, trace);
-        if (Array.isArray(targetProduct.items)) { await setCustomFieldValue(contact, fComboComp, JSON.stringify(targetProduct.items.map(i => i.id)), env, trace); }
+        if (Array.isArray(targetProduct.items)) await setCustomFieldValue(contact, fComboComp, JSON.stringify(targetProduct.items.map(i => i.id)), env, trace);
       }
     } else if ((pideCatalogo || tieneCategoria || /\b(mediano|mediana|grande|pequeño|pequeña)\b/i.test(norm)) && !pideInformacion) {
       trace.add("[ROUTER] Ruta: Catálogo / Categoría.");
       estadoPropuesto = "catalogo";
       const resCat = await moduloCatalogo(message, contact, env, trace);
-      if (resCat.text) await sendMessageToGHL(contactId, resCat.text, env, trace, []);
+      if (resCat.text) await sendMessageToGHL(contactId, resCat.text, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
       if (resCat.handover) { await triggerHandover(contactId, env, trace); return; }
       if (resCat.text) return;
     } else {
       trace.add("[ROUTER] Ruta: Respuesta General (OpenAI).");
       const coverage = await obtenerRespuestaCoverage(rawMsg, env, trace);
-      trace.add("Llamando a OpenAI (General)...");
-      responseText = await callVendedorElitePro(message, contact, env, null, pideCompra, coverage, esSoloSaludo, esPrimerMensaje, yaEnvioMenu, false);
+      responseText = await callVendedorElitePro(message, contact, env, targetProduct, pideCompra, coverage, esSoloSaludo, esPrimerMensaje, yaEnvioMenu, false);
     }
     if (responseText && responseText.includes("[TRANSFERIR]")) { trace.add("IA pidió transferencia."); await triggerHandover(contactId, env, trace); return; }
     await setCustomFieldValue(contact, fEstado, estadoPropuesto, env, trace);
