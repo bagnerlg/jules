@@ -152,11 +152,11 @@ async function obtenerProductoSeguro(id, env) {
       titulo: meta?.titulo || ("Combo " + rid),
       precio: meta?.precio || items.reduce((t, item) => t + ((parseFloat(item.p.precio) || 0) * item.q), 0),
       descripcion: meta?.descripcion || "",
-      medidas: meta?.medidas || items.map(i => i.p.medidas).filter(x => x && x !== "N/A").join(" | "),
-      estructura: meta?.estructura || items.map(i => i.p.estructura).filter(x => x && x !== "N/A").join(" | "),
-      colores: meta?.colores || items.map(i => i.p.colores).filter(x => x && x !== "N/A").join(", "),
-      resistencia_peso: meta?.resistencia_peso || items.map(i => i.p.resistencia_peso).filter(x => x && x !== "N/A").join(" | "),
-      garantia: meta?.garantia || items.map(i => i.p.garantia).filter(x => x && x !== "N/A").join(" | "),
+      medidas: meta?.medidas || items.map(i => (i.p.titulo || i.p.nombre) + ": " + (i.p.medidas || "N/A")).filter(x => !x.endsWith(": N/A")).join("\n"),
+      estructura: meta?.estructura || items.map(i => (i.p.titulo || i.p.nombre) + ": " + (i.p.estructura || "N/A")).filter(x => !x.endsWith(": N/A")).join("\n"),
+      colores: meta?.colores || items.map(i => (i.p.titulo || i.p.nombre) + ": " + (i.p.colores || "N/A")).filter(x => !x.endsWith(": N/A")).join("\n"),
+      resistencia_peso: meta?.resistencia_peso || items.map(i => (i.p.titulo || i.p.nombre) + ": " + (i.p.resistencia_peso || "N/A")).filter(x => !x.endsWith(": N/A")).join("\n"),
+      garantia: meta?.garantia || items.map(i => (i.p.titulo || i.p.nombre) + ": " + (i.p.garantia || "N/A")).filter(x => !x.endsWith(": N/A")).join("\n"),
       imagenes: [
         meta?.imagen1, meta?.imagen2,
         ...items.flatMap(i => [i.p.imagen1, i.p.imagen2, i.p.imagen, i.p.url, i.p.link, i.p.link_publico])
@@ -275,7 +275,8 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
   const reglas = [
     "1. BREVEDAD: Máximo 2 oraciones normalmente. Evita saltos de línea excesivos.",
     "2. LISTAS: Usa viñetas atractivas (ej: ✨ o 📍) para características y componentes.",
-    "3. PRESENTACIÓN: Si esNuevoProducto es TRUE, DEBES resumir la 'Descripción' y mencionar brevemente los 'Componentes' usando una lista atractiva. PROHIBIDO dar Medidas, Material, Colores, Resistencia o Garantía en este primer mensaje.",
+    "3. PRESENTACIÓN: Si esNuevoProducto es TRUE, DEBES resumir la 'Descripción' y mencionar brevemente los 'Componentes' usando una lista atractiva. PROHIBIDO dar Medidas, Material, Colores, Resistencia o Garantía en este primer mensaje a menos que el cliente ya haya preguntado.",
+    "4. COMBOS: Si el cliente pide Medidas, Colores o Materiales de un COMBO, debes revisar la información de cada componente en los DATOS PRODUCTO y dar una respuesta detallada para cada uno.",
     "4. SOLO LO SOLICITADO: No divagues. Mantén el mensaje compacto.",
     "5. AYUDA: " + (mostrarMenu ? "Al final añade una frase amable indicando que puedes informar sobre: Medidas, Colores, Materiales, Precios, Envío y Cuotas. DEBES poner un doble salto de línea después de esta frase." : "NO añadas temas de ayuda."),
     "6. COMPRA: " + (esNuevoProducto ? "Después de la ayuda, añade una invitación para comprar solicitando estos datos en listado vertical:\n- Nombre\n- DPI\n- Dirección\n- Teléfono" : ""),
@@ -452,8 +453,8 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       }
       if (pideFotos && responseImgs.length === 0) { await triggerHandover(contactId, env, trace); return; }
       const coverage = await obtenerRespuestaCoverage(rawMsg, env, trace);
-      const esNuevoProducto = targetProduct.id !== prevProductoId;
-      trace.add("Llamando a OpenAI (Producto)... " + (esNuevoProducto ? "[NUEVO]" : ""));
+      const esNuevoProducto = targetProduct.id !== prevProductoId && !pideInformacion;
+      trace.add("Llamando a OpenAI (Producto)... " + (esNuevoProducto ? "[NUEVO]" : "[INFO/EXISTENTE]"));
       responseText = await callVendedorElitePro(message, contact, env, targetProduct, pideCompra, coverage, esSoloSaludo, esPrimerMensaje, yaEnvioMenu, esNuevoProducto);
       const containsHelpTopics = /Medidas|Colores|Materiales|Precios|Envío|Cuotas/i.test(responseText);
       if ((esNuevoProducto || !yaEnvioMenu) && containsHelpTopics) {
