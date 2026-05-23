@@ -1,6 +1,6 @@
 /* =========================================================
-   SISTEMA DE MUEBLERÍA IA - Versión Maestro Integrada (Final V5)
-   - Fix: listado.filter is not a function (Safe retrieval)
+   SISTEMA DE MUEBLERÍA IA - Versión Maestro Integrada (Final V5.1)
+   - Fix: Repetitive greetings and help menu (6+ topics)
    - Fix: Context lock (Prioritizes technical info over catalog)
    - Fix: Strict Combo filtering in catalog
    - Fix: Info hierarchy (Specs hidden on first discovery)
@@ -294,37 +294,38 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
     }
   }
 
+  // Reducir frecuencia de menú de ayuda
   const mostrarMenu = !!productoActual && !esSoloSaludo && (!yaEnvioMenu || esNuevoProducto);
 
-  const instruccionSaludo = esPrimerMensaje ? "Saluda cordialmente al cliente al inicio." : "NO saludes, ya estamos en una conversación.";
+  const instruccionSaludo = esPrimerMensaje ? "Saluda amablemente al inicio (ej: ¡Hola!, Buen día)." : "ESTÁ PROHIBIDO SALUDAR. Ya estamos conversando, ve directo al punto. No digas ¡Hola!, ni nada similar.";
 
   const reglas = [
-    "1. BREVEDAD: Máximo 2 oraciones normalmente. Evita saltos de línea excesivos.",
-    "2. LISTAS: Usa viñetas atractivas (ej: ✨ o 📍) para características y componentes.",
-    "3. PRESENTACIÓN: Si esNuevoProducto es TRUE, DEBES resumir la 'Descripción' y mencionar brevemente los 'Componentes' usando una lista atractiva. PROHIBIDO dar Medidas, Material, Colores, Resistencia o Garantía en este primer mensaje a menos que el cliente ya haya preguntado.",
-    "4. COMBOS: Si el cliente pide Medidas, Colores o Materiales de un COMBO, debes revisar la información de cada componente en los DATOS PRODUCTO y dar una respuesta detallada para cada uno.",
-    "5. SOLO LO SOLICITADO: No divagues. Mantén el mensaje compacto.",
-    "6. AYUDA: " + (mostrarMenu ? "Al final añade una frase amable indicando que puedes informar sobre: Medidas, Colores, Materiales, Precios, Envío y Cuotas. DEBES poner un doble salto de línea después de esta frase." : "NO añadas temas de ayuda."),
-    "7. COMPRA: " + (esNuevoProducto ? "Después de la ayuda, añade una invitación para comprar solicitando estos datos en listado vertical:\n- Nombre\n- DPI\n- Dirección\n- Teléfono" : ""),
-    "8. EMOJIS: Máximo uno (fuera de las listas).",
-    "9. CIERRE: NUNCA pidas datos si el cliente tiene dudas. Responde primero la duda.",
+    "1. BREVEDAD EXTREMA: Máximo 2 oraciones. Evita rellenos innecesarios.",
+    "2. LISTAS: Usa viñetas (✨ o 📍) para características y componentes.",
+    "3. PRESENTACIÓN: Si esNuevoProducto es TRUE, resume la 'Descripción' y los 'Componentes'. OCULTA Medidas, Material, Colores, Resistencia o Garantía.",
+    "4. COMBOS: Si piden Medidas/Colores/Materiales de un COMBO, da los datos de CADA componente detalladamente.",
+    "5. SOLO LO SOLICITADO: No repitas información que el cliente no pidió.",
+    "6. AYUDA: " + (mostrarMenu ? "Opcional: Menciona brevemente que puedes dar detalles de Medidas, Colores, etc. Varía la frase. No uses siempre la misma lista de 6 temas." : "NO añadas temas de ayuda."),
+    "7. COMPRA: " + (esNuevoProducto ? "Al final, invita a comprar solicitando: Nombre, DPI, Dirección y Teléfono." : ""),
+    "8. EMOJIS: Máximo uno.",
+    "9. CIERRE: No pidas datos si hay dudas pendientes.",
     "10. SALUDO: " + instruccionSaludo
   ];
 
-  const prompt = "Eres un asesor amable de La Mueblería. REGLAS:\n" + reglas.join("\n") + "\n\nIMPORTANTE: esNuevoProducto es " + esNuevoProducto + ". Si es TRUE, presenta el producto con un resumen atractivo.\n\nDATOS PRODUCTO:\n" + info + "\n\nMensaje del cliente: " + message;
+  const prompt = "Eres un asesor de La Mueblería. REGLAS:\n" + reglas.join("\n") + "\n\nIMPORTANTE: esNuevoProducto=" + esNuevoProducto + ". " + instruccionSaludo + "\n\nDATOS PRODUCTO:\n" + info + "\n\nMensaje del cliente: " + message;
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + env.OPENAI_API_KEY },
-      body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "system", content: "Asesor de muebles breve y amable." }, { role: "user", content: prompt }], temperature: 0.1 })
+      body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "system", content: "Asesor breve. Prohibido saludar si no es el primer mensaje." }, { role: "user", content: prompt }], temperature: 0.1 })
     });
     const data = await res.json();
     let content = data.choices[0].message.content;
     if (!mostrarMenu) {
-      content = content.replace(/.*(informar sobre|ayudarte con|detalles sobre).*(Medidas|Colores|Materiales|Precios|Envío|Cuotas).*/gi, "").trim();
+      content = content.replace(/.*(informar sobre|ayudarte con|detalles sobre|puedo darle|puedo informarle).*(Medidas|Colores|Materiales|Precios|Envío|Cuotas).*/gi, "").trim();
     }
     return content;
-  } catch (err) { return "Con gusto le ayudo. Permítame un momento para confirmarle la información exacta."; }
+  } catch (err) { return "Con gusto le ayudo. Permítame un momento."; }
 }
 
 async function moduloCatalogo(message, contact, env, trace) {
