@@ -1,13 +1,14 @@
 /* =========================================================
-   SISTEMA DE MUEBLERÍA IA - Versión Maestro Integrada (Final V5.1)
-   - Fix: Repetitive greetings and help menu (6+ topics)
+   SISTEMA DE MUEBLERÍA IA - Versión Maestro Integrada (Final V5.2)
+   - Fix: Category switch confirmation (Prevents accidental jumps)
+   - Fix: Repetitive greetings and help menu
    - Fix: Context lock (Prioritizes technical info over catalog)
    - Fix: Strict Combo filtering in catalog
    - Fix: Info hierarchy (Specs hidden on first discovery)
    - Envío de imágenes individual para WhatsApp
 ========================================================= */
 
-const ordenEstados = { nuevo: 0, catalogo: 1, producto: 2, precio: 3, objecion: 4, cierre: 5 };
+const ordenEstados = { nuevo: 0, catalogo: 1, producto: 2, precio: 3, objecion: 4, cierre: 5, confirmacion_categoria: 6 };
 
 function getFieldId(env, key) {
   const variations = [
@@ -272,7 +273,7 @@ function detectarSeleccionNatural(mensaje, lista) {
   return (ganador && ganador.score >= 15) ? ganador.index : null;
 }
 
-async function callVendedorElitePro(message, contact, env, productoActual, intencionCierre, coverage, esSoloSaludo = false, esPrimerMensaje = false, yaEnvioMenu = false, esNuevoProducto = false) {
+async function callVendedorElitePro(message, contact, env, productoActual, intencionCierre, coverage, esSoloSaludo = false, esPrimerMensaje = false, yaEnvioMenu = false, esNuevoProducto = false, confirmandoCat = null) {
   let info = "";
   if (productoActual) {
     const p = productoActual;
@@ -294,30 +295,32 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
     }
   }
 
-  // Reducir frecuencia de menú de ayuda
   const mostrarMenu = !!productoActual && !esSoloSaludo && (!yaEnvioMenu || esNuevoProducto);
+  const instruccionSaludo = esPrimerMensaje ? "Saluda amablemente al inicio." : "ESTÁ PROHIBIDO SALUDAR. Ve directo al punto.";
 
-  const instruccionSaludo = esPrimerMensaje ? "Saluda amablemente al inicio (ej: ¡Hola!, Buen día)." : "ESTÁ PROHIBIDO SALUDAR. Ya estamos conversando, ve directo al punto. No digas ¡Hola!, ni nada similar.";
-
-  const reglas = [
-    "1. BREVEDAD EXTREMA: Máximo 2 oraciones. Evita rellenos innecesarios.",
-    "2. LISTAS: Usa viñetas (✨ o 📍) para características y componentes.",
-    "3. PRESENTACIÓN: Si esNuevoProducto es TRUE, resume la 'Descripción' y los 'Componentes'. OCULTA Medidas, Material, Colores, Resistencia o Garantía.",
-    "4. COMBOS: Si piden Medidas/Colores/Materiales de un COMBO, da los datos de CADA componente detalladamente.",
-    "5. SOLO LO SOLICITADO: No repitas información que el cliente no pidió.",
-    "6. AYUDA: " + (mostrarMenu ? "Opcional: Menciona brevemente que puedes dar detalles de Medidas, Colores, etc. Varía la frase. No uses siempre la misma lista de 6 temas." : "NO añadas temas de ayuda."),
-    "7. COMPRA: " + (esNuevoProducto ? "Al final, invita a comprar solicitando: Nombre, DPI, Dirección y Teléfono." : ""),
+  let reglas = [
+    "1. BREVEDAD EXTREMA: Máximo 2 oraciones.",
+    "2. LISTAS: Usa viñetas (✨ o 📍).",
+    "3. PRESENTACIÓN: Si esNuevoProducto=TRUE, resume Descripción y Componentes. Oculta Medidas/Material.",
+    "4. COMBOS: Da datos de CADA componente detalladamente si preguntan detalles.",
+    "5. SOLO LO SOLICITADO: No repitas información innecesaria.",
+    "6. AYUDA: " + (mostrarMenu ? "Menciona opcionalmente que puedes dar detalles de Medidas, Colores, etc." : "NO añadas ayuda."),
+    "7. COMPRA: " + (esNuevoProducto ? "Invita a comprar solicitando: Nombre, DPI, Dirección y Teléfono." : ""),
     "8. EMOJIS: Máximo uno.",
-    "9. CIERRE: No pidas datos si hay dudas pendientes.",
+    "9. CIERRE: No pidas datos si hay dudas.",
     "10. SALUDO: " + instruccionSaludo
   ];
 
-  const prompt = "Eres un asesor de La Mueblería. REGLAS:\n" + reglas.join("\n") + "\n\nIMPORTANTE: esNuevoProducto=" + esNuevoProducto + ". " + instruccionSaludo + "\n\nDATOS PRODUCTO:\n" + info + "\n\nMensaje del cliente: " + message;
+  if (confirmandoCat) {
+    reglas.push("11. CONFIRMACIÓN: El cliente mencionó '" + confirmandoCat + "'. Pregunta EXACTAMENTE si desea ver esa categoría o seguir explorando el producto actual: " + (productoActual ? productoActual.titulo : "el actual") + ".");
+  }
+
+  const prompt = "Asesor de muebles. REGLAS:\n" + reglas.join("\n") + "\n\nDATOS PRODUCTO:\n" + info + "\n\nMensaje del cliente: " + message;
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + env.OPENAI_API_KEY },
-      body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "system", content: "Asesor breve. Prohibido saludar si no es el primer mensaje." }, { role: "user", content: prompt }], temperature: 0.1 })
+      body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "system", content: "Asesor breve." }, { role: "user", content: prompt }], temperature: 0.1 })
     });
     const data = await res.json();
     let content = data.choices[0].message.content;
@@ -325,11 +328,11 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
       content = content.replace(/.*(informar sobre|ayudarte con|detalles sobre|puedo darle|puedo informarle).*(Medidas|Colores|Materiales|Precios|Envío|Cuotas).*/gi, "").trim();
     }
     return content;
-  } catch (err) { return "Con gusto le ayudo. Permítame un momento."; }
+  } catch (err) { return "Con gusto le ayudo."; }
 }
 
-async function moduloCatalogo(message, contact, env, trace) {
-  const m = normalizarEntradaAvanzada(message);
+async function moduloCatalogo(message, contact, env, trace, forcingCat = null) {
+  const m = forcingCat || normalizarEntradaAvanzada(message);
   const listado = await getProductList(env, trace);
   const categorias = ["cama", "cocina", "ropero", "sofa", "comedor", "gavetero", "tocador", "cabecera", "mesita", "librera", "mesa", "trinchante", "platera", "mueble", "amueblado"];
   const fUltimaCat = getFieldId(env, "ultima_categoria");
@@ -391,16 +394,20 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     const pideCompra = /\b(quiero comprar|lo quiero|la quiero|comprarlo|comprarla|quiero el pedido|hacer el pedido|quiero ordenar|proceder con la compra|donde deposito|metodo de pago|cuenta para depositar|como pago|pagar)\b/i.test(norm);
     const pideInformacion = /(medida|dimension|precio|vale|cuesta|costo|valor|material|color|envio|flete|cuota|pago|informacion|detalle|fotos|verlo|verla|especificacion|garantia|resiste)/i.test(norm);
     const pideCatalogo = /catalogo|modelos|opciones|variedad|otros|ver mas|muestreme|mostrame|muestreme mas|oferta|ofertas|otra|otras|venden|vende|que mas/i.test(norm);
-    const tieneCategoria = /cama|ropero|cocina|mueble|amueblado|comedor|mesa|gavetero|tocador|trinchante|platera|marquesa|cabecera|mesita|librera/i.test(norm);
+    const categoriasList = ["cama", "ropero", "cocina", "mueble", "amueblado", "comedor", "mesa", "gavetero", "tocador", "trinchante", "platera", "marquesa", "cabecera", "mesita", "librera"];
+    const catMencionada = categoriasList.find(c => norm.includes(c));
+    const tieneCategoria = !!catMencionada;
     const pideDuda = /\b(unidad|separado|aparte|solo la|solo el|venden solo|venden solamente)\b/i.test(norm);
     const pideGarantia = /\b(compre|adquiri|garantia|rompio|arruino|dañado|defectuoso|malo|reclamo|fallo|falla)\b/i.test(norm);
-    const esAfirmacionGenerica = /^(ok|vale|esta bien|muy bien|si gracias|de acuerdo|perfecto|entendido|así es|esta ok|está ok|si|sii|por favor|porfavor|claro|envia|mandame)$/i.test(norm.trim());
+    const esAfirmacionGenerica = /^(ok|vale|esta bien|muy bien|si gracias|de acuerdo|perfecto|entendido|así es|esta ok|está ok|si|sii|por favor|porfavor|claro|envia|mandame|ofertas|oferta)$/i.test(norm.trim());
     const esSoloSaludo = /^(hola|buen|buena|buenas|tarde|dia|dias|noche|noches|buena tarde|buen dia|buenos dias|buenas noches|buenas tardes|\s)+$/i.test(norm.trim());
 
     // Campos GHL
     const fEstado = getFieldId(env, "estado_actual");
     const fMenuEnviado = getFieldId(env, "menu_ayuda_enviado");
+    const fPropuestaCat = getFieldId(env, "categoria_propuesta");
     const currentEstado = getCustomFieldValue(contact, fEstado) || "nuevo";
+    const propCat = getCustomFieldValue(contact, fPropuestaCat);
     const yaEnvioMenu = getCustomFieldValue(contact, fMenuEnviado) === "true";
     const esPrimerMensaje = (currentEstado === "nuevo");
     const fProductoId = getFieldId(env, "producto_id");
@@ -415,7 +422,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     let esSeleccionReciente = false;
 
     // 1. Persistencia RÍGIDA
-    if (prevProductoId && (pideInformacion || esAfirmacionGenerica)) {
+    if (prevProductoId && (pideInformacion || esAfirmacionGenerica || pideFotos) && currentEstado !== "confirmacion_categoria") {
       targetProduct = await obtenerProductoSeguro(prevProductoId, env);
       if (targetProduct) trace.add("Locked to persistence: " + targetProduct.titulo);
     }
@@ -445,7 +452,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     }
 
     // 6. Búsqueda por nombre
-    if (!targetProduct && !pideCatalogo && !pideInformacion) {
+    if (!targetProduct && !pideCatalogo && !pideInformacion && !tieneCategoria) {
       targetProduct = await buscarProductoPorNombreEnMensaje(message, env, trace);
     }
 
@@ -458,7 +465,29 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
 
     let responseText, responseImgs = [], estadoPropuesto = currentEstado === "nuevo" ? "interaccion" : currentEstado;
 
-    // ROUTER
+    // ROUTER Lógica de confirmación de categoría
+    if (currentEstado === "confirmacion_categoria" && esAfirmacionGenerica) {
+        trace.add("[ROUTER] Confirmación categoría: AFIRMADO.");
+        await setCustomFieldValue(contact, fPropuestaCat, null, env, trace);
+        const resCat = await moduloCatalogo(message, contact, env, trace, propCat);
+        if (resCat.text) await sendMessageToGHL(contactId, resCat.text, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
+        await setCustomFieldValue(contact, fEstado, "catalogo", env, trace);
+        return;
+    }
+
+    if (targetProduct && tieneCategoria && !pideInformacion && !pideFotos) {
+        const tituloProd = normalizarTextoGlobal(targetProduct.titulo || "");
+        if (!tituloProd.includes(catMencionada)) {
+            trace.add("[ROUTER] Cambio de categoría detectado -> Confirmando.");
+            await setCustomFieldValue(contact, fPropuestaCat, catMencionada, env, trace);
+            estadoPropuesto = "confirmacion_categoria";
+            responseText = await callVendedorElitePro(message, contact, env, targetProduct, false, null, esSoloSaludo, esPrimerMensaje, yaEnvioMenu, false, catMencionada);
+            await setCustomFieldValue(contact, fEstado, estadoPropuesto, env, trace);
+            await sendMessageToGHL(contactId, responseText, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
+            return;
+        }
+    }
+
     if (targetProduct && !pideCatalogo && !pideDuda) {
       trace.add("[ROUTER] Ruta: Ficha de Producto.");
       estadoPropuesto = pideCompra ? "cierre" : "producto";
