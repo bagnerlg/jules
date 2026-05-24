@@ -10,212 +10,175 @@ export default {
       "https://script.google.com/macros/s/AKfycbwQPiGNy1jQ-dmq-xz1_ZcPxtQJdTqyVptIXnPKzwi53j5SZ30N3gwdkZsGm7raVXF4/exec";
 
     const FX_RATE = 7.8; // USD to QTZ
+    const CACHE_KEY = "dashboard:cache:v1";
+    const CACHE_TTL = 60; // 1 minute in seconds
 
     // =====================================================
     // FECHA HOY
     // =====================================================
 
     const now = new Date();
-
-    const today =
-      now.toISOString().split("T")[0];
+    const today = now.toISOString().split("T")[0];
 
     // =====================================================
-    // CONSULTA VT / BO
+    // CACHE LOGIC
     // =====================================================
+    const url = new URL(request.url);
+    const forceRefresh = url.searchParams.get("refresh") === "true";
 
-    let vt = [];
-    let bo = [];
-
-    try {
-      const gasRes = await fetch(GAS_URL + "?ruta=");
-      const gasData = await gasRes.json();
-      vt = gasData.vt || [];
-      bo = gasData.bo || [];
-    } catch (e) {
-      console.error("Error fetching GAS data:", e);
+    let dashboardData = null;
+    if (!forceRefresh && env.PRODUCTS_DB) {
+      const cached = await env.PRODUCTS_DB.get(CACHE_KEY, "json");
+      if (cached && cached.today === today) {
+        dashboardData = cached;
+      }
     }
 
-    // =====================================================
-    // VT HOY
-    // =====================================================
+    if (!dashboardData) {
+      // =====================================================
+      // CONSULTA VT / BO
+      // =====================================================
 
-    const vtHoy =
-      vt.filter(r => {
+      let vt = [];
+      let bo = [];
 
+      try {
+        const gasRes = await fetch(GAS_URL + "?ruta=");
+        const gasData = await gasRes.json();
+        vt = gasData.vt || [];
+        bo = gasData.bo || [];
+      } catch (e) {
+        console.error("Error fetching GAS data:", e);
+      }
+
+      // =====================================================
+      // VT HOY
+      // =====================================================
+
+      const vtHoy = vt.filter(r => {
         if (!r.Fecha) return false;
-
-        const f =
-          new Date(r.Fecha)
-            .toISOString()
-            .split("T")[0];
-
+        const f = new Date(r.Fecha).toISOString().split("T")[0];
         return f === today;
-
       });
 
-    // =====================================================
-    // BO HOY
-    // =====================================================
+      // =====================================================
+      // BO HOY
+      // =====================================================
 
-    const boHoy =
-      bo.filter(r => {
-
+      const boHoy = bo.filter(r => {
         if (!r.FechaCreado) return false;
-
-        const f =
-          new Date(r.FechaCreado)
-            .toISOString()
-            .split("T")[0];
-
+        const f = new Date(r.FechaCreado).toISOString().split("T")[0];
         return f === today;
-
       });
 
-    // =====================================================
-    // BO ANTERIOR
-    // =====================================================
+      // =====================================================
+      // BO ANTERIOR
+      // =====================================================
 
-    const boAnterior =
-      bo.filter(r => {
-
+      const boAnterior = bo.filter(r => {
         if (!r.FechaCreado) return false;
-
-        const f =
-          new Date(r.FechaCreado)
-            .toISOString()
-            .split("T")[0];
-
+        const f = new Date(r.FechaCreado).toISOString().split("T")[0];
         return f < today;
-
       });
 
-    // =====================================================
-    // TOTAL VT HOY
-    // =====================================================
+      // =====================================================
+      // TOTALS
+      // =====================================================
 
-    const totalVT =
-      vtHoy.reduce((acc, row) => {
+      const totalVT = vtHoy.reduce((acc, row) => acc + (Number(row.QMonto) || 0), 0);
+      const totalBOHoy = boHoy.reduce((acc, row) => acc + (Number(row.TPedidoQTZ) || 0), 0);
+      const totalBOAnterior = boAnterior.reduce((acc, row) => acc + (Number(row.TPedidoQTZ) || 0), 0);
+      const totalGeneral = totalBOHoy + totalBOAnterior;
 
-        return acc +
-          (Number(row.QMonto) || 0);
+      // =====================================================
+      // META ADS DATA FETCH HELPER
+      // =====================================================
 
-      }, 0);
+      async function getFBData(accountId, fallbackLimit) {
+        let results = {
+          spendToday: 0,
+          saldoPendiente: 0,
+          limiteCorte: Number(fallbackLimit || 0)
+        };
 
-    // =====================================================
-    // TOTAL BO HOY
-    // =====================================================
+        if (!accountId) return results;
 
-    const totalBOHoy =
-      boHoy.reduce((acc, row) => {
+        // 1. GASTO HOY (Insights)
+        try {
+          const insightsURL =
+            `https://graph.facebook.com/v23.0/act_${accountId}/insights` +
+            `?fields=spend` +
+            `&time_range={'since':'${today}','until':'${today}'}` +
+            `&access_token=${env.ACCESS_TOKEN}`;
 
-        return acc +
-          (Number(row.TPedidoQTZ) || 0);
+          const res = await fetch(insightsURL);
+          const data = await res.json();
+          results.spendToday = Number(data?.data?.[0]?.spend || 0);
+        } catch (e) { console.error(`Error spend act_${accountId}:`, e); }
 
-      }, 0);
+        // 2. BALANCE PENDIENTE (Account)
+        try {
+          const accountURL =
+            `https://graph.facebook.com/v23.0/act_${accountId}` +
+            `?fields=balance` +
+            `&access_token=${env.ACCESS_TOKEN}`;
 
-    // =====================================================
-    // TOTAL BO ANTERIOR
-    // =====================================================
+          const res = await fetch(accountURL);
+          const data = await res.json();
+          results.saldoPendiente = Number(data.balance || 0) / 100;
+        } catch (e) { console.error(`Error balance act_${accountId}:`, e); }
 
-    const totalBOAnterior =
-      boAnterior.reduce((acc, row) => {
+        // 3. UMBRAL DE PAGO (Payment Cycle)
+        try {
+          const cycleURL =
+            `https://graph.facebook.com/v23.0/act_${accountId}` +
+            `?fields=adspaymentcycle` +
+            `&access_token=${env.ACCESS_TOKEN}`;
 
-        return acc +
-          (Number(row.TPedidoQTZ) || 0);
+          const res = await fetch(cycleURL);
+          const data = await res.json();
+          const threshold = data.adspaymentcycle?.data?.[0]?.threshold_amount;
+          if (threshold) {
+            results.limiteCorte = Number(threshold) / 100;
+          }
+        } catch (e) { console.error(`Error threshold act_${accountId}:`, e); }
 
-      }, 0);
+        return results;
+      }
 
-    // =====================================================
-    // VT + BO HOY
-    // =====================================================
+      // FETCH ACCOUNTS
+      const acc1 = await getFBData(env.AD_ACCOUNT_ID, env.LIMITE_Q || 6918);
+      const acc2 = await getFBData(env.AD_ACCOUNT_ID_2, env.LIMITE_USD || 0);
 
-    const totalGeneral =
-      totalBOHoy + totalBOAnterior;
-
-    // =====================================================
-    // META ADS DATA FETCH HELPER
-    // =====================================================
-
-    async function getFBData(accountId, fallbackLimit) {
-      let results = {
-        spendToday: 0,
-        saldoPendiente: 0,
-        limiteCorte: Number(fallbackLimit || 0)
+      dashboardData = {
+        today,
+        updatedAt: new Date().toLocaleString("es-GT", { timeZone: "America/Guatemala" }),
+        totalVT,
+        totalBOHoy,
+        totalBOAnterior,
+        totalGeneral,
+        spend1: acc1.spendToday,
+        balance1: acc1.saldoPendiente,
+        limit1: acc1.limiteCorte,
+        spend2: acc2.spendToday * FX_RATE,
+        balance2: acc2.saldoPendiente * FX_RATE,
+        limit2: acc2.limiteCorte * FX_RATE
       };
 
-      if (!accountId) return results;
-
-      // 1. GASTO HOY (Insights)
-      try {
-        const insightsURL =
-          `https://graph.facebook.com/v23.0/act_${accountId}/insights` +
-          `?fields=spend` +
-          `&time_range={'since':'${today}','until':'${today}'}` +
-          `&access_token=${env.ACCESS_TOKEN}`;
-
-        const res = await fetch(insightsURL);
-        const data = await res.json();
-        results.spendToday = Number(data?.data?.[0]?.spend || 0);
-      } catch (e) { console.error(`Error spend act_${accountId}:`, e); }
-
-      // 2. BALANCE PENDIENTE (Account)
-      try {
-        const accountURL =
-          `https://graph.facebook.com/v23.0/act_${accountId}` +
-          `?fields=balance` +
-          `&access_token=${env.ACCESS_TOKEN}`;
-
-        const res = await fetch(accountURL);
-        const data = await res.json();
-        results.saldoPendiente = Number(data.balance || 0) / 100;
-      } catch (e) { console.error(`Error balance act_${accountId}:`, e); }
-
-      // 3. UMBRAL DE PAGO (Payment Cycle)
-      try {
-        const cycleURL =
-          `https://graph.facebook.com/v23.0/act_${accountId}` +
-          `?fields=adspaymentcycle` +
-          `&access_token=${env.ACCESS_TOKEN}`;
-
-        const res = await fetch(cycleURL);
-        const data = await res.json();
-        const threshold = data.adspaymentcycle?.data?.[0]?.threshold_amount;
-        if (threshold) {
-          results.limiteCorte = Number(threshold) / 100;
-        }
-      } catch (e) { console.error(`Error threshold act_${accountId}:`, e); }
-
-      return results;
+      if (env.PRODUCTS_DB) {
+        await env.PRODUCTS_DB.put(CACHE_KEY, JSON.stringify(dashboardData), { expirationTtl: CACHE_TTL });
+      }
     }
 
-    // =====================================================
-    // FETCH ACCOUNTS
-    // =====================================================
+    // Calculations
+    const totalSpendToday = dashboardData.spend1 + dashboardData.spend2;
+    const totalBalance = dashboardData.balance1 + dashboardData.balance2;
 
-    const acc1 = await getFBData(env.AD_ACCOUNT_ID, env.LIMITE_Q || 6918);
-    const acc2 = await getFBData(env.AD_ACCOUNT_ID_2, env.LIMITE_USD || 0);
-
-    // Account 1 (QTZ) values
-    const spend1 = acc1.spendToday;
-    const balance1 = acc1.saldoPendiente;
-    const limit1 = acc1.limiteCorte;
-
-    // Account 2 (USD converted to QTZ)
-    const spend2 = acc2.spendToday * FX_RATE;
-    const balance2 = acc2.saldoPendiente * FX_RATE;
-    const limit2 = acc2.limiteCorte * FX_RATE;
-
-    const totalSpendToday = spend1 + spend2;
-    const totalBalance = balance1 + balance2;
-
-    // Calculations for Account 1
-    const restante1 = limit1 - balance1;
+    const restante1 = dashboardData.limit1 - dashboardData.balance1;
     const enGracia1 = restante1 < 0;
     const colorPendiente1 = enGracia1 ? "#dc3545" : "#0d6efd";
 
-    // Calculations for Account 2
-    const restante2 = limit2 - balance2;
+    const restante2 = dashboardData.limit2 - dashboardData.balance2;
     const enGracia2 = restante2 < 0;
     const colorPendiente2 = enGracia2 ? "#dc3545" : "#0d6efd";
 
@@ -260,6 +223,13 @@ export default {
           margin:auto;
         }
 
+        .header-flex {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          margin-bottom: 25px;
+        }
+
         h1{
           margin:0;
           font-size:34px;
@@ -268,7 +238,23 @@ export default {
         .fecha{
           margin-top:8px;
           color:#666;
-          margin-bottom:30px;
+        }
+
+        .btn-refresh {
+          background: #0d6efd;
+          color: white;
+          border: none;
+          padding: 10px 20px;
+          border-radius: 10px;
+          cursor: pointer;
+          font-weight: bold;
+          font-size: 14px;
+          box-shadow: 0 4px 6px rgba(0,0,0,.1);
+          transition: background 0.2s;
+        }
+
+        .btn-refresh:hover {
+          background: #0b5ed7;
         }
 
         .top-grid{
@@ -416,6 +402,8 @@ export default {
             padding:15px;
           }
 
+          .header-flex { flex-direction: column; gap: 15px; }
+
           .value{
             font-size:14px;
           }
@@ -440,15 +428,14 @@ export default {
 
       <div class="wrap">
 
-        <h1>
-          Dashboard Comercial
-        </h1>
-
-        <div class="fecha">
-
-          Fecha:
-          ${today}
-
+        <div class="header-flex">
+          <div>
+            <h1>Dashboard Comercial</h1>
+            <div class="fecha">Fecha: ${today}</div>
+          </div>
+          <button class="btn-refresh" onclick="location.href='?refresh=true'">
+            🔄 Actualizar Ahora
+          </button>
         </div>
 
         <!-- KPIS -->
@@ -462,7 +449,7 @@ export default {
             </div>
 
             <div class="value vt">
-              Q${money(totalVT)}
+              Q${money(dashboardData.totalVT)}
             </div>
 
           </div>
@@ -474,7 +461,7 @@ export default {
             </div>
 
             <div class="value bo">
-              Q${money(totalBOHoy)}
+              Q${money(dashboardData.totalBOHoy)}
             </div>
 
           </div>
@@ -486,7 +473,7 @@ export default {
             </div>
 
             <div class="value bo2">
-              Q${money(totalBOAnterior)}
+              Q${money(dashboardData.totalBOAnterior)}
             </div>
 
           </div>
@@ -498,7 +485,7 @@ export default {
             </div>
 
             <div class="value total">
-              Q${money(totalGeneral)}
+              Q${money(dashboardData.totalGeneral)}
             </div>
 
           </div>
@@ -510,7 +497,7 @@ export default {
             </div>
 
             <div class="value meta">
-              Q${money(spend1)}
+              Q${money(dashboardData.spend1)}
             </div>
 
           </div>
@@ -522,7 +509,7 @@ export default {
             </div>
 
             <div class="value meta">
-              Q${money(spend2)}
+              Q${money(dashboardData.spend2)}
             </div>
 
           </div>
@@ -556,11 +543,11 @@ export default {
           <div class="card" style="text-align:center;">
             <div class="big-label">Cuenta Q</div>
             <div class="value" style="color:${colorPendiente1}; font-size:38px;">
-              Q${money(balance1)}
+              Q${money(dashboardData.balance1)}
             </div>
             <div class="sub">
               Pagarás cuando tu saldo llegue a:
-              <b>Q${money(limit1)}</b>
+              <b>Q${money(dashboardData.limit1)}</b>
             </div>
             <div class="sub">
               Balance para corte:
@@ -575,11 +562,11 @@ export default {
           <div class="card" style="text-align:center;">
             <div class="big-label">Cuenta $</div>
             <div class="value" style="color:${colorPendiente2}; font-size:38px;">
-              Q${money(balance2)}
+              Q${money(dashboardData.balance2)}
             </div>
             <div class="sub">
               Pagarás cuando tu saldo llegue a:
-              <b>Q${money(limit2)}</b>
+              <b>Q${money(dashboardData.limit2)}</b>
             </div>
             <div class="sub">
               Balance para corte:
@@ -594,12 +581,7 @@ export default {
 
         <div class="footer">
 
-          Última actualización:${new Date().toLocaleString(
-            "es-GT",
-            {
-              timeZone: "America/Guatemala"
-            }
-          )}
+          Última actualización: ${dashboardData.updatedAt}
 
         </div>
 
