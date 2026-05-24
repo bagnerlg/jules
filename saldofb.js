@@ -24,17 +24,17 @@ export default {
     // CONSULTA VT / BO
     // =====================================================
 
-    const gasRes =
-      await fetch(GAS_URL + "?ruta=");
+    let vt = [];
+    let bo = [];
 
-    const gasData =
-      await gasRes.json();
-
-    let vt =
-      gasData.vt || [];
-
-    let bo =
-      gasData.bo || [];
+    try {
+      const gasRes = await fetch(GAS_URL + "?ruta=");
+      const gasData = await gasRes.json();
+      vt = gasData.vt || [];
+      bo = gasData.bo || [];
+    } catch (e) {
+      console.error("Error fetching GAS data:", e);
+    }
 
     // =====================================================
     // VT HOY
@@ -138,48 +138,55 @@ export default {
     // =====================================================
 
     async function getFBData(accountId, fallbackLimit) {
-      if (!accountId) return null;
+      let results = {
+        spendToday: 0,
+        saldoPendiente: 0,
+        limiteCorte: Number(fallbackLimit || 0)
+      };
 
+      if (!accountId) return results;
+
+      // 1. GASTO HOY (Insights)
       try {
-        // Insights (Spend)
         const insightsURL =
           `https://graph.facebook.com/v23.0/act_${accountId}/insights` +
           `?fields=spend` +
           `&time_range={'since':'${today}','until':'${today}'}` +
           `&access_token=${env.ACCESS_TOKEN}`;
 
-        const insightsRes = await fetch(insightsURL);
-        const insightsData = await insightsRes.json();
-        const spendToday = Number(insightsData?.data?.[0]?.spend || 0);
+        const res = await fetch(insightsURL);
+        const data = await res.json();
+        results.spendToday = Number(data?.data?.[0]?.spend || 0);
+      } catch (e) { console.error(`Error spend act_${accountId}:`, e); }
 
-        // Account (Balance, Threshold)
+      // 2. BALANCE PENDIENTE (Account)
+      try {
         const accountURL =
           `https://graph.facebook.com/v23.0/act_${accountId}` +
-          `?fields=balance,adspaymentcycle` +
+          `?fields=balance` +
           `&access_token=${env.ACCESS_TOKEN}`;
 
-        const accountRes = await fetch(accountURL);
-        const accountData = await accountRes.json();
-        const rawBalance = Number(accountData.balance || 0);
-        const saldoPendiente = rawBalance / 100;
+        const res = await fetch(accountURL);
+        const data = await res.json();
+        results.saldoPendiente = Number(data.balance || 0) / 100;
+      } catch (e) { console.error(`Error balance act_${accountId}:`, e); }
 
-        let limiteCorte = Number(accountData.adspaymentcycle?.data?.[0]?.threshold_amount || 0) / 100;
-        if (!limiteCorte || limiteCorte === 0) {
-          limiteCorte = Number(fallbackLimit || 0);
+      // 3. UMBRAL DE PAGO (Payment Cycle)
+      try {
+        const cycleURL =
+          `https://graph.facebook.com/v23.0/act_${accountId}` +
+          `?fields=adspaymentcycle` +
+          `&access_token=${env.ACCESS_TOKEN}`;
+
+        const res = await fetch(cycleURL);
+        const data = await res.json();
+        const threshold = data.adspaymentcycle?.data?.[0]?.threshold_amount;
+        if (threshold) {
+          results.limiteCorte = Number(threshold) / 100;
         }
+      } catch (e) { console.error(`Error threshold act_${accountId}:`, e); }
 
-        return {
-          spendToday,
-          saldoPendiente,
-          limiteCorte
-        };
-      } catch (e) {
-        return {
-          spendToday: 0,
-          saldoPendiente: 0,
-          limiteCorte: Number(fallbackLimit || 0)
-        };
-      }
+      return results;
     }
 
     // =====================================================
@@ -190,14 +197,14 @@ export default {
     const acc2 = await getFBData(env.AD_ACCOUNT_ID_2, env.LIMITE_USD || 0);
 
     // Account 1 (QTZ) values
-    const spend1 = acc1?.spendToday || 0;
-    const balance1 = acc1?.saldoPendiente || 0;
-    const limit1 = acc1?.limiteCorte || 0;
+    const spend1 = acc1.spendToday;
+    const balance1 = acc1.saldoPendiente;
+    const limit1 = acc1.limiteCorte;
 
     // Account 2 (USD converted to QTZ)
-    const spend2 = (acc2?.spendToday || 0) * FX_RATE;
-    const balance2 = (acc2?.saldoPendiente || 0) * FX_RATE;
-    const limit2 = (acc2?.limiteCorte || 0) * FX_RATE;
+    const spend2 = acc2.spendToday * FX_RATE;
+    const balance2 = acc2.saldoPendiente * FX_RATE;
+    const limit2 = acc2.limiteCorte * FX_RATE;
 
     const totalSpendToday = spend1 + spend2;
     const totalBalance = balance1 + balance2;
