@@ -274,26 +274,26 @@ export default {
         .top-grid{
           display:grid;
           grid-template-columns:
-          repeat(auto-fit,minmax(240px,1fr));
-          gap:18px;
+          repeat(auto-fit,minmax(200px,1fr));
+          gap:14px;
         }
 
         .card{
           background:#fff;
           border-radius:18px;
-          padding:24px;
+          padding:20px;
           box-shadow:
           0 4px 14px rgba(0,0,0,.08);
         }
 
         .label{
-          font-size:14px;
+          font-size:13px;
           color:#666;
-          margin-bottom:12px;
+          margin-bottom:8px;
         }
 
         .value{
-          font-size:38px;
+          font-size:32px;
           font-weight:bold;
         }
 
@@ -319,13 +319,13 @@ export default {
 
         .big-card{
 
-          margin-top:35px;
+          margin-top:25px;
 
           background:#fff;
 
           border-radius:24px;
 
-          padding:45px;
+          padding:30px;
 
           text-align:center;
 
@@ -335,42 +335,42 @@ export default {
         }
 
         .big-label{
-          font-size:20px;
+          font-size:18px;
           color:#666;
-          margin-bottom:18px;
+          margin-bottom:12px;
         }
 
         .big-value{
-          font-size:78px;
+          font-size:68px;
           font-weight:bold;
         }
 
         .sub-grid {
           display:grid;
           grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-          gap: 25px;
-          margin-top: 35px;
+          gap: 20px;
+          margin-top: 25px;
         }
 
         .sub{
-          margin-top:20px;
-          font-size:20px;
+          margin-top:15px;
+          font-size:16px;
           color:#666;
         }
 
         .alerta{
 
-          margin-top:28px;
+          margin-top:20px;
 
           background:#dc3545;
 
           color:white;
 
-          padding:22px;
+          padding:15px;
 
-          border-radius:18px;
+          border-radius:14px;
 
-          font-size:26px;
+          font-size:20px;
 
           font-weight:bold;
 
@@ -397,7 +397,7 @@ export default {
         .footer{
           margin-top:30px;
           color:#666;
-          font-size:14px;
+          font-size:13px;
           text-align:center;
         }
 
@@ -408,15 +408,15 @@ export default {
           }
 
           .value{
-            font-size:28px;
+            font-size:26px;
           }
 
           .big-value{
-            font-size:48px;
+            font-size:42px;
           }
 
           .alerta{
-            font-size:20px;
+            font-size:18px;
           }
 
         }
@@ -544,7 +544,7 @@ export default {
           <!-- CUENTA Q -->
           <div class="card" style="text-align:center;">
             <div class="big-label">Cuenta Q</div>
-            <div class="value" style="color:${colorPendiente1}; font-size:48px;">
+            <div class="value" style="color:${colorPendiente1}; font-size:38px;">
               Q${money(balance1)}
             </div>
             <div class="sub">
@@ -563,7 +563,7 @@ export default {
           <!-- CUENTA $ -->
           <div class="card" style="text-align:center;">
             <div class="big-label">Cuenta $</div>
-            <div class="value" style="color:${colorPendiente2}; font-size:48px;">
+            <div class="value" style="color:${colorPendiente2}; font-size:38px;">
               Q${money(balance2)}
             </div>
             <div class="sub">
