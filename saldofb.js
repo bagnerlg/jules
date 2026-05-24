@@ -273,27 +273,30 @@ export default {
 
         .top-grid{
           display:grid;
-          grid-template-columns:
-          repeat(auto-fit,minmax(200px,1fr));
-          gap:14px;
+          grid-template-columns: repeat(6, 1fr);
+          gap:10px;
         }
 
         .card{
           background:#fff;
           border-radius:18px;
-          padding:20px;
+          padding:15px;
           box-shadow:
           0 4px 14px rgba(0,0,0,.08);
+          text-align:center;
         }
 
         .label{
-          font-size:13px;
+          font-size:12px;
           color:#666;
-          margin-bottom:8px;
+          margin-bottom:6px;
+          white-space:nowrap;
+          overflow:hidden;
+          text-overflow:ellipsis;
         }
 
         .value{
-          font-size:32px;
+          font-size:20px;
           font-weight:bold;
         }
 
@@ -401,6 +404,12 @@ export default {
           text-align:center;
         }
 
+        @media(max-width:1024px){
+           .value { font-size:16px; }
+           .top-grid { gap: 6px; }
+           .card { padding: 10px; }
+        }
+
         @media(max-width:768px){
 
           body{
@@ -408,8 +417,10 @@ export default {
           }
 
           .value{
-            font-size:26px;
+            font-size:14px;
           }
+
+          .label { font-size: 10px; }
 
           .big-value{
             font-size:42px;
@@ -459,7 +470,7 @@ export default {
           <div class="card">
 
             <div class="label">
-              BO Carga Hoy
+              BO Carga
             </div>
 
             <div class="value bo">
@@ -483,7 +494,7 @@ export default {
           <div class="card">
 
             <div class="label">
-              BO TOTAL Hoy
+              BO TOTAL
             </div>
 
             <div class="value total">
@@ -495,7 +506,7 @@ export default {
           <div class="card">
 
             <div class="label">
-              Gasto Hoy Cuenta Q
+              Gasto Cuenta Q
             </div>
 
             <div class="value meta">
@@ -507,7 +518,7 @@ export default {
           <div class="card">
 
             <div class="label">
-              Gasto Hoy Cuenta $
+              Gasto Cuenta $
             </div>
 
             <div class="value meta">
