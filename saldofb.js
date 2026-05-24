@@ -9,6 +9,8 @@ export default {
     const GAS_URL =
       "https://script.google.com/macros/s/AKfycbwQPiGNy1jQ-dmq-xz1_ZcPxtQJdTqyVptIXnPKzwi53j5SZ30N3gwdkZsGm7raVXF4/exec";
 
+    const FX_RATE = 7.8; // USD to QTZ
+
     // =====================================================
     // FECHA HOY
     // =====================================================
@@ -132,76 +134,83 @@ export default {
       totalBOHoy + totalBOAnterior;
 
     // =====================================================
-    // META GASTO HOY
+    // META ADS DATA FETCH HELPER
     // =====================================================
 
-    const insightsURL =
-      `https://graph.facebook.com/v23.0/act_${env.AD_ACCOUNT_ID}/insights` +
-      `?fields=spend` +
-      `&time_range={'since':'${today}','until':'${today}'}` +
-      `&access_token=${env.ACCESS_TOKEN}`;
+    async function getFBData(accountId, fallbackLimit) {
+      if (!accountId) return null;
 
-    const insightsRes =
-      await fetch(insightsURL);
+      try {
+        // Insights (Spend)
+        const insightsURL =
+          `https://graph.facebook.com/v23.0/act_${accountId}/insights` +
+          `?fields=spend` +
+          `&time_range={'since':'${today}','until':'${today}'}` +
+          `&access_token=${env.ACCESS_TOKEN}`;
 
-    const insightsData =
-      await insightsRes.json();
+        const insightsRes = await fetch(insightsURL);
+        const insightsData = await insightsRes.json();
+        const spendToday = Number(insightsData?.data?.[0]?.spend || 0);
 
-    const spendToday =
-      Number(
-        insightsData?.data?.[0]?.spend || 0
-      );
+        // Account (Balance, Threshold)
+        const accountURL =
+          `https://graph.facebook.com/v23.0/act_${accountId}` +
+          `?fields=balance,adspaymentcycle` +
+          `&access_token=${env.ACCESS_TOKEN}`;
 
-    // =====================================================
-    // META SALDO PENDIENTE
-    // =====================================================
+        const accountRes = await fetch(accountURL);
+        const accountData = await accountRes.json();
+        const rawBalance = Number(accountData.balance || 0);
+        const saldoPendiente = rawBalance / 100;
 
-    const accountURL =
-      `https://graph.facebook.com/v23.0/act_${env.AD_ACCOUNT_ID}` +
-      `?fields=balance` +
-      `&access_token=${env.ACCESS_TOKEN}`;
+        let limiteCorte = Number(accountData.adspaymentcycle?.data?.[0]?.threshold_amount || 0) / 100;
+        if (!limiteCorte || limiteCorte === 0) {
+          limiteCorte = Number(fallbackLimit || 0);
+        }
 
-    const accountRes =
-      await fetch(accountURL);
-
-    const accountData =
-      await accountRes.json();
-
-    const rawBalance =
-      Number(accountData.balance || 0);
-
-    // =====================================================
-    // AJUSTE CORRECTO PARA TU CUENTA
-    // =====================================================
-
-    const saldoPendiente =
-      rawBalance / 100;
-
-    // =====================================================
-    // LIMITE DE CORTE
-    // =====================================================
-
-    const limiteCorte =
-      6918;
+        return {
+          spendToday,
+          saldoPendiente,
+          limiteCorte
+        };
+      } catch (e) {
+        return {
+          spendToday: 0,
+          saldoPendiente: 0,
+          limiteCorte: Number(fallbackLimit || 0)
+        };
+      }
+    }
 
     // =====================================================
-    // RESTANTE PARA CORTE
+    // FETCH ACCOUNTS
     // =====================================================
 
-    const restante =
-      limiteCorte - saldoPendiente;
+    const acc1 = await getFBData(env.AD_ACCOUNT_ID, env.LIMITE_Q || 6918);
+    const acc2 = await getFBData(env.AD_ACCOUNT_ID_2, env.LIMITE_USD || 0);
 
-    // =====================================================
-    // ESTADO GRACIA
-    // =====================================================
+    // Account 1 (QTZ) values
+    const spend1 = acc1?.spendToday || 0;
+    const balance1 = acc1?.saldoPendiente || 0;
+    const limit1 = acc1?.limiteCorte || 0;
 
-    const enGracia =
-      restante < 0;
+    // Account 2 (USD converted to QTZ)
+    const spend2 = (acc2?.spendToday || 0) * FX_RATE;
+    const balance2 = (acc2?.saldoPendiente || 0) * FX_RATE;
+    const limit2 = (acc2?.limiteCorte || 0) * FX_RATE;
 
-    const colorPendiente =
-      enGracia
-        ? "#dc3545"
-        : "#0d6efd";
+    const totalSpendToday = spend1 + spend2;
+    const totalBalance = balance1 + balance2;
+
+    // Calculations for Account 1
+    const restante1 = limit1 - balance1;
+    const enGracia1 = restante1 < 0;
+    const colorPendiente1 = enGracia1 ? "#dc3545" : "#0d6efd";
+
+    // Calculations for Account 2
+    const restante2 = limit2 - balance2;
+    const enGracia2 = restante2 < 0;
+    const colorPendiente2 = enGracia2 ? "#dc3545" : "#0d6efd";
 
     // =====================================================
     // HTML
@@ -327,6 +336,13 @@ export default {
         .big-value{
           font-size:78px;
           font-weight:bold;
+        }
+
+        .sub-grid {
+          display:grid;
+          grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+          gap: 25px;
+          margin-top: 35px;
         }
 
         .sub{
@@ -472,70 +488,89 @@ export default {
           <div class="card">
 
             <div class="label">
-              Gasto Hoy
+              Gasto Hoy Cuenta Q
             </div>
 
             <div class="value meta">
-              Q${money(spendToday)}
+              Q${money(spend1)}
+            </div>
+
+          </div>
+
+          <div class="card">
+
+            <div class="label">
+              Gasto Hoy Cuenta $
+            </div>
+
+            <div class="value meta">
+              Q${money(spend2)}
             </div>
 
           </div>
 
         </div>
 
-        <!-- META -->
+        <!-- META TOTAL -->
 
         <div class="big-card">
 
           <div class="big-label">
 
-            Total Gasto
+            Total Gasto (Ambas Cuentas)
 
           </div>
 
           <div
             class="big-value"
-            style="color:${colorPendiente}"
+            style="color:#6f42c1"
           >
 
-            Q${money(saldoPendiente)}
+            Q${money(totalBalance)}
 
           </div>
+        </div>
 
-          <div class="sub">
+        <!-- DETALLE POR CUENTA -->
+        <div class="sub-grid">
 
-            Pagarás cuando tu saldo llegue a:
-
-            <b>
-              Q${money(limiteCorte)}
-            </b>
-
-          </div>
-
-          <div class="sub">
-
-            Balance para corte:
-
-            <b style="color:${enGracia ? '#dc3545' : '#198754'}">
-
-              Q${money(restante)}
-
-            </b>
-
-          </div>
-
-          ${enGracia
-        ?
-        `
-            <div class="alerta">
-
-              ⚠️ CUENTA EN PERIODO DE GRACIA
-
+          <!-- CUENTA Q -->
+          <div class="card" style="text-align:center;">
+            <div class="big-label">Cuenta Q</div>
+            <div class="value" style="color:${colorPendiente1}; font-size:48px;">
+              Q${money(balance1)}
             </div>
-            `
-        :
-        ""
-      }
+            <div class="sub">
+              Pagarás cuando tu saldo llegue a:
+              <b>Q${money(limit1)}</b>
+            </div>
+            <div class="sub">
+              Balance para corte:
+              <b style="color:${enGracia1 ? '#dc3545' : '#198754'}">
+                Q${money(restante1)}
+              </b>
+            </div>
+            ${enGracia1 ? `<div class="alerta">⚠️ CUENTA EN PERIODO DE GRACIA</div>` : ""}
+          </div>
+
+          <!-- CUENTA $ -->
+          <div class="card" style="text-align:center;">
+            <div class="big-label">Cuenta $</div>
+            <div class="value" style="color:${colorPendiente2}; font-size:48px;">
+              Q${money(balance2)}
+            </div>
+            <div class="sub">
+              Pagarás cuando tu saldo llegue a:
+              <b>Q${money(limit2)}</b>
+            </div>
+            <div class="sub">
+              Balance para corte:
+              <b style="color:${enGracia2 ? '#dc3545' : '#198754'}">
+                Q${money(restante2)}
+              </b>
+            </div>
+            ${enGracia2 ? `<div class="alerta">⚠️ CUENTA EN PERIODO DE GRACIA</div>` : ""}
+          </div>
 
         </div>
 
