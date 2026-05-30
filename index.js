@@ -117,6 +117,54 @@ async function getContactFromGHL(contactId, env, trace) {
   }
 }
 
+async function getLatestMessageAttachments(contactId, locationId, env, trace) {
+  if (trace) trace.add("Buscando conversación para contactId: " + contactId);
+  try {
+    // 1. Get conversation ID
+    const convRes = await fetch("https://services.leadconnectorhq.com/conversations/search?contactId=" + contactId + "&locationId=" + locationId, {
+      method: "GET",
+      headers: {
+        "Authorization": "Bearer " + env.GHL_API_KEY,
+        "Content-Type": "application/json",
+        "Version": "2021-04-15"
+      }
+    });
+    if (!convRes.ok) {
+      if (trace) trace.add("Error buscando conversación: " + convRes.status);
+      return [];
+    }
+    const convData = await convRes.json();
+    const conversationId = convData.conversations?.[0]?.id;
+    if (!conversationId) {
+      if (trace) trace.add("No se encontró conversación.");
+      return [];
+    }
+
+    // 2. Get latest message
+    if (trace) trace.add("Buscando mensajes para conversación: " + conversationId);
+    const msgRes = await fetch("https://services.leadconnectorhq.com/conversations/" + conversationId + "/messages?limit=1", {
+      method: "GET",
+      headers: {
+        "Authorization": "Bearer " + env.GHL_API_KEY,
+        "Content-Type": "application/json",
+        "Version": "2021-04-15"
+      }
+    });
+    if (!msgRes.ok) {
+      if (trace) trace.add("Error buscando mensajes: " + msgRes.status);
+      return [];
+    }
+    const msgData = await msgRes.json();
+    const latestMsg = msgData.messages?.[0];
+    if (trace) trace.obj("Último mensaje de la API", latestMsg);
+
+    return latestMsg?.attachments || [];
+  } catch (err) {
+    if (trace) trace.error("Excepción en getLatestMessageAttachments: ", err);
+    return [];
+  }
+}
+
 async function setCustomFieldValue(contact, fieldId, value, env, trace) {
   if (trace) trace.add("Actualizando campo custom: " + fieldId + " -> " + value);
   if (!fieldId || value === undefined || value === null) return;
@@ -1037,52 +1085,93 @@ export default {
     let contactId;
     try {
       const rawBody = await request.text();
-      if (trace) trace.add("RAW BODY RECIBIDO: " + rawBody);
+      if (trace) trace.add("RAW BODY RECIBIDO (Iniciando buffer): " + (rawBody.length > 1000 ? rawBody.substring(0, 1000) + "..." : rawBody));
       const body = JSON.parse(rawBody);
       contactId = body.contact_id || body.contact?.id;
       if (!contactId) return new Response("OK");
+
       const contact = await getContactFromGHL(contactId, env, trace);
       if (!contact || contact.tags?.includes("humano") || contact.assignedTo) {
+        trace.add("Contacto no apto para IA (Humano o Asignado).");
         trace.flush();
         return new Response("OK");
       }
 
-      let attachmentText = "";
-      // GHL V2 can send attachments in body.message.attachments or body.attachments or inside message object
-      const attachments = body.message?.attachments || body.attachments || [];
-      if (trace) trace.add("Adjuntos encontrados: " + attachments.length);
-
-      if (attachments.length > 0) {
-        for (let att of attachments) {
-          const text = await handleMediaAttachment(att, env, trace);
-          if (text) attachmentText += " " + text;
-        }
-      }
-
-      const rawMsg = (body.message?.body || body.message?.text || "") + " " + attachmentText;
       const convId = body.conversation_id || body.message?.conversationId;
-      const now = Date.now();
+      const locationId = body.locationId || body.location?.id || contact.locationId;
+      const msgType = body.message?.type;
+      const isMediaMessage = (msgType === 19 || msgType === 21 || msgType === "image" || msgType === "audio");
+      const currentText = (body.message?.body || body.message?.text || "").trim();
+      const currentAttachments = body.message?.attachments || body.attachments || [];
+
       const bKey = "buffer:" + contactId;
       const lKey = "last:" + contactId;
-      await env.PRODUCTS_DB.put(bKey, (await env.PRODUCTS_DB.get(bKey) || "") + " " + rawMsg, {
-        expirationTtl: 60
-      });
-      await env.PRODUCTS_DB.put(lKey, now.toString(), {
-        expirationTtl: 60
-      });
+      const now = Date.now();
+
+      // Leer buffer actual o inicializar
+      let buffer = await env.PRODUCTS_DB.get(bKey, { type: "json" }) || {
+        text: "",
+        attachments: [],
+        isMedia: false,
+        locationId: locationId,
+        conversationId: convId
+      };
+
+      // Actualizar buffer
+      if (currentText) buffer.text += " " + currentText;
+      if (currentAttachments.length > 0) buffer.attachments = [...buffer.attachments, ...currentAttachments];
+      if (isMediaMessage) buffer.isMedia = true;
+      if (locationId) buffer.locationId = locationId;
+      if (convId) buffer.conversationId = convId;
+
+      await env.PRODUCTS_DB.put(bKey, JSON.stringify(buffer), { expirationTtl: 60 });
+      await env.PRODUCTS_DB.put(lKey, now.toString(), { expirationTtl: 60 });
+
       ctx.waitUntil((async () => {
         try {
           await new Promise(r => setTimeout(r, 2500));
-          if (await env.PRODUCTS_DB.get(lKey) === now.toString()) {
-            const msg = await env.PRODUCTS_DB.get(bKey);
+          const latestTs = await env.PRODUCTS_DB.get(lKey);
+          if (latestTs === now.toString()) {
+            const finalBuffer = await env.PRODUCTS_DB.get(bKey, { type: "json" });
             await env.PRODUCTS_DB.delete(bKey);
             await env.PRODUCTS_DB.delete(lKey);
-            await processFullFlow(msg, contactId, contact, env, trace, convId);
+
+            if (!finalBuffer) return;
+            trace.add("Procesando mensaje consolidado (POST-BUFFER)...");
+            trace.obj("Final Buffer Data", finalBuffer);
+
+            let extractedText = "";
+            let attachmentsToProcess = finalBuffer.attachments || [];
+
+            // Fallback API if media message but no attachments in webhook
+            if (finalBuffer.isMedia && attachmentsToProcess.length === 0) {
+              trace.add("Detectado mensaje multimedia sin adjuntos en webhook. Ejecutando fallback API...");
+              attachmentsToProcess = await getLatestMessageAttachments(contactId, finalBuffer.locationId, env, trace);
+            }
+
+            if (attachmentsToProcess.length > 0) {
+              trace.add("Procesando " + attachmentsToProcess.length + " adjuntos...");
+              for (const att of attachmentsToProcess) {
+                const text = await handleMediaAttachment(att, env, trace);
+                if (text) extractedText += " " + text;
+              }
+            }
+
+            const fullMsg = (finalBuffer.text + " " + extractedText).trim();
+            if (!fullMsg) {
+              trace.add("Mensaje final vacío, abortando.");
+              return;
+            }
+
+            await processFullFlow(fullMsg, contactId, contact, env, trace, finalBuffer.conversationId);
           }
-        } catch (err) {} finally {
+        } catch (err) {
+          trace.error("Error en waitUntil: ", err);
+        } finally {
           trace.flush();
         }
       })());
+
       return new Response("OK");
     } catch (e) {
       if (contactId) {
