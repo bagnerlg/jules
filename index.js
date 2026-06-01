@@ -682,13 +682,14 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
     "3. NATURALIDAD: PROHIBIDO usar etiquetas como 'Producto:', 'Resumen:', 'Estado:', o '¡Invita a comprar!'. Escribe como un humano en un chat. Usa negritas con un solo asterisco (ej: *texto*) para resaltar nombres y precios.",
     "4. PRESENTACIÓN: Si esNuevoProducto es TRUE, DEBES resumir la 'Descripción' y mencionar brevemente los 'Componentes' usando una lista atractiva. PROHIBIDO dar Medidas, Material, Colores, Resistencia o Garantía en este primer mensaje a menos que el cliente ya haya preguntado.",
     "5. COMBOS: Si el cliente pide Medidas, Colores o Materiales de un COMBO, debes revisar la información de cada componente en los DATOS PRODUCTO y dar una respuesta detallada para cada uno.",
-    "6. SOLO LO SOLICITADO: No divagues. Mantén el mensaje compacto.",
-    "7. AYUDA: " + (mostrarMenu ? "Al final añade una frase amable indicando que puedes informar sobre: Medidas, Colores, Materiales, Precios, Envío y Cuotas. DEBES poner un doble salto de línea después de esta frase." : "NO añadas temas de ayuda."),
+    "6. SOLO LO SOLICITADO: No divagues. Si el cliente pide algo técnico (medidas, materiales), búscalo en DATOS PRODUCTO y dalo de inmediato. NO respondas únicamente con el menú de ayuda.",
+    "7. AYUDA: " + (mostrarMenu ? "Al final añade una frase amable indicando que puedes informar sobre: Medidas, Colores, Materiales, Precios, Envío y Cuotas. DEBES poner un doble salto de línea antes de esta frase." : "NO añadas temas de ayuda."),
     "8. COMPRA: " + (pideFotos ? "Después de la ayuda, añade una invitación para comprar solicitando estos datos en listado vertical:\n- Nombre\n- DPI\n- Dirección\n- Teléfono" : ""),
     "9. EMOJIS: Máximo uno (fuera de las listas).",
     "10. CIERRE: NUNCA pidas datos si el cliente tiene dudas. Responde primero la duda.",
     "11. SALUDO: " + instruccionSaludo + " (Incluso evita '¡Hola!', 'Buen día', etc. si no es el primer mensaje).",
-    "12. ESTRUCTURA: Si el cliente pregunta sobre temas estructurales (ej: 'se desarma', 'es colgante', 'se dobla', 'empotra', 'pared', 'madera tipo') y la información NO ESTÁ en los DATOS PRODUCTO, DEBES responder exactamente '[TRANSFERIR]'.",
+    "12. REDUNDANCIA: No repitas la misma frase exacta si el cliente insiste. Si ya diste una información (como el color) y vuelven a preguntar, confirma que es el único disponible o amplía con detalles de la descripción.",
+    "13. ESTRUCTURA: Si el cliente pregunta sobre temas estructurales (ej: 'se desarma', 'es colgante', 'se dobla', 'empotra', 'pared', 'madera tipo') y la información NO ESTÁ en los DATOS PRODUCTO, DEBES responder exactamente '[TRANSFERIR]'.",
     "13. PAGOS: Aceptamos hasta 18 Visa Cuotas SIN RECARGO. Otros métodos: Tarjetas Débito/Crédito, Pago Contra Entrega y Depósito. NO tenemos crédito propio, solo Visa Cuotas.",
     "14. TIENDAS: \n- Petapa: AV Petapa 41-25 zona 12 Guatemala, frente del IRTRA. Tel: 5253 5965. Ubicación: https://maps.app.goo.gl/UbDQxjRqruWjhdXW9\n- Xenacoj: KM 40 zona 0 lote 91 carretera a Santo Domingo Xenacoj. Tel: 5253 3898. Ubicación: https://maps.app.goo.gl/4u9FqSDemcFy3zkv7",
     "15. COLCHÓN: Si el cliente menciona la palabra 'colchón' o pregunta por sus materiales, DEBES incluir esta información: 'es de fibra de algodón con polipropileno, que brinda una buena firmeza, resistencia y acolchonamiento'."
@@ -721,7 +722,19 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
     if (trace) trace.obj("OpenAI Vendedor Response", data);
     let content = data.choices[0].message.content;
     if (!mostrarMenu) {
-      content = content.replace(/.*(informar sobre|ayudarte con|detalles sobre|puedo darle|puedo informarle).*(Medidas|Colores|Materiales|Precios|Envío|Cuotas).*/gi, "").trim();
+      // More precise removal of the help line, limiting to one line to avoid deleting specs
+      // We look for the line that contains the keywords and remove only that line.
+      const lines = content.split("\n");
+      const filteredLines = lines.filter(line => {
+          const isHelpLine = /(?:informar sobre|ayudarte con|detalles sobre|puedo darle|puedo informarle).*(?:Medidas|Colores|Materiales|Precios|Envío|Cuotas)/gi.test(line);
+          return !isHelpLine;
+      });
+      content = filteredLines.join("\n").trim();
+      if (!content && data.choices[0].message.content) {
+          // Fallback safety: if filtering removed everything but there was an original message,
+          // it means the AI only gave the help menu. We keep the original in that case to avoid silence.
+          content = data.choices[0].message.content.trim();
+      }
     }
     return content;
   } catch (err) {
@@ -1099,7 +1112,10 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       estadoPropuesto = pideCompra ? "cierre" : "producto";
       await setCustomFieldValue(contact, fEstado, estadoPropuesto, env, trace);
       let final = responseText;
-      if (targetProduct.titulo && !responseText.toUpperCase().includes(targetProduct.titulo.toUpperCase())) final = "*" + targetProduct.titulo.toUpperCase() + "*\n\n" + responseText;
+      const esNuevo = targetProduct.id !== prevProductoId && !pideInformacion;
+      if (esNuevo && targetProduct.titulo && !responseText.toUpperCase().includes(targetProduct.titulo.toUpperCase())) {
+          final = "*" + targetProduct.titulo.toUpperCase() + "*\n\n" + responseText;
+      }
 
       // Fix for double bolding if AI already bolded it
       final = final.replace(/\*\*(.*?)\*\*/g, "*$1*");
