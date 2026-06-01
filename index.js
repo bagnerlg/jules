@@ -926,7 +926,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     const metaMatch = rawMsg.match(/\b(B[A-Z0-9]{5,})\b/i);
 
     // Detecciones de Intención
-    const pideFotos = /fotos?|imagenes?|verlo|verla|mostrar|enviame|fts/i.test(message);
+    let pideFotos = /fotos?|imagenes?|verlo|verla|mostrar|enviame|fts/i.test(message);
     const pideCompra = /\b(quiero comprar|lo quiero|la quiero|comprarlo|comprarla|pedido|ordenar|pagar|cuota|visa|deposito|transferencia|efectivo)\b/i.test(norm);
     const pideInformacion = /(medida|dimension|precio|vale|cuesta|costo|material|color|cuota|detalle|fotos|garantia|resiste|pago|visa|cuotas|tarjeta|deposito|transferencia|efectivo|toda la info|todos los datos)/i.test(norm);
     const pideCatalogo = /catalogo|modelos|opciones|variedad|otros|ver mas|muestreme|mostrame|oferta|venden|vende|que mas/i.test(norm);
@@ -1001,7 +1001,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       return;
     }
 
-    if (pideVagaMejora && prevProductoId) {
+    if (pideVagaMejora && state.prevProductoId) {
       await sendMessageToGHL(contactId, "¿Me puedes especificar qué nuevo producto estás buscando? Le transferiré con un asesor para que le dé seguimiento personalizado. 😉", env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
       await triggerHandover(contactId, env, trace);
       return;
