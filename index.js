@@ -140,25 +140,37 @@ async function getLatestMessageAttachments(contactId, locationId, env, trace) {
       return [];
     }
 
-    // 2. Get latest message
-    if (trace) trace.add("Buscando mensajes para conversación: " + conversationId);
-    const msgRes = await fetch("https://services.leadconnectorhq.com/conversations/" + conversationId + "/messages?limit=1", {
-      method: "GET",
-      headers: {
-        "Authorization": "Bearer " + env.GHL_API_KEY,
-        "Content-Type": "application/json",
-        "Version": "2021-04-15"
+    // 2. Get latest message (with retry)
+    for (let i = 0; i < 2; i++) {
+      if (trace) trace.add("Buscando mensajes para conversación: " + conversationId + " (Intento " + (i + 1) + ")");
+      const msgRes = await fetch("https://services.leadconnectorhq.com/conversations/" + conversationId + "/messages?limit=1", {
+        method: "GET",
+        headers: {
+          "Authorization": "Bearer " + env.GHL_API_KEY,
+          "Content-Type": "application/json",
+          "Version": "2021-04-15"
+        }
+      });
+      if (!msgRes.ok) {
+        if (trace) trace.add("Error buscando mensajes: " + msgRes.status);
+        continue;
       }
-    });
-    if (!msgRes.ok) {
-      if (trace) trace.add("Error buscando mensajes: " + msgRes.status);
-      return [];
-    }
-    const msgData = await msgRes.json();
-    const latestMsg = msgData.messages?.[0];
-    if (trace) trace.obj("Último mensaje de la API", latestMsg);
+      const msgData = await msgRes.json();
+      if (trace) trace.obj("Respuesta API Mensajes", msgData);
 
-    return latestMsg?.attachments || [];
+      const latestMsg = msgData.messages?.[0];
+      if (latestMsg) {
+        if (trace) trace.obj("Último mensaje de la API", latestMsg);
+        return latestMsg.attachments || [];
+      }
+
+      if (i === 0) {
+        if (trace) trace.add("No se encontraron mensajes, esperando 1s para reintentar...");
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+
+    return [];
   } catch (err) {
     if (trace) trace.error("Excepción en getLatestMessageAttachments: ", err);
     return [];
@@ -323,7 +335,7 @@ async function handleMediaAttachment(attachment, env, trace) {
             role: "user",
             content: [{
               type: "text",
-              text: "Extrae el texto de esta imagen:"
+              text: "Extrae el texto de esta imagen. Si no hay texto o es un mueble, describe brevemente qué mueble o producto ves (ej: Es un ropero de madera café)."
             }, {
               type: "image_url",
               image_url: {
@@ -1198,7 +1210,12 @@ export default {
               }
             }
 
-            const fullMsg = (finalBuffer.text + " " + extractedText).trim();
+            let fullMsg = (finalBuffer.text + " " + extractedText).trim();
+            if (!fullMsg && finalBuffer.isMedia) {
+              trace.add("No se pudo extraer texto de la media, usando placeholder.");
+              fullMsg = "[Imagen/Audio Recibido]";
+            }
+
             if (!fullMsg) {
               trace.add("Mensaje final vacío, abortando.");
               return;
