@@ -857,13 +857,19 @@ async function moduloCatalogo(message, contact, env, trace, forcingCat = null) {
 }
 
 async function processFullFlow(rawMsg, contactId, contact, env, trace, conversationId = null) {
-  if (trace) trace.add("Iniciando processFullFlow con mensaje consolidado: " + rawMsg);
+  if (trace) {
+    trace.add("--- INICIO ROUTER ---");
+    trace.obj("Mensaje Consolidado", rawMsg);
+    trace.obj("Contacto GHL", { id: contact.id, tags: contact.tags, assignedTo: contact.assignedTo });
+  }
+
   try {
-    const metaMatch = rawMsg.match(/\b(B[A-Z0-9]{5,})\b/i);
-    if (metaMatch && trace) trace.add("Código meta detectado: " + metaMatch[1]);
     const message = limpiarMensaje(rawMsg);
     const norm = normalizarTextoGlobal(message);
-    let pideFotos = /fotos?|imagenes?|verlo|verla|mostrar|enviame|fts/i.test(message);
+    const metaMatch = rawMsg.match(/\b(B[A-Z0-9]{5,})\b/i);
+
+    // Detecciones de Intención
+    const pideFotos = /fotos?|imagenes?|verlo|verla|mostrar|enviame|fts/i.test(message);
     const pideCompra = /\b(quiero comprar|lo quiero|la quiero|comprarlo|comprarla|pedido|ordenar|pagar|cuota|visa|deposito|transferencia|efectivo)\b/i.test(norm);
     const pideInformacion = /(medida|dimension|precio|vale|cuesta|costo|material|color|envio|cuota|detalle|fotos|garantia|resiste|pago|visa|cuotas|tarjeta|deposito|transferencia|efectivo|toda la info|todos los datos)/i.test(norm);
     const pideCatalogo = /catalogo|modelos|opciones|variedad|otros|ver mas|muestreme|mostrame|oferta|venden|vende|que mas/i.test(norm);
@@ -878,32 +884,50 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
 
     const categorias = ["cama", "ropero", "cocina", "mueble", "amueblado", "comedor", "mesa", "gavetero", "tocador", "trinchante", "platera", "marquesa", "cabecera", "mesita", "librera"];
     const catMencionada = categorias.find(c => norm.includes(c));
-    const tieneCategoria = !!catMencionada;
 
-    const fEstado = getFieldId(env, "estado_actual");
-    const fMenuEnviado = getFieldId(env, "menu_ayuda_enviado");
-    const fPropCat = getFieldId(env, "categoria_propuesta");
-    const fDept = getFieldId(env, "departamento_actual");
-    const fMunProp = getFieldId(env, "municipio_propuesto");
-    const fOffset = getFieldId(env, "catalogo_offset");
-    const currentEstado = getCustomFieldValue(contact, fEstado) || "nuevo";
-    const propCat = getCustomFieldValue(contact, fPropCat);
-    const yaEnvioMenu = getCustomFieldValue(contact, fMenuEnviado) === "true";
-    const munProp = getCustomFieldValue(contact, fMunProp);
-    const fProductoId = getFieldId(env, "producto_id");
-    const prevProductoId = getCustomFieldValue(contact, fProductoId);
-    if (trace) trace.add("Estado actual: " + currentEstado + " Producto previo: " + prevProductoId);
-    const fUltimaCat = getFieldId(env, "ultima_categoria");
-    const fCatInteres = getFieldId(env, "categoria_interes");
-    const fComboPadre = getFieldId(env, "GHL_combo_padre_FIELD_ID");
-    const fComboComp = getFieldId(env, "GHL_combo_componentes_FIELD_ID");
-    const carrito = JSON.parse(getCustomFieldValue(contact, getFieldId(env, "carrito_json")) || "[]");
+    // Mapeo de Campos Custom de GHL
+    const fields = {
+      estado: getFieldId(env, "estado_actual"),
+      menuEnviado: getFieldId(env, "menu_ayuda_enviado"),
+      propCat: getFieldId(env, "categoria_propuesta"),
+      dept: getFieldId(env, "departamento_actual"),
+      munProp: getFieldId(env, "municipio_propuesto"),
+      offset: getFieldId(env, "catalogo_offset"),
+      prodId: getFieldId(env, "producto_id"),
+      ultimaCat: getFieldId(env, "ultima_categoria"),
+      catInteres: getFieldId(env, "categoria_interes"),
+      comboPadre: getFieldId(env, "GHL_combo_padre_FIELD_ID"),
+      comboComp: getFieldId(env, "GHL_combo_componentes_FIELD_ID"),
+      carrito: getFieldId(env, "carrito_json")
+    };
+
+    // Valores Actuales del Contacto
+    const state = {
+      currentEstado: getCustomFieldValue(contact, fields.estado) || "nuevo",
+      propCat: getCustomFieldValue(contact, fields.propCat),
+      yaEnvioMenu: getCustomFieldValue(contact, fields.menuEnviado) === "true",
+      munProp: getCustomFieldValue(contact, fields.munProp),
+      prevProductoId: getCustomFieldValue(contact, fields.prodId),
+      deptActual: getCustomFieldValue(contact, fields.dept),
+      carrito: JSON.parse(getCustomFieldValue(contact, fields.carrito) || "[]")
+    };
+
+    if (trace) {
+      trace.obj("Estado Router", {
+        estado: state.currentEstado,
+        productoId: state.prevProductoId,
+        catMencionada,
+        pideInformacion,
+        pideFotos,
+        esSoloSaludo
+      });
+    }
 
     let targetProduct = null;
     let esSeleccionReciente = false;
     let responseText = "";
     let responseImgs = [];
-    let estadoPropuesto = currentEstado === "nuevo" ? "interaccion" : currentEstado;
+    let estadoPropuesto = state.currentEstado === "nuevo" ? "interaccion" : state.currentEstado;
 
     if (esConsultaTecnicaRara) {
       await sendMessageToGHL(contactId, "Excelente pregunta. Para brindarle una respuesta técnica exacta sobre la instalación y materiales específicos, le transferiré con un asesor especializado. Un momento por favor... 👨‍💼", env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
@@ -917,14 +941,16 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       return;
     }
 
-    if (currentEstado === "esperando_departamento") {
-      const depmunRaw = await env.COVERAGE_DB.get("listado:depmun");
-      const depmun = JSON.parse(depmunRaw || "{}");
+    // --- LÓGICA DE COBERTURA Y UBICACIÓN ---
+    const depmunRaw = await env.COVERAGE_DB.get("listado:depmun");
+    const depmun = JSON.parse(depmunRaw || "{}");
+
+    if (state.currentEstado === "esperando_departamento") {
       const foundDept = Object.keys(depmun).find(d => norm.includes(normalizarTextoGlobal(d)));
       if (foundDept) {
-        await setCustomFieldValue(contact, fDept, foundDept, env, trace);
+        await setCustomFieldValue(contact, fields.dept, foundDept, env, trace);
         const municipios = depmun[foundDept] || [];
-        const munPendiente = munProp ? normalizarTextoGlobal(munProp) : "";
+        const munPendiente = state.munProp ? normalizarTextoGlobal(state.munProp) : "";
         let munReal = null;
         if (munPendiente.length > 3) {
           munReal = municipios.find(m => {
@@ -946,22 +972,22 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
         if (munReal) {
           const resp = await obtenerRespuestaCoverage(munReal, env, trace);
           if (resp) {
-            await setCustomFieldValue(contact, fMunProp, null, env, trace);
-            await setCustomFieldValue(contact, fEstado, "producto", env, trace);
+            await setCustomFieldValue(contact, fields.munProp, null, env, trace);
+            await setCustomFieldValue(contact, fields.estado, "producto", env, trace);
             await sendMessageToGHL(contactId, resp, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
             return;
           }
         }
-        await setCustomFieldValue(contact, fEstado, "esperando_municipio", env, trace);
+        await setCustomFieldValue(contact, fields.estado, "esperando_municipio", env, trace);
         await sendMessageToGHL(contactId, "¿En qué municipio de " + foundDept.toUpperCase() + " está?", env, trace, [], null, conversationId);
         return;
       }
       await sendMessageToGHL(contactId, "¿En qué departamento de Guatemala se encuentra? 🇬🇹", env, trace, [], null, conversationId);
       return;
     }
-    if (currentEstado === "esperando_municipio") {
-      const dept = getCustomFieldValue(contact, fDept);
-      const depmun = JSON.parse(await env.COVERAGE_DB.get("listado:depmun") || "{}");
+
+    if (state.currentEstado === "esperando_municipio") {
+      const dept = state.deptActual;
       const municipios = depmun[dept] || [];
       let mun = municipios.find(m => norm.includes(m));
       if (!mun) {
@@ -972,7 +998,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
         const resp = await obtenerRespuestaCoverage(mun, env, trace);
         if (resp) {
           await sendMessageToGHL(contactId, resp, env, trace, [], null, conversationId);
-          await setCustomFieldValue(contact, fEstado, "producto", env, trace);
+          await setCustomFieldValue(contact, fields.estado, "producto", env, trace);
           return;
         }
       }
@@ -988,14 +1014,14 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       }
       const stopWords = ["ubicacion", "lugar", "donde", "entrega", "envio", "cobertura", "mandan", "reparten", "llegan", "estan", "direccion", "entregan", "hola", "buen", "dia", "tarde", "noche", "tienda", "fisica"];
       const potentialMun = norm.split(/\s+/).filter(w => w.length > 3 && !stopWords.includes(w)).join(" ");
-      if (potentialMun) await setCustomFieldValue(contact, fMunProp, potentialMun, env, trace);
-      await setCustomFieldValue(contact, fEstado, "esperando_departamento", env, trace);
+      if (potentialMun) await setCustomFieldValue(contact, fields.munProp, potentialMun, env, trace);
+      await setCustomFieldValue(contact, fields.estado, "esperando_departamento", env, trace);
       await sendMessageToGHL(contactId, "Con gusto. ¿En qué departamento se encuentra? 📍", env, trace, [], null, conversationId);
       return;
     }
 
-    if (prevProductoId && (pideInformacion || esAfirmacionGenerica || pideFotos || pideCambioCama) && currentEstado !== "confirmacion_categoria") {
-      targetProduct = await obtenerProductoSeguro(prevProductoId, env, trace);
+    if (state.prevProductoId && (pideInformacion || esAfirmacionGenerica || pideFotos || pideCambioCama) && state.currentEstado !== "confirmacion_categoria") {
+      targetProduct = await obtenerProductoSeguro(state.prevProductoId, env, trace);
       if (targetProduct && targetProduct.tipo === "combo" && pideCambioCama) {
           const catCama = ["matri", "matrimonial", "king", "queen"].find(sz => norm.includes(sz));
           if (catCama) {
@@ -1010,50 +1036,48 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     }
     if (!targetProduct) targetProduct = await buscarProductoPorCodigoEnMensaje(rawMsg, env, trace);
     if (!targetProduct) {
-      let selIdx = detectarSeleccionNatural(message, carrito);
-      if (selIdx !== null && carrito[selIdx]) {
-        targetProduct = await obtenerProductoSeguro(carrito[selIdx].key.split(":").pop(), env, trace);
+      let selIdx = detectarSeleccionNatural(message, state.carrito);
+      if (selIdx !== null && state.carrito[selIdx]) {
+        targetProduct = await obtenerProductoSeguro(state.carrito[selIdx].key.split(":").pop(), env, trace);
         if (targetProduct) esSeleccionReciente = true;
       }
     }
-    if (!targetProduct && prevProductoId) targetProduct = await obtenerProductoSeguro(prevProductoId, env, trace);
-    if (!targetProduct && !pideCatalogo && !pideInformacion && !tieneCategoria) targetProduct = await buscarProductoPorNombreEnMensaje(message, env, trace);
+    if (!targetProduct && state.prevProductoId) targetProduct = await obtenerProductoSeguro(state.prevProductoId, env, trace);
+    if (!targetProduct && !pideCatalogo && !pideInformacion && !catMencionada) targetProduct = await buscarProductoPorNombreEnMensaje(message, env, trace);
+
     if (targetProduct) {
       if (trace) trace.add("Producto identificado: " + targetProduct.titulo + " (" + targetProduct.id + ")");
-      await setCustomFieldValue(contact, fProductoId, targetProduct.id, env, trace);
-      await setCustomFieldValue(contact, fOffset, "0", env, trace); // Reset offset on selection
-    } else {
-      if (trace) trace.add("No se pudo identificar ningún producto.");
+      await setCustomFieldValue(contact, fields.prodId, targetProduct.id, env, trace);
+      await setCustomFieldValue(contact, fields.offset, "0", env, trace);
     }
     if (pideGarantia) {
       await triggerHandover(contactId, env, trace);
       return;
     }
 
-    if (currentEstado === "confirmacion_categoria") {
-      const confirmaCambio = esAfirmacionGenerica || norm.startsWith("si") || (propCat && norm.includes(propCat));
+    if (state.currentEstado === "confirmacion_categoria") {
+      const confirmaCambio = esAfirmacionGenerica || norm.startsWith("si") || (state.propCat && norm.includes(state.propCat));
       if (confirmaCambio) {
-        if (trace) trace.add("Cambio de categoría confirmado por afirmación o mención.");
-        await setCustomFieldValue(contact, fPropCat, null, env, trace);
-        const resCat = await moduloCatalogo(message, contact, env, trace, propCat);
+        if (trace) trace.add("Cambio de categoría confirmado.");
+        await setCustomFieldValue(contact, fields.propCat, null, env, trace);
+        const resCat = await moduloCatalogo(message, contact, env, trace, state.propCat);
         if (resCat.text) await sendMessageToGHL(contactId, resCat.text, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
-        await setCustomFieldValue(contact, fEstado, "catalogo", env, trace);
+        await setCustomFieldValue(contact, fields.estado, "catalogo", env, trace);
         return;
       }
     }
-    if (targetProduct && tieneCategoria && !pideInformacion && !pideFotos) {
+    if (targetProduct && catMencionada && !pideInformacion && !pideFotos) {
       if (!normalizarTextoGlobal(targetProduct.titulo).includes(catMencionada)) {
-        await setCustomFieldValue(contact, fPropCat, catMencionada, env, trace);
-        responseText = await callVendedorElitePro(message, contact, env, targetProduct, false, null, esSoloSaludo, currentEstado === "nuevo", yaEnvioMenu, false, catMencionada, false, trace);
-        await setCustomFieldValue(contact, fEstado, "confirmacion_categoria", env, trace);
+        await setCustomFieldValue(contact, fields.propCat, catMencionada, env, trace);
+        responseText = await callVendedorElitePro(message, contact, env, targetProduct, false, null, esSoloSaludo, state.currentEstado === "nuevo", state.yaEnvioMenu, false, catMencionada, false, trace);
+        await setCustomFieldValue(contact, fields.estado, "confirmacion_categoria", env, trace);
         await sendMessageToGHL(contactId, responseText, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
         return;
       }
     }
 
     if (targetProduct && !pideCatalogo) {
-      // V6.5: Affirmations for photos after product presentation
-      if (currentEstado === "producto" && esAfirmacionGenerica) pideFotos = true;
+      if (state.currentEstado === "producto" && esAfirmacionGenerica) pideFotos = true;
 
       if (pideSoloParte && targetProduct.tipo === "combo" && Array.isArray(targetProduct.items)) {
         if (trace) trace.add("Intención detectada: Pedir pieza individual de un combo.");
@@ -1064,26 +1088,25 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
         });
         if (pieceFound) {
           if (trace) trace.add("Pieza individual encontrada: " + pieceFound.titulo);
-          // Pricing logic: get from DB if possible to ensure +200 is applied if it's stored as individual
           const dbPiece = await obtenerProductoSeguro(pieceFound.id || pieceFound.sku, env, trace);
           const finalPrice = dbPiece ? dbPiece.precio : (parseFloat(pieceFound.precio) + 200);
-          const priceStr = finalPrice > 200 ? ("💰 *Precio: Q" + finalPrice + "*") : "";
+          const priceStr = finalPrice > 0 ? ("💰 *Precio: Q" + finalPrice + "*") : "";
+          const specs = "📏 Medidas: " + (pieceFound.medidas || "N/A") + "\n🛠 Material: " + (pieceFound.estructura || "N/A") + "\n🎨 Colores: " + (pieceFound.colores || "N/A");
+          const responseImgs = [pieceFound.imagen1, pieceFound.imagen2, pieceFound.imagen, pieceFound.url, pieceFound.link_publico].filter(img => typeof img === "string" && img.length > 10 && img.startsWith("http"));
           const sheet = "Con gusto, aquí tiene el detalle de la pieza individual:\n\n" +
             "*" + (pieceFound.titulo || pieceFound.nombre).toUpperCase() + "*\n" +
             priceStr + "\n" +
-            "📏 Medidas: " + (pieceFound.medidas || "N/A") + "\n" +
-            "🛠 Material: " + (pieceFound.estructura || "N/A") + "\n" +
-            "🎨 Colores: " + (pieceFound.colores || "N/A");
-          await sendMessageToGHL(contactId, sheet + "\n\nLe transferiré con un asesor para que pueda ayudarle con la compra por separado. 😉", env, trace, pieceFound.url || pieceFound.link_publico || [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
+            specs + "\n\nLe transferiré con un asesor para que pueda ayudarle con la compra por separado. 😉";
+          await sendMessageToGHL(contactId, sheet, env, trace, responseImgs, (env.GHL_LOCATION_ID || contact.locationId), conversationId);
           await triggerHandover(contactId, env, trace);
           return;
         }
       }
 
-      const catProd = categorias.find(c => normalizarTextoGlobal(targetProduct.titulo).includes(c)) || getCustomFieldValue(contact, fUltimaCat);
+      const catProd = categorias.find(c => normalizarTextoGlobal(targetProduct.titulo).includes(c)) || getCustomFieldValue(contact, fields.ultimaCat);
       if (catProd) {
-        await setCustomFieldValue(contact, fUltimaCat, catProd, env, trace);
-        await setCustomFieldValue(contact, fCatInteres, catProd, env, trace);
+        await setCustomFieldValue(contact, fields.ultimaCat, catProd, env, trace);
+        await setCustomFieldValue(contact, fields.catInteres, catProd, env, trace);
       }
       if ((pideFotos || pideCompra || esAfirmacionGenerica) && (!targetProduct.imagenes || targetProduct.imagenes.length === 0)) {
         if (catProd === "ropero") await addToWorkflow(contactId, "9b36093c-f008-4261-b2ba-bc54a0cdd9c9", env, trace);
@@ -1093,8 +1116,8 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
         if (targetProduct.tipo === "combo" && Array.isArray(targetProduct.items) && targetProduct.items.length >= 3) responseImgs = [...new Set(targetProduct.items.map(i => i.imagen1 || i.imagen2 || i.imagen || i.url).filter(u => typeof u === "string" && u.length > 10 && u.startsWith("http")))];
         else responseImgs = targetProduct.imagenes || [];
       }
-      const esNuevo = targetProduct.id !== prevProductoId && !pideInformacion;
-      responseText = await callVendedorElitePro(message, contact, env, targetProduct, pideCompra, await obtenerRespuestaCoverage(rawMsg, env, trace), esSoloSaludo, currentEstado === "nuevo", yaEnvioMenu, esNuevo, null, (pideFotos || norm.includes("toda")), trace);
+      const esNuevoProducto = targetProduct.id !== state.prevProductoId && !pideInformacion;
+      responseText = await callVendedorElitePro(message, contact, env, targetProduct, pideCompra, await obtenerRespuestaCoverage(rawMsg, env, trace), esSoloSaludo, state.currentEstado === "nuevo", state.yaEnvioMenu, esNuevoProducto, null, (pideFotos || norm.includes("toda")), trace);
 
       if (responseText && responseText.includes("[TRANSFERIR]")) {
         const cleanedResp = responseText.replace("[TRANSFERIR]", "").trim() || "Le pondré en contacto con un asesor para resolver sus dudas técnicas. 😉";
@@ -1103,17 +1126,16 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
         return;
       }
 
-      if ((esNuevo || !yaEnvioMenu) && /Medidas|Colores|Materiales|Precios|Envío|Cuotas/i.test(responseText)) await setCustomFieldValue(contact, fMenuEnviado, "true", env, trace);
+      if ((esNuevoProducto || !state.yaEnvioMenu) && /Medidas|Colores|Materiales|Precios|Envío|Cuotas/i.test(responseText)) await setCustomFieldValue(contact, fields.menuEnviado, "true", env, trace);
       await setCustomFieldValue(contact, getFieldId(env, "total_pedido"), targetProduct.precio || 0, env, trace);
       if (targetProduct.tipo === "combo") {
-        await setCustomFieldValue(contact, fComboPadre, targetProduct.id, env, trace);
-        if (Array.isArray(targetProduct.items)) await setCustomFieldValue(contact, fComboComp, JSON.stringify(targetProduct.items.map(i => i.id)), env, trace);
+        await setCustomFieldValue(contact, fields.comboPadre, targetProduct.id, env, trace);
+        if (Array.isArray(targetProduct.items)) await setCustomFieldValue(contact, fields.comboComp, JSON.stringify(targetProduct.items.map(i => i.id)), env, trace);
       }
       estadoPropuesto = pideCompra ? "cierre" : "producto";
-      await setCustomFieldValue(contact, fEstado, estadoPropuesto, env, trace);
+      await setCustomFieldValue(contact, fields.estado, estadoPropuesto, env, trace);
       let final = responseText;
-      const esNuevo = targetProduct.id !== prevProductoId && !pideInformacion;
-      if (esNuevo && targetProduct.titulo && !responseText.toUpperCase().includes(targetProduct.titulo.toUpperCase())) {
+      if (esNuevoProducto && targetProduct.titulo && !responseText.toUpperCase().includes(targetProduct.titulo.toUpperCase())) {
           final = "*" + targetProduct.titulo.toUpperCase() + "*\n\n" + responseText;
       }
 
@@ -1123,15 +1145,15 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       await sendMessageToGHL(contactId, final, env, trace, responseImgs, (env.GHL_LOCATION_ID || contact.locationId), conversationId);
       if (pideCompra && !pideInformacion) await triggerHandover(contactId, env, trace);
       return;
-    } else if (pideCatalogo || tieneCategoria || /\b(mediano|mediana|medianos|medianas|grande|grandes|pequeño|pequeña|pequeños|pequeñas|chico|chica|chicos|chicas|enorme|enormes|gigante|gigantes|estandar|media|grando|grandos)\b/i.test(norm) || (currentEstado === "catalogo" && norm.length > 3)) {
+    } else if (pideCatalogo || catMencionada || /\b(mediano|mediana|medianos|medianas|grande|grandes|pequeño|pequeña|pequeños|pequeñas|chico|chica|chicos|chicas|enorme|enormes|gigante|gigantes|estandar|media|grando|grandos)\b/i.test(norm) || (state.currentEstado === "catalogo" && norm.length > 3)) {
       let resCat = await moduloCatalogo(message, contact, env, trace);
       if (resCat.retryWithoutKeywords) resCat = await moduloCatalogo("ver mas", contact, env, trace);
       if (resCat.text) await sendMessageToGHL(contactId, resCat.text, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
       if (resCat.handover) await triggerHandover(contactId, env, trace);
-      await setCustomFieldValue(contact, fEstado, "catalogo", env, trace);
+      await setCustomFieldValue(contact, fields.estado, "catalogo", env, trace);
       return;
     } else {
-      responseText = await callVendedorElitePro(message, contact, env, targetProduct, pideCompra, await obtenerRespuestaCoverage(rawMsg, env, trace), esSoloSaludo, currentEstado === "nuevo", yaEnvioMenu, false, null, false, trace);
+      responseText = await callVendedorElitePro(message, contact, env, targetProduct, pideCompra, await obtenerRespuestaCoverage(rawMsg, env, trace), esSoloSaludo, state.currentEstado === "nuevo", state.yaEnvioMenu, false, null, false, trace);
 
       // Fix for double bolding
       responseText = responseText.replace(/\*\*(.*?)\*\*/g, "*$1*");
@@ -1209,20 +1231,19 @@ export default {
             await env.PRODUCTS_DB.delete(lKey);
 
             if (!finalBuffer) return;
-            trace.add("Procesando mensaje consolidado (POST-BUFFER)...");
-            trace.obj("Final Buffer Data", finalBuffer);
+            trace.add("--- PROCESANDO BUFFER CONSOLIDADO ---");
+            trace.obj("Buffer Final", finalBuffer);
 
             let extractedText = "";
             let attachmentsToProcess = finalBuffer.attachments || [];
 
-            // Fallback API if media message but no attachments in webhook
             if (finalBuffer.isMedia && attachmentsToProcess.length === 0) {
-              trace.add("Detectado mensaje multimedia sin adjuntos en webhook. Ejecutando fallback API...");
+              trace.add("Mensaje multimedia detectado sin adjuntos en webhook. Consultando API de GHL...");
               attachmentsToProcess = await getLatestMessageAttachments(contactId, finalBuffer.locationId, env, trace);
             }
 
             if (attachmentsToProcess.length > 0) {
-              trace.add("Procesando " + attachmentsToProcess.length + " adjuntos...");
+              trace.add("Extrayendo contenido de " + attachmentsToProcess.length + " adjuntos...");
               for (const att of attachmentsToProcess) {
                 const text = await handleMediaAttachment(att, env, trace);
                 if (text) extractedText += " " + text;
@@ -1231,19 +1252,20 @@ export default {
 
             let fullMsg = (finalBuffer.text + " " + extractedText).trim();
             if (!fullMsg && finalBuffer.isMedia) {
-              trace.add("No se pudo extraer texto de la media, usando placeholder.");
+              trace.add("Media procesada pero sin texto extraíble. Usando placeholder.");
               fullMsg = "[Imagen/Audio Recibido]";
             }
 
             if (!fullMsg) {
-              trace.add("Mensaje final vacío, abortando.");
+              trace.add("Sin contenido para procesar. Abortando.");
               return;
             }
 
             await processFullFlow(fullMsg, contactId, contact, env, trace, finalBuffer.conversationId);
+            trace.add("--- FIN DE PROCESAMIENTO ---");
           }
         } catch (err) {
-          trace.error("Error en waitUntil: ", err);
+          trace.error("Excepción en flujo de fondo (waitUntil): ", err);
         } finally {
           trace.flush();
         }
