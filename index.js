@@ -653,8 +653,10 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
     const fullSpecs = "Medidas: " + (p.medidas || "N/A") + "\nMaterial: " + (p.estructura || "N/A") + "\nColores: " + (p.colores || "N/A") + "\nResistencia: " + (p.resistencia_peso || "N/A") + "\nGarantía: " + (p.garantia || "N/A");
     if (esNuevoProducto) {
       info = "PRODUCTO: " + p.titulo + "\nPrecio: Q" + p.precio + "\nDescripción: " + (p.descripcion || "N/A") + (p.tipo === "combo" ? "\nComponentes: " + (p.ficha_combinada || "N/A") : "") + "\n(NOTA: El resto de especificaciones técnicas están ocultas para esta primera respuesta, solo da el resumen)";
+    } else if (p.tipo === "combo") {
+      info = "PRODUCTO: " + p.titulo + " (Combo de " + p.conteo_piezas + " piezas)\nPrecio: Q" + p.precio + "\nDescripción: " + (p.descripcion || "N/A") + "\n" + fullSpecs + "\nComponentes del combo:\n" + p.ficha_combinada;
     } else {
-      info = "PRODUCTO: " + p.titulo + "\nPrecio: Q" + p.precio + "\nDescripción: " + (p.descripcion || "N/A") + "\n" + (p.tipo === "combo" ? "Componentes: " + p.ficha_combinada + "\n" : "") + fullSpecs;
+      info = "PRODUCTO: " + p.titulo + "\nPrecio: Q" + p.precio + "\nDescripción: " + (p.descripcion || "N/A") + "\n" + fullSpecs;
     }
   }
   const mostrarMenu = !!productoActual && !esSoloSaludo && (!yaEnvioMenu || esNuevoProducto);
@@ -663,7 +665,7 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
   let reglas = [
     "1. BREVEDAD: Máximo 2 oraciones normalmente. Evita saltos de línea excesivos.",
     "2. LISTAS: Usa viñetas atractivas (ej: ✨ o 📍) para características y componentes.",
-    "3. NATURALIDAD: PROHIBIDO usar etiquetas como 'Producto:', 'Resumen:', 'Estado:', o '¡Invita a comprar!'. Escribe como un humano en un chat.",
+    "3. NATURALIDAD: PROHIBIDO usar etiquetas como 'Producto:', 'Resumen:', 'Estado:', o '¡Invita a comprar!'. Escribe como un humano en un chat. Usa negritas con un solo asterisco (ej: *texto*) para resaltar nombres y precios.",
     "4. PRESENTACIÓN: Si esNuevoProducto es TRUE, DEBES resumir la 'Descripción' y mencionar brevemente los 'Componentes' usando una lista atractiva. PROHIBIDO dar Medidas, Material, Colores, Resistencia o Garantía en este primer mensaje a menos que el cliente ya haya preguntado.",
     "5. COMBOS: Si el cliente pide Medidas, Colores o Materiales de un COMBO, debes revisar la información de cada componente en los DATOS PRODUCTO y dar una respuesta detallada para cada uno.",
     "6. SOLO LO SOLICITADO: No divagues. Mantén el mensaje compacto.",
@@ -720,11 +722,13 @@ async function moduloCatalogo(message, contact, env, trace, forcingCat = null) {
   const categorias = ["cama", "cocina", "ropero", "sofa", "comedor", "gavetero", "tocador", "cabecera", "mesita", "librera", "mesa", "trinchante", "platera", "mueble", "amueblado"];
   const fUltimaCat = getFieldId(env, "ultima_categoria");
   const fFiltroTamano = getFieldId(env, "filtro_tamano");
+  const fOffset = getFieldId(env, "catalogo_offset");
+
   let catFound = categorias.find(c => m.includes(c));
   let cat = catFound || getCustomFieldValue(contact, fUltimaCat) || "muebles";
   let tamano = getCustomFieldValue(contact, fFiltroTamano);
 
-  const mTamano = m.match(/\b(mediano|mediana|medianos|medianas|grande|grandes|pequeño|pequeña|pequeños|pequeñas|chico|chica|chicos|chicas|enorme|enormes|gigante|gigantes|estandar|media|grando|grandos)\b/i);
+  const mTamano = m.match(/\b(mediano|mediana|medianos|medianas|grande|grandes|pequeño|pequeña|pequeños|pequeñas|chico|chica|chicos|chicas|enorme|enormes|gigante|gigantes|estandar|media|grando|grandos|amplio|amplios|espacioso|espaciosos)\b/i);
   if (mTamano) {
     const matched = mTamano[1].toLowerCase();
     const isMed = /median|peque|chico|chica|estandar|media/.test(matched);
@@ -732,6 +736,11 @@ async function moduloCatalogo(message, contact, env, trace, forcingCat = null) {
     await setCustomFieldValue(contact, fFiltroTamano, tamano, env, trace);
   }
   if (catFound) await setCustomFieldValue(contact, fUltimaCat, cat, env, trace);
+
+  if (!cat || cat === "muebles") {
+      return { text: "Bienvenido. ¿En qué puedo ayudarle hoy? Contamos con variedad de:\n\n✨ CAMAS\n✨ COCINAS\n✨ ROPEROS\n✨ SALAS\n✨ COMEDORES\n✨ GAVETEROS\n\n¿Cuál le gustaría conocer? 😉" };
+  }
+
   if (!tamano) {
     const genero = /cama|cocina|sala|mesa/.test(cat) ? "a" : "o";
     const displaySize = genero === "a" ? "mediana" : "mediano";
@@ -739,46 +748,68 @@ async function moduloCatalogo(message, contact, env, trace, forcingCat = null) {
       text: "¿Busca opciones de " + cat.toUpperCase() + " en tamaño " + displaySize + " o grande? 😉"
     };
   }
-  let resultados = listado.filter(p => normalizarTextoGlobal(p.nombre || p.titulo).includes(cat)).filter(p => {
+
+  // Filtrado Base (Combos)
+  const filteredList = (cat === "muebles") ? listado : listado.filter(p => normalizarTextoGlobal(p.nombre || p.titulo).includes(cat));
+  const combos = filteredList.filter(p => {
     const k = (p.key || "").toLowerCase();
     const n = (p.nombre || p.titulo || "").toLowerCase();
     return k.includes("combo") || n.includes("combo") || n.includes("amueblado");
   });
 
-  const mNorm = normalizarTextoGlobal(message);
-  const stopWords = ["combo", "combos", "opciones", "otros", "otras", "promociones", "promocion", "catálogo", "muestreme", "mostrame", "ver", "mas", "quiero", "gustaria", "tiene"];
-  const keywords = mNorm.split(/\s+/).filter(w => w.length > 3 && !stopWords.includes(w) && !categorias.includes(w) && !/mediano|mediana|medianos|medianas|grande|grandes|pequeño|pequeña|pequeños|pequeñas|chico|chica|chicos|chicas|enorme|enormes|gigante|gigantes|estandar|media|grando|grandos/.test(w));
-  if (keywords.length > 0) {
-    resultados = resultados.filter(p => {
-      const n = normalizarTextoGlobal(p.nombre || p.titulo);
-      return keywords.some(k => n.includes(k));
-    });
-  }
-
+  let resultados = [];
   if (tamano === "mediano") {
-    if (cat === "cama") resultados = resultados.filter(p => {
+    if (cat === "cama") resultados = combos.filter(p => {
       const n = normalizarTextoGlobal(p.nombre || p.titulo);
       return n.includes("matri") || n.includes("queen");
     });
-    else if (cat === "ropero" || cat === "cocina") resultados = resultados.filter(p => (parseFloat(p.precio) || 0) <= 3499);
-    else resultados = resultados.filter(p => (parseFloat(p.precio) || 0) <= 5000);
+    else if (cat === "ropero" || cat === "cocina") resultados = combos.filter(p => (parseFloat(p.precio) || 0) <= 3499);
+    else resultados = combos.filter(p => (parseFloat(p.precio) || 0) <= 5000);
   } else if (tamano === "grande") {
-    if (cat === "cama") resultados = resultados.filter(p => normalizarTextoGlobal(p.nombre || p.titulo).includes("king"));
-    else if (cat === "ropero" || cat === "cocina") resultados = resultados.filter(p => (parseFloat(p.precio) || 0) >= 3500);
-    else resultados = resultados.filter(p => (parseFloat(p.precio) || 0) > 5000);
+    if (cat === "cama") resultados = combos.filter(p => normalizarTextoGlobal(p.nombre || p.titulo).includes("king"));
+    else if (cat === "ropero" || cat === "cocina") resultados = combos.filter(p => (parseFloat(p.precio) || 0) >= 3500);
+    else resultados = combos.filter(p => (parseFloat(p.precio) || 0) > 5000);
   }
-  if (resultados.length === 0) {
-    if (keywords.length > 0) return {
-      text: "No encontré opciones exactas de " + cat.toUpperCase() + " con esos detalles, pero aquí tiene otras disponibles:\n",
-      retryWithoutKeywords: true
-    };
+
+  // Filtrado por Keywords adicionales (Especificaciones)
+  const mNorm = normalizarTextoGlobal(message);
+  const stopWords = ["combo", "combos", "opciones", "otros", "otras", "promociones", "promocion", "catálogo", "muestreme", "mostrame", "ver", "mas", "quiero", "gustaria", "tiene"];
+  const specs = mNorm.split(/\s+/).filter(word => word.length >= 4 && !stopWords.includes(word) && !categorias.includes(word) && !/mediano|mediana|medianos|medianas|grande|grandes|pequeño|pequeña|pequeños|pequeñas|chico|chica|chicos|chicas|enorme|enormes|gigante|gigantes|estandar|media|grando|grandos|amplio|amplios|espacioso|espaciosos/.test(word));
+
+  if (specs.length > 0) {
+      const refinados = resultados.filter(p => {
+          const t = normalizarTextoGlobal((p.nombre || p.titulo || "") + " " + (p.sku || "") + " " + (p.key || ""));
+          return specs.some(s => t.includes(s));
+      });
+      if (refinados.length > 0) resultados = refinados;
+  }
+
+  // Paginación (Offset)
+  let offset = parseInt(getCustomFieldValue(contact, fOffset)) || 0;
+  if (mNorm.includes("otro") || mNorm.includes("variedad") || mNorm.includes("mas")) {
+      offset += 4;
+      if (offset >= resultados.length) offset = 0;
+  } else {
+      offset = 0;
+  }
+  await setCustomFieldValue(contact, fOffset, offset.toString(), env, trace);
+
+  let preMsg = "";
+  if (resultados.length === 0 && tamano) {
+    preMsg = "Por el momento no tengo opciones de " + cat.toUpperCase() + " con esas características, pero aquí tiene lo que tenemos disponible:\n\n";
+    resultados = combos;
+    offset = 0;
+  }
+
+  const finalResultados = resultados.slice(offset, offset + 4);
+  if (finalResultados.length === 0) {
     return {
       text: "No encontré opciones de " + cat.toUpperCase() + " en este momento. Un asesor le ayudará pronto. 😉",
       handover: true
     };
   }
-  resultados = resultados.slice(0, 4);
-  const paraGuardar = resultados.map(p => ({
+
+  const paraGuardar = finalResultados.map(p => ({
     key: p.key,
     nombre: p.nombre || p.titulo,
     precio: p.precio
@@ -787,10 +818,10 @@ async function moduloCatalogo(message, contact, env, trace, forcingCat = null) {
   await setCustomFieldValue(contact, getFieldId(env, "carrito"), paraGuardar.map(p => p.nombre).join(", "), env, trace);
   await setCustomFieldValue(contact, fFiltroTamano, null, env, trace);
 
-  let resp = "Aquí tiene opciones de **" + cat.toUpperCase() + (tamano ? " " + tamano.toUpperCase() : "") + "S** disponibles:\n\n";
-  resultados.forEach((p, i) => {
-    resp += "📍 **" + (i + 1) + ". " + (p.nombre || p.titulo).toUpperCase() + "**\n";
-    resp += "💰 **Precio: Q" + p.precio + "**\n\n";
+  let resp = preMsg || ("Aquí tiene opciones de *" + cat.toUpperCase() + (tamano ? " " + tamano.toUpperCase() : "") + "S* disponibles:\n\n");
+  finalResultados.forEach((p, i) => {
+    resp += "📍 *" + (i + 1) + ". " + (p.nombre || p.titulo).toUpperCase() + "*\n";
+    resp += "💰 *Precio: Q" + p.precio + "*\n\n";
   });
   resp += "¿Cuál le gustaría conocer a detalle? 😉";
   return {
@@ -811,7 +842,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     const pideCatalogo = /catalogo|modelos|opciones|variedad|otros|ver mas|muestreme|mostrame|oferta|venden|vende|que mas/i.test(norm);
     const pideCobertura = /\b(ubicacion|lugar|donde|entrega|envio|cobertura|mandan|reparten|llegan|estan|direccion|tienda|fisica|puntos)\b/i.test(norm);
     const pideGarantia = /\b(compre|adquiri|garantia|rompio|arruino|dañado|malo|reclamo|fallo)\b/i.test(norm);
-    const pideSoloParte = /\b(solo la|solo el|venden solo|aparte|por separado|incluye solo)\b/i.test(norm);
+    const pideSoloParte = /\b(solo|solamente|separado|aparte|sin el|sin la|solo la|solo el|venden solo|por separado|incluye solo)\b/i.test(norm);
     const esAfirmacionGenerica = /^(ok|vale|esta bien|muy bien|si gracias|de acuerdo|perfecto|entendido|así es|si|sii|por favor|claro|envia|mandame|ofertas|oferta|si porfavor)$/i.test(norm.trim());
     const esSoloSaludo = /^(hola|buen|buena|buenas|tarde|dia|dias|noche|noches|\s)+$/i.test(norm.trim());
     const esConsultaTecnicaRara = /\b(colgante|desarmar|desarma|doblar|dobla|empotra|pared|techo|tornillo|instala|clavo|madera tipo)\b/i.test(norm);
@@ -827,6 +858,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     const fPropCat = getFieldId(env, "categoria_propuesta");
     const fDept = getFieldId(env, "departamento_actual");
     const fMunProp = getFieldId(env, "municipio_propuesto");
+    const fOffset = getFieldId(env, "catalogo_offset");
     const currentEstado = getCustomFieldValue(contact, fEstado) || "nuevo";
     const propCat = getCustomFieldValue(contact, fPropCat);
     const yaEnvioMenu = getCustomFieldValue(contact, fMenuEnviado) === "true";
@@ -962,6 +994,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     if (targetProduct) {
       if (trace) trace.add("Producto identificado: " + targetProduct.titulo + " (" + targetProduct.id + ")");
       await setCustomFieldValue(contact, fProductoId, targetProduct.id, env, trace);
+      await setCustomFieldValue(contact, fOffset, "0", env, trace); // Reset offset on selection
     } else {
       if (trace) trace.add("No se pudo identificar ningún producto.");
     }
@@ -1006,9 +1039,9 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
           // Pricing logic: get from DB if possible to ensure +200 is applied if it's stored as individual
           const dbPiece = await obtenerProductoSeguro(pieceFound.id || pieceFound.sku, env, trace);
           const finalPrice = dbPiece ? dbPiece.precio : (parseFloat(pieceFound.precio) + 200);
-          const priceStr = finalPrice > 200 ? ("💰 **Precio: Q" + finalPrice + "**") : "";
+          const priceStr = finalPrice > 200 ? ("💰 *Precio: Q" + finalPrice + "*") : "";
           const sheet = "Con gusto, aquí tiene el detalle de la pieza individual:\n\n" +
-            "**" + (pieceFound.titulo || pieceFound.nombre).toUpperCase() + "**\n" +
+            "*" + (pieceFound.titulo || pieceFound.nombre).toUpperCase() + "*\n" +
             priceStr + "\n" +
             "📏 Medidas: " + (pieceFound.medidas || "N/A") + "\n" +
             "🛠 Material: " + (pieceFound.estructura || "N/A") + "\n" +
@@ -1052,6 +1085,10 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       await setCustomFieldValue(contact, fEstado, estadoPropuesto, env, trace);
       let final = responseText;
       if (targetProduct.titulo && !responseText.toUpperCase().includes(targetProduct.titulo.toUpperCase())) final = "*" + targetProduct.titulo.toUpperCase() + "*\n\n" + responseText;
+
+      // Fix for double bolding if AI already bolded it
+      final = final.replace(/\*\*(.*?)\*\*/g, "*$1*");
+
       await sendMessageToGHL(contactId, final, env, trace, responseImgs, (env.GHL_LOCATION_ID || contact.locationId), conversationId);
       if (pideCompra && !pideInformacion) await triggerHandover(contactId, env, trace);
       return;
@@ -1064,6 +1101,10 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       return;
     } else {
       responseText = await callVendedorElitePro(message, contact, env, targetProduct, pideCompra, await obtenerRespuestaCoverage(rawMsg, env, trace), esSoloSaludo, currentEstado === "nuevo", yaEnvioMenu, false, null, false, trace);
+
+      // Fix for double bolding
+      responseText = responseText.replace(/\*\*(.*?)\*\*/g, "*$1*");
+
       if (responseText && responseText.includes("[TRANSFERIR]")) {
         const cleanedResp = responseText.replace("[TRANSFERIR]", "").trim() || "Un asesor le ayudará con su consulta en un momento. 😉";
         await sendMessageToGHL(contactId, cleanedResp, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
