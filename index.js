@@ -1,5 +1,7 @@
 /* =========================================================
-   SISTEMA DE MUEBLERÍA IA - Versión Maestro Integrada (Final V6.5)
+   SISTEMA DE MUEBLERÍA IA - Versión Maestro Integrada (Final V7.1)
+   - Fix: Category confirmation loop logic
+   - Fix: Greeting suppression in follow-up messages
    - Fix: OCR & Transcription (Image/Audio processing)
    - Fix: Bed size swap logic (Finds alternative combos for King/Queen/Matri)
    - Fix: Vague refinement handover (mas grande, mas cara, etc.)
@@ -658,7 +660,7 @@ function detectarSeleccionNatural(mensaje, lista) {
 }
 
 async function callVendedorElitePro(message, contact, env, productoActual, intencionCierre, coverage, esSoloSaludo = false, esPrimerMensaje = false, yaEnvioMenu = false, esNuevoProducto = false, confirmandoCat = null, pideFotos = false, trace = null) {
-  if (trace) trace.add("Llamando a OpenAI (VendedorElitePro). Producto: " + (productoActual?.titulo || "Ninguno"));
+  if (trace) trace.add("Llamando a OpenAI (VendedorElitePro). Producto: " + (productoActual?.titulo || "Ninguno") + " esPrimerMensaje: " + esPrimerMensaje);
   let info = "";
   if (productoActual) {
     const p = productoActual;
@@ -685,7 +687,7 @@ async function callVendedorElitePro(message, contact, env, productoActual, inten
     "8. COMPRA: " + (pideFotos ? "Después de la ayuda, añade una invitación para comprar solicitando estos datos en listado vertical:\n- Nombre\n- DPI\n- Dirección\n- Teléfono" : ""),
     "9. EMOJIS: Máximo uno (fuera de las listas).",
     "10. CIERRE: NUNCA pidas datos si el cliente tiene dudas. Responde primero la duda.",
-    "11. SALUDO: " + instruccionSaludo,
+    "11. SALUDO: " + instruccionSaludo + " (Incluso evita '¡Hola!', 'Buen día', etc. si no es el primer mensaje).",
     "12. ESTRUCTURA: Si el cliente pregunta sobre temas estructurales (ej: 'se desarma', 'es colgante', 'se dobla', 'empotra', 'pared', 'madera tipo') y la información NO ESTÁ en los DATOS PRODUCTO, DEBES responder exactamente '[TRANSFERIR]'.",
     "13. PAGOS: Aceptamos hasta 18 Visa Cuotas SIN RECARGO. Otros métodos: Tarjetas Débito/Crédito, Pago Contra Entrega y Depósito. NO tenemos crédito propio, solo Visa Cuotas.",
     "14. TIENDAS: \n- Petapa: AV Petapa 41-25 zona 12 Guatemala, frente del IRTRA. Tel: 5253 5965. Ubicación: https://maps.app.goo.gl/UbDQxjRqruWjhdXW9\n- Xenacoj: KM 40 zona 0 lote 91 carretera a Santo Domingo Xenacoj. Tel: 5253 3898. Ubicación: https://maps.app.goo.gl/4u9FqSDemcFy3zkv7",
@@ -855,7 +857,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     const pideCobertura = /\b(ubicacion|lugar|donde|entrega|envio|cobertura|mandan|reparten|llegan|estan|direccion|tienda|fisica|puntos)\b/i.test(norm);
     const pideGarantia = /\b(compre|adquiri|garantia|rompio|arruino|dañado|malo|reclamo|fallo)\b/i.test(norm);
     const pideSoloParte = /\b(solo|solamente|separado|aparte|sin el|sin la|solo la|solo el|venden solo|por separado|incluye solo)\b/i.test(norm);
-    const esAfirmacionGenerica = /^(ok|vale|esta bien|muy bien|si gracias|de acuerdo|perfecto|entendido|así es|si|sii|por favor|claro|envia|mandame|ofertas|oferta|si porfavor)$/i.test(norm.trim());
+    const esAfirmacionGenerica = /^(ok|vale|esta bien|muy bien|si gracias|de acuerdo|perfecto|entendido|así es|si|sii|por favor|porfavor|claro|envia|mandame|ofertas|oferta|si porfavor|si por favor|si claro)$/i.test(norm.trim());
     const esSoloSaludo = /^(hola|buen|buena|buenas|tarde|dia|dias|noche|noches|\s)+$/i.test(norm.trim());
     const esConsultaTecnicaRara = /\b(colgante|desarmar|desarma|doblar|dobla|empotra|pared|techo|tornillo|instala|clavo|madera tipo)\b/i.test(norm);
     const pideVagaMejora = /\b(mas grande|mas pequeña|mas cara|barata|barato|economico)\b/i.test(norm);
@@ -1015,15 +1017,16 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       return;
     }
 
-    if (currentEstado === "confirmacion_categoria" && esAfirmacionGenerica) {
-      await setCustomFieldValue(contact, fPropCat, null, env, trace);
-      const resCat = await moduloCatalogo(message, contact, env, trace, propCat);
-      if (resCat.retryWithoutKeywords) {
-          const retry = await moduloCatalogo("ver mas", contact, env, trace);
-          if (retry.text) await sendMessageToGHL(contactId, retry.text, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
-      } else if (resCat.text) await sendMessageToGHL(contactId, resCat.text, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
-      await setCustomFieldValue(contact, fEstado, "catalogo", env, trace);
-      return;
+    if (currentEstado === "confirmacion_categoria") {
+      const confirmaCambio = esAfirmacionGenerica || norm.startsWith("si") || (propCat && norm.includes(propCat));
+      if (confirmaCambio) {
+        if (trace) trace.add("Cambio de categoría confirmado por afirmación o mención.");
+        await setCustomFieldValue(contact, fPropCat, null, env, trace);
+        const resCat = await moduloCatalogo(message, contact, env, trace, propCat);
+        if (resCat.text) await sendMessageToGHL(contactId, resCat.text, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
+        await setCustomFieldValue(contact, fEstado, "catalogo", env, trace);
+        return;
+      }
     }
     if (targetProduct && tieneCategoria && !pideInformacion && !pideFotos) {
       if (!normalizarTextoGlobal(targetProduct.titulo).includes(catMencionada)) {
