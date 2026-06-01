@@ -428,6 +428,36 @@ async function obtenerRespuestaCoverage(texto, env, trace) {
   return null;
 }
 
+async function analizarSiEsUbicacion(mensaje, env, trace) {
+  if (trace) trace.add("Analizando si el mensaje es una ubicación: " + mensaje);
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + env.OPENAI_API_KEY
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [{
+          role: "system",
+          content: "Eres un experto en geografía de Guatemala. El usuario te enviará un mensaje y debes determinar si contiene el nombre de un municipio o departamento de Guatemala. Responde 'SI' o 'NO' únicamente."
+        }, {
+          role: "user",
+          content: mensaje
+        }],
+        temperature: 0
+      })
+    });
+    const data = await res.json();
+    const result = data.choices[0].message.content.trim().toUpperCase();
+    if (trace) trace.add("Resultado análisis ubicación: " + result);
+    return result === "SI";
+  } catch (err) {
+    return false;
+  }
+}
+
 async function fuzzyMatchMunicipio(municipio, listaMunicipios, env, trace) {
   const prompt = "El cliente escribió '" + municipio + "'. Los válidos son: " + listaMunicipios.join(", ") + ". ¿Cuál es el correcto? Responde SOLO el nombre o 'NULL'.";
   try {
@@ -828,7 +858,34 @@ async function moduloCatalogo(message, contact, env, trace, forcingCat = null) {
     offset = 0;
   }
 
-  const finalResultados = resultados.slice(offset, offset + 4);
+  let finalResultados = resultados.slice(offset, offset + 4);
+
+  // V7.3: Si hay pocas opciones (menos de 4) tras filtrar por tamaño, rellenar con el tamaño alternativo
+  if (tamano && finalResultados.length < 4) {
+      if (trace) trace.add("Pocos resultados para tamaño " + tamano + " (" + finalResultados.length + "). Rellenando...");
+      const altTamano = tamano === "mediano" ? "grande" : "mediano";
+      let altResultados = [];
+      if (altTamano === "mediano") {
+        if (cat === "cama") altResultados = combos.filter(p => {
+          const n = normalizarTextoGlobal(p.nombre || p.titulo);
+          return n.includes("matri") || n.includes("queen");
+        });
+        else if (cat === "ropero" || cat === "cocina") altResultados = combos.filter(p => (parseFloat(p.precio) || 0) <= 3499);
+        else altResultados = combos.filter(p => (parseFloat(p.precio) || 0) <= 5000);
+      } else {
+        if (cat === "cama") altResultados = combos.filter(p => normalizarTextoGlobal(p.nombre || p.titulo).includes("king"));
+        else if (cat === "ropero" || cat === "cocina") altResultados = combos.filter(p => (parseFloat(p.precio) || 0) >= 3500);
+        else altResultados = combos.filter(p => (parseFloat(p.precio) || 0) > 5000);
+      }
+
+      for (let p of altResultados) {
+          if (finalResultados.length >= 4) break;
+          if (!finalResultados.find(r => r.key === p.key)) {
+              finalResultados.push(p);
+          }
+      }
+  }
+
   if (finalResultados.length === 0) {
     return {
       text: "No encontré opciones de " + cat.toUpperCase() + " en este momento. Un asesor le ayudará pronto. 😉",
@@ -871,7 +928,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     // Detecciones de Intención
     const pideFotos = /fotos?|imagenes?|verlo|verla|mostrar|enviame|fts/i.test(message);
     const pideCompra = /\b(quiero comprar|lo quiero|la quiero|comprarlo|comprarla|pedido|ordenar|pagar|cuota|visa|deposito|transferencia|efectivo)\b/i.test(norm);
-    const pideInformacion = /(medida|dimension|precio|vale|cuesta|costo|material|color|envio|cuota|detalle|fotos|garantia|resiste|pago|visa|cuotas|tarjeta|deposito|transferencia|efectivo|toda la info|todos los datos)/i.test(norm);
+    const pideInformacion = /(medida|dimension|precio|vale|cuesta|costo|material|color|cuota|detalle|fotos|garantia|resiste|pago|visa|cuotas|tarjeta|deposito|transferencia|efectivo|toda la info|todos los datos)/i.test(norm);
     const pideCatalogo = /catalogo|modelos|opciones|variedad|otros|ver mas|muestreme|mostrame|oferta|venden|vende|que mas/i.test(norm);
     const pideCobertura = /\b(ubicacion|lugar|donde|entrega|envio|cobertura|mandan|reparten|llegan|estan|direccion|tienda|fisica|puntos)\b/i.test(norm);
     const pideGarantia = /\b(compre|adquiri|garantia|rompio|arruino|dañado|malo|reclamo|fallo)\b/i.test(norm);
@@ -879,6 +936,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     const esAfirmacionGenerica = /^(ok|vale|esta bien|muy bien|si gracias|de acuerdo|perfecto|entendido|así es|si|sii|por favor|porfavor|claro|envia|mandame|ofertas|oferta|si porfavor|si por favor|si claro)$/i.test(norm.trim());
     const esSoloSaludo = /^(hola|buen|buena|buenas|tarde|dia|dias|noche|noches|\s)+$/i.test(norm.trim());
     const esConsultaTecnicaRara = /\b(colgante|desarmar|desarma|doblar|dobla|empotra|pared|techo|tornillo|instala|clavo|madera tipo)\b/i.test(norm);
+    const pideInstalacion = norm.includes("instalacion") || norm.includes("instala");
     const pideVagaMejora = /\b(mas grande|mas pequeña|mas cara|barata|barato|economico)\b/i.test(norm);
     const pideCambioCama = /\b(matri|matrimonial|king|queen)\b/i.test(norm);
 
@@ -929,8 +987,16 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     let responseImgs = [];
     let estadoPropuesto = state.currentEstado === "nuevo" ? "interaccion" : state.currentEstado;
 
-    if (esConsultaTecnicaRara) {
-      await sendMessageToGHL(contactId, "Excelente pregunta. Para brindarle una respuesta técnica exacta sobre la instalación y materiales específicos, le transferiré con un asesor especializado. Un momento por favor... 👨‍💼", env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
+    if (esConsultaTecnicaRara || pideInstalacion) {
+      let resp = "Excelente pregunta. Para brindarle una respuesta técnica exacta sobre la instalación y materiales específicos, le transferiré con un asesor especializado. Un momento por favor... 👨‍💼";
+
+      const catCocina = ["cocina", "cocinas"].some(c => norm.includes(c)) || (state.prevProductoId && normalizarTextoGlobal(targetProduct?.titulo || "").includes("cocina"));
+      if (pideInstalacion && catCocina) {
+          resp = "Sí, contamos con instalación con un costo adicional en algunos departamentos. ¿De qué departamento o municipio nos saluda? 😉";
+          await setCustomFieldValue(contact, fields.estado, "esperando_departamento", env, trace);
+      }
+
+      await sendMessageToGHL(contactId, resp, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
       await triggerHandover(contactId, env, trace);
       return;
     }
@@ -1006,18 +1072,37 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       await triggerHandover(contactId, env, trace);
       return;
     }
-    if (pideCobertura && !pideInformacion) {
+    if (pideCobertura) {
       const resp = await obtenerRespuestaCoverage(message, env, trace);
       if (resp) {
         await sendMessageToGHL(contactId, resp, env, trace, [], null, conversationId);
         return;
       }
-      const stopWords = ["ubicacion", "lugar", "donde", "entrega", "envio", "cobertura", "mandan", "reparten", "llegan", "estan", "direccion", "entregan", "hola", "buen", "dia", "tarde", "noche", "tienda", "fisica"];
+      const stopWords = ["ubicacion", "lugar", "donde", "entrega", "envio", "cobertura", "mandan", "reparten", "llegan", "estan", "direccion", "entregan", "hola", "buen", "dia", "tarde", "noche", "tienda", "fisica", "cuenta", "con"];
       const potentialMun = norm.split(/\s+/).filter(w => w.length > 3 && !stopWords.includes(w)).join(" ");
       if (potentialMun) await setCustomFieldValue(contact, fields.munProp, potentialMun, env, trace);
       await setCustomFieldValue(contact, fields.estado, "esperando_departamento", env, trace);
-      await sendMessageToGHL(contactId, "Con gusto. ¿En qué departamento se encuentra? 📍", env, trace, [], null, conversationId);
+      await sendMessageToGHL(contactId, "¡Claro! Ofrecemos envío a domicilio en toda Guatemala. Para brindarle el costo exacto y confirmar cobertura, ¿en qué departamento o municipio se encuentra? 😉", env, trace, [], null, conversationId);
       return;
+    }
+
+    // V7.3: Análisis de ubicación proactivo
+    if (state.currentEstado !== "esperando_departamento" && state.currentEstado !== "esperando_municipio") {
+        const esUbicacion = await analizarSiEsUbicacion(message, env, trace);
+        if (esUbicacion) {
+            if (trace) trace.add("Ubicación detectada proactivamente en flujo normal.");
+            const resp = await obtenerRespuestaCoverage(message, env, trace);
+            if (resp) {
+                await sendMessageToGHL(contactId, resp, env, trace, [], null, conversationId);
+                return;
+            } else {
+                // Si parece ubicación pero no hizo match directo, forzar flujo de departamento
+                await setCustomFieldValue(contact, fields.munProp, message, env, trace);
+                await setCustomFieldValue(contact, fields.estado, "esperando_departamento", env, trace);
+                await sendMessageToGHL(contactId, "Excelente, para confirmarle la cobertura en " + message.toUpperCase() + ", ¿me podría indicar a qué departamento pertenece? 😉", env, trace, [], null, conversationId);
+                return;
+            }
+        }
     }
 
     if (state.prevProductoId && (pideInformacion || esAfirmacionGenerica || pideFotos || pideCambioCama) && state.currentEstado !== "confirmacion_categoria") {
@@ -1076,7 +1161,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       }
     }
 
-    if (targetProduct && !pideCatalogo) {
+    if (targetProduct && !pideCatalogo && !pideCobertura) {
       if (state.currentEstado === "producto" && esAfirmacionGenerica) pideFotos = true;
 
       if (pideSoloParte && targetProduct.tipo === "combo" && Array.isArray(targetProduct.items)) {
