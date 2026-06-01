@@ -970,10 +970,14 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       carrito: JSON.parse(getCustomFieldValue(contact, fields.carrito) || "[]")
     };
 
+    let targetProduct = null;
+    if (state.prevProductoId) targetProduct = await obtenerProductoSeguro(state.prevProductoId, env, trace);
+
     if (trace) {
       trace.obj("Estado Router", {
         estado: state.currentEstado,
         productoId: state.prevProductoId,
+        productoIdentificado: targetProduct?.titulo,
         catMencionada,
         pideInformacion,
         pideFotos,
@@ -981,7 +985,6 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       });
     }
 
-    let targetProduct = null;
     let esSeleccionReciente = false;
     let responseText = "";
     let responseImgs = [];
@@ -990,7 +993,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     if (esConsultaTecnicaRara || pideInstalacion) {
       let resp = "Excelente pregunta. Para brindarle una respuesta técnica exacta sobre la instalación y materiales específicos, le transferiré con un asesor especializado. Un momento por favor... 👨‍💼";
 
-      const catCocina = ["cocina", "cocinas"].some(c => norm.includes(c)) || (state.prevProductoId && normalizarTextoGlobal(targetProduct?.titulo || "").includes("cocina"));
+      const catCocina = ["cocina", "cocinas"].some(c => norm.includes(c)) || (targetProduct && normalizarTextoGlobal(targetProduct?.titulo || "").includes("cocina"));
       if (pideInstalacion && catCocina) {
           resp = "Sí, contamos con instalación con un costo adicional en algunos departamentos. ¿De qué departamento o municipio nos saluda? 😉";
           await setCustomFieldValue(contact, fields.estado, "esperando_departamento", env, trace);
@@ -1105,29 +1108,28 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
         }
     }
 
-    if (state.prevProductoId && (pideInformacion || esAfirmacionGenerica || pideFotos || pideCambioCama) && state.currentEstado !== "confirmacion_categoria") {
-      targetProduct = await obtenerProductoSeguro(state.prevProductoId, env, trace);
-      if (targetProduct && targetProduct.tipo === "combo" && pideCambioCama) {
-          const catCama = ["matri", "matrimonial", "king", "queen"].find(sz => norm.includes(sz));
-          if (catCama) {
-              const altCombo = await buscarComboAlternativoPorTamano(targetProduct, catCama, env, trace);
-              if (altCombo) targetProduct = altCombo;
-          }
+    if (targetProduct && targetProduct.tipo === "combo" && pideCambioCama && state.currentEstado !== "confirmacion_categoria") {
+      const catCama = ["matri", "matrimonial", "king", "queen"].find(sz => norm.includes(sz));
+      if (catCama) {
+          const altCombo = await buscarComboAlternativoPorTamano(targetProduct, catCama, env, trace);
+          if (altCombo) targetProduct = altCombo;
       }
     }
-    if (!targetProduct && metaMatch) {
-      targetProduct = await obtenerProductoSeguro(metaMatch[1], env, trace);
-      if (targetProduct) await setCustomFieldValue(contact, getFieldId(env, "Anuncio"), metaMatch[1], env, trace);
+    if (metaMatch) {
+      const metaProd = await obtenerProductoSeguro(metaMatch[1], env, trace);
+      if (metaProd) {
+          targetProduct = metaProd;
+          await setCustomFieldValue(contact, getFieldId(env, "Anuncio"), metaMatch[1], env, trace);
+      }
     }
     if (!targetProduct) targetProduct = await buscarProductoPorCodigoEnMensaje(rawMsg, env, trace);
     if (!targetProduct) {
       let selIdx = detectarSeleccionNatural(message, state.carrito);
       if (selIdx !== null && state.carrito[selIdx]) {
-        targetProduct = await obtenerProductoSeguro(state.carrito[selIdx].key.split(":").pop(), env, trace);
-        if (targetProduct) esSeleccionReciente = true;
+        const selProd = await obtenerProductoSeguro(state.carrito[selIdx].key.split(":").pop(), env, trace);
+        if (selProd) { targetProduct = selProd; esSeleccionReciente = true; }
       }
     }
-    if (!targetProduct && state.prevProductoId) targetProduct = await obtenerProductoSeguro(state.prevProductoId, env, trace);
     if (!targetProduct && !pideCatalogo && !pideInformacion && !catMencionada) targetProduct = await buscarProductoPorNombreEnMensaje(message, env, trace);
 
     if (targetProduct) {
