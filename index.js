@@ -1,5 +1,9 @@
 /* =========================================================
-   SISTEMA DE MUEBLERÍA IA - Versión Maestro Integrada (Final V7.1)
+   SISTEMA DE MUEBLERÍA IA - Versión Maestro Integrada (Final V7.4)
+   - Pre-catálogo: Filtro inicial para términos generales (Muebles, Amueblados)
+   - Relleno de catálogo: Evita listas vacías usando tamaños alternativos
+   - Proactive Location: Detección de ubicación con IA para cobertura inmediata
+   - Cocina Installation: Respuesta específica para instalaciones de cocina
    - Fix: Category confirmation loop logic
    - Fix: Greeting suppression in follow-up messages
    - Fix: OCR & Transcription (Image/Audio processing)
@@ -794,6 +798,12 @@ async function moduloCatalogo(message, contact, env, trace, forcingCat = null) {
   }
   if (catFound) await setCustomFieldValue(contact, fUltimaCat, cat, env, trace);
 
+  const esPreCatalogo = /\b(mueble|muebles|amueblado|amueblados|enseres|articulos|modelos|opciones)\b/i.test(m);
+  if (!catFound && esPreCatalogo) {
+      if (trace) trace.add("Pre-catálogo disparado: Término general detectado.");
+      return { text: "¡Con gusto le ayudo! Contamos con gran variedad de muebles para su hogar. 🏠\n\n¿Busca opciones de *CAMAS*, *COCINAS* o *ROPEROS*? 😉" };
+  }
+
   if (!cat || cat === "muebles") {
       return { text: "Bienvenido. ¿En qué puedo ayudarle hoy? Contamos con variedad de:\n\n✨ CAMAS\n✨ COCINAS\n✨ ROPEROS\n✨ SALAS\n✨ COMEDORES\n✨ GAVETEROS\n\n¿Cuál le gustaría conocer? 😉" };
   }
@@ -929,7 +939,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     let pideFotos = /fotos?|imagenes?|verlo|verla|mostrar|enviame|fts/i.test(message);
     const pideCompra = /\b(quiero comprar|lo quiero|la quiero|comprarlo|comprarla|pedido|ordenar|pagar|cuota|visa|deposito|transferencia|efectivo)\b/i.test(norm);
     const pideInformacion = /(medida|dimension|precio|vale|cuesta|costo|material|color|cuota|detalle|fotos|garantia|resiste|pago|visa|cuotas|tarjeta|deposito|transferencia|efectivo|toda la info|todos los datos)/i.test(norm);
-    const pideCatalogo = /catalogo|modelos|opciones|variedad|otros|ver mas|muestreme|mostrame|oferta|venden|vende|que mas/i.test(norm);
+    const pideCatalogo = /catalogo|modelos|opciones|variedad|otros|ver mas|muestreme|mostrame|oferta|venden|vende|que mas|muebles|amueblado|amueblados/i.test(norm);
     const pideCobertura = /\b(ubicacion|lugar|donde|entrega|envio|cobertura|mandan|reparten|llegan|estan|direccion|tienda|fisica|puntos)\b/i.test(norm);
     const pideGarantia = /\b(compre|adquiri|garantia|rompio|arruino|dañado|malo|reclamo|fallo)\b/i.test(norm);
     const pideSoloParte = /\b(solo|solamente|separado|aparte|sin el|sin la|solo la|solo el|venden solo|por separado|incluye solo)\b/i.test(norm);
