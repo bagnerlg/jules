@@ -1,5 +1,8 @@
 /* =========================================================
-   SISTEMA DE MUEBLERÍA IA - Versión Maestro Integrada (Final V7.5)
+   SISTEMA DE MUEBLERÍA IA - Versión Maestro Integrada (Final V7.6)
+   - Dual-Persistence: Cache de estado en KV para mitigar latencia de API GHL
+   - Improved Coverage: Detección proactiva de Departamentos para saltar pasos
+   - Fix: Loop de ubicación (Santa Lucía Utatlán y similares)
    - Fix: TargetProduct scope and null-dereference errors
    - Fix: Catalog pagination ("otras opciones") forces catalog flow
    - Fix: Bed size swap logic forces title/image delivery
@@ -182,9 +185,28 @@ async function getLatestMessageAttachments(contactId, locationId, env, trace) {
   }
 }
 
-async function setCustomFieldValue(contact, fieldId, value, env, trace) {
+async function saveKVState(contactId, state, env) {
+  if (!contactId || !state) return;
+  try {
+    await env.PRODUCTS_DB.put("state:" + contactId, JSON.stringify({
+      ...state,
+      updatedAt: Date.now()
+    }), {
+      expirationTtl: 3600
+    }); // 1 hour persistence
+  } catch (e) {}
+}
+
+async function setCustomFieldValue(contact, fieldId, value, env, trace, stateToUpdate = null, stateKey = null) {
   if (trace) trace.add("Actualizando campo custom: " + fieldId + " -> " + value);
   if (!fieldId || value === undefined || value === null) return;
+
+  // Actualizar cache local si se proporciona
+  if (stateToUpdate && stateKey) {
+    stateToUpdate[stateKey] = value;
+    await saveKVState(contact.id, stateToUpdate, env);
+  }
+
   try {
     const res = await fetch("https://services.leadconnectorhq.com/contacts/" + contact.id, {
       method: "PUT",
@@ -968,15 +990,16 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       carrito: getFieldId(env, "carrito_json")
     };
 
-    // Valores Actuales del Contacto
+    // Valores Actuales del Contacto (con cache de KV para evitar delay de API GHL)
+    const cachedState = await env.PRODUCTS_DB.get("state:" + contactId, { type: "json" });
     const state = {
-      currentEstado: getCustomFieldValue(contact, fields.estado) || "nuevo",
-      propCat: getCustomFieldValue(contact, fields.propCat),
-      yaEnvioMenu: getCustomFieldValue(contact, fields.menuEnviado) === "true",
-      munProp: getCustomFieldValue(contact, fields.munProp),
-      prevProductoId: getCustomFieldValue(contact, fields.prodId),
-      deptActual: getCustomFieldValue(contact, fields.dept),
-      carrito: JSON.parse(getCustomFieldValue(contact, fields.carrito) || "[]")
+      currentEstado: cachedState?.currentEstado || getCustomFieldValue(contact, fields.estado) || "nuevo",
+      propCat: cachedState?.propCat || getCustomFieldValue(contact, fields.propCat),
+      yaEnvioMenu: cachedState?.yaEnvioMenu || getCustomFieldValue(contact, fields.menuEnviado) === "true",
+      munProp: cachedState?.munProp || getCustomFieldValue(contact, fields.munProp),
+      prevProductoId: cachedState?.prevProductoId || getCustomFieldValue(contact, fields.prodId),
+      deptActual: cachedState?.deptActual || getCustomFieldValue(contact, fields.dept),
+      carrito: cachedState?.carrito || JSON.parse(getCustomFieldValue(contact, fields.carrito) || "[]")
     };
 
     let targetProduct = null;
@@ -1005,7 +1028,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       const catCocina = ["cocina", "cocinas"].some(c => norm.includes(c)) || (targetProduct && normalizarTextoGlobal(targetProduct?.titulo || "").includes("cocina"));
       if (pideInstalacion && catCocina) {
           resp = "Sí, contamos con instalación con un costo adicional en algunos departamentos. ¿De qué departamento o municipio nos saluda? 😉";
-          await setCustomFieldValue(contact, fields.estado, "esperando_departamento", env, trace);
+          await setCustomFieldValue(contact, fields.estado, "esperando_departamento", env, trace, state, "currentEstado");
       }
 
       await sendMessageToGHL(contactId, resp, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
@@ -1025,8 +1048,9 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
 
     if (state.currentEstado === "esperando_departamento") {
       const foundDept = Object.keys(depmun).find(d => norm.includes(normalizarTextoGlobal(d)));
+      if (trace) trace.add("Flujo cobertura - Buscando departamento en: " + norm);
       if (foundDept) {
-        await setCustomFieldValue(contact, fields.dept, foundDept, env, trace);
+          await setCustomFieldValue(contact, fields.dept, foundDept, env, trace, state, "deptActual");
         const municipios = depmun[foundDept] || [];
         const munPendiente = state.munProp ? normalizarTextoGlobal(state.munProp) : "";
         let munReal = null;
@@ -1050,13 +1074,13 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
         if (munReal) {
           const resp = await obtenerRespuestaCoverage(munReal, env, trace);
           if (resp) {
-            await setCustomFieldValue(contact, fields.munProp, null, env, trace);
-            await setCustomFieldValue(contact, fields.estado, "producto", env, trace);
+            await setCustomFieldValue(contact, fields.munProp, null, env, trace, state, "munProp");
+            await setCustomFieldValue(contact, fields.estado, "producto", env, trace, state, "currentEstado");
             await sendMessageToGHL(contactId, resp, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
             return;
           }
         }
-        await setCustomFieldValue(contact, fields.estado, "esperando_municipio", env, trace);
+        await setCustomFieldValue(contact, fields.estado, "esperando_municipio", env, trace, state, "currentEstado");
         await sendMessageToGHL(contactId, "¿En qué municipio de " + foundDept.toUpperCase() + " está?", env, trace, [], null, conversationId);
         return;
       }
@@ -1067,7 +1091,8 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     if (state.currentEstado === "esperando_municipio") {
       const dept = state.deptActual;
       const municipios = depmun[dept] || [];
-      let mun = municipios.find(m => norm.includes(m));
+      if (trace) trace.add("Flujo cobertura - Buscando municipio en: " + norm + " para depto: " + dept);
+      let mun = municipios.find(m => norm.includes(normalizarTextoGlobal(m)));
       if (!mun) {
         mun = await fuzzyMatchMunicipio(message, municipios, env, trace);
         if (mun === "NULL") mun = null;
@@ -1076,7 +1101,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
         const resp = await obtenerRespuestaCoverage(mun, env, trace);
         if (resp) {
           await sendMessageToGHL(contactId, resp, env, trace, [], null, conversationId);
-          await setCustomFieldValue(contact, fields.estado, "producto", env, trace);
+          await setCustomFieldValue(contact, fields.estado, "producto", env, trace, state, "currentEstado");
           return;
         }
       }
@@ -1092,25 +1117,33 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       }
       const stopWords = ["ubicacion", "lugar", "donde", "entrega", "envio", "cobertura", "mandan", "reparten", "llegan", "estan", "direccion", "entregan", "hola", "buen", "dia", "tarde", "noche", "tienda", "fisica", "cuenta", "con"];
       const potentialMun = norm.split(/\s+/).filter(w => w.length > 3 && !stopWords.includes(w)).join(" ");
-      if (potentialMun) await setCustomFieldValue(contact, fields.munProp, potentialMun, env, trace);
-      await setCustomFieldValue(contact, fields.estado, "esperando_departamento", env, trace);
+      if (potentialMun) await setCustomFieldValue(contact, fields.munProp, potentialMun, env, trace, state, "munProp");
+      await setCustomFieldValue(contact, fields.estado, "esperando_departamento", env, trace, state, "currentEstado");
       await sendMessageToGHL(contactId, "¡Claro! Ofrecemos envío a domicilio en toda Guatemala. Para brindarle el costo exacto y confirmar cobertura, ¿en qué departamento o municipio se encuentra? 😉", env, trace, [], null, conversationId);
       return;
     }
 
-    // V7.3: Análisis de ubicación proactivo
-    if (state.currentEstado !== "esperando_departamento" && state.currentEstado !== "esperando_municipio") {
+    // V7.6: Análisis de ubicación proactivo mejorado
+    if (state.currentEstado !== "esperando_departamento" && state.currentEstado !== "esperando_municipio" && !pideInformacion && !pideCatalogo) {
         const esUbicacion = await analizarSiEsUbicacion(message, env, trace);
-        if (esUbicacion) {
-            if (trace) trace.add("Ubicación detectada proactivamente en flujo normal.");
+        const depEnMsg = Object.keys(depmun).find(d => norm.includes(normalizarTextoGlobal(d)));
+
+        if (depEnMsg || esUbicacion) {
+            if (trace) trace.add("Ubicación detectada proactivamente. Dep: " + depEnMsg + " AI: " + esUbicacion);
             const resp = await obtenerRespuestaCoverage(message, env, trace);
             if (resp) {
                 await sendMessageToGHL(contactId, resp, env, trace, [], null, conversationId);
                 return;
+            }
+
+            if (depEnMsg) {
+                await setCustomFieldValue(contact, fields.dept, depEnMsg, env, trace, state, "deptActual");
+                await setCustomFieldValue(contact, fields.estado, "esperando_municipio", env, trace, state, "currentEstado");
+                await sendMessageToGHL(contactId, "Excelente, realizamos entregas en " + depEnMsg.toUpperCase() + ". ¿En qué municipio se encuentra? 😉", env, trace, [], null, conversationId);
+                return;
             } else {
-                // Si parece ubicación pero no hizo match directo, forzar flujo de departamento
-                await setCustomFieldValue(contact, fields.munProp, message, env, trace);
-                await setCustomFieldValue(contact, fields.estado, "esperando_departamento", env, trace);
+                await setCustomFieldValue(contact, fields.munProp, message, env, trace, state, "munProp");
+                await setCustomFieldValue(contact, fields.estado, "esperando_departamento", env, trace, state, "currentEstado");
                 await sendMessageToGHL(contactId, "Excelente, para confirmarle la cobertura en " + message.toUpperCase() + ", ¿me podría indicar a qué departamento pertenece? 😉", env, trace, [], null, conversationId);
                 return;
             }
@@ -1146,7 +1179,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
 
     if (targetProduct) {
       if (trace) trace.add("Producto identificado: " + (targetProduct.titulo || targetProduct.nombre || "Sin Título") + " (" + targetProduct.id + ")");
-      await setCustomFieldValue(contact, fields.prodId, targetProduct.id, env, trace);
+      await setCustomFieldValue(contact, fields.prodId, targetProduct.id, env, trace, state, "prevProductoId");
       // Solo resetear offset si es una selección real de un producto nuevo (no cargado de memoria)
       if (esSeleccionReciente || metaMatch) {
           await setCustomFieldValue(contact, fields.offset, "0", env, trace);
@@ -1161,19 +1194,19 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       const confirmaCambio = esAfirmacionGenerica || norm.startsWith("si") || (state.propCat && norm.includes(state.propCat));
       if (confirmaCambio) {
         if (trace) trace.add("Cambio de categoría confirmado.");
-        await setCustomFieldValue(contact, fields.propCat, null, env, trace);
+        await setCustomFieldValue(contact, fields.propCat, null, env, trace, state, "propCat");
         const resCat = await moduloCatalogo(message, contact, env, trace, state.propCat);
         if (resCat.text) await sendMessageToGHL(contactId, resCat.text, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
-        await setCustomFieldValue(contact, fields.estado, "catalogo", env, trace);
+        await setCustomFieldValue(contact, fields.estado, "catalogo", env, trace, state, "currentEstado");
         return;
       }
     }
     if (targetProduct && catMencionada && !pideInformacion && !pideFotos && !pideCatalogo) {
       const tituloNormal = normalizarTextoGlobal(targetProduct.titulo || targetProduct.nombre || "");
       if (!tituloNormal.includes(catMencionada)) {
-        await setCustomFieldValue(contact, fields.propCat, catMencionada, env, trace);
+        await setCustomFieldValue(contact, fields.propCat, catMencionada, env, trace, state, "propCat");
         responseText = await callVendedorElitePro(message, contact, env, targetProduct, false, null, esSoloSaludo, state.currentEstado === "nuevo", state.yaEnvioMenu, false, catMencionada, false, trace);
-        await setCustomFieldValue(contact, fields.estado, "confirmacion_categoria", env, trace);
+        await setCustomFieldValue(contact, fields.estado, "confirmacion_categoria", env, trace, state, "currentEstado");
         await sendMessageToGHL(contactId, responseText, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
         return;
       }
@@ -1239,7 +1272,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
         if (Array.isArray(targetProduct.items)) await setCustomFieldValue(contact, fields.comboComp, JSON.stringify(targetProduct.items.map(i => i.id)), env, trace);
       }
       estadoPropuesto = pideCompra ? "cierre" : "producto";
-      await setCustomFieldValue(contact, fields.estado, estadoPropuesto, env, trace);
+      await setCustomFieldValue(contact, fields.estado, estadoPropuesto, env, trace, state, "currentEstado");
       let final = responseText;
       const currentTitle = (targetProduct?.titulo || targetProduct?.nombre || "");
       if (esNuevoProducto && currentTitle && !responseText.toUpperCase().includes(currentTitle.toUpperCase())) {
