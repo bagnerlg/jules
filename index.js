@@ -1,13 +1,12 @@
 /* =========================================================
-   SISTEMA DE MUEBLERÍA IA - Versión Maestro Integrada (Final V7.4)
+   SISTEMA DE MUEBLERÍA IA - Versión Maestro Integrada (Final V7.5)
+   - Fix: TargetProduct scope and null-dereference errors
+   - Fix: Catalog pagination ("otras opciones") forces catalog flow
+   - Fix: Bed size swap logic forces title/image delivery
    - Pre-catálogo: Filtro inicial para términos generales (Muebles, Amueblados)
    - Relleno de catálogo: Evita listas vacías usando tamaños alternativos
    - Proactive Location: Detección de ubicación con IA para cobertura inmediata
    - Cocina Installation: Respuesta específica para instalaciones de cocina
-   - Fix: Category confirmation loop logic
-   - Fix: Greeting suppression in follow-up messages
-   - Fix: OCR & Transcription (Image/Audio processing)
-   - Fix: Bed size swap logic (Finds alternative combos for King/Queen/Matri)
    - Fix: Vague refinement handover (mas grande, mas cara, etc.)
    - Fix: Greeting and Purchase info timing (Purchase info only on photo request)
    - Fix: Enhanced size detection variations (Plural/Gender)
@@ -1122,7 +1121,10 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       const catCama = ["matri", "matrimonial", "king", "queen"].find(sz => norm.includes(sz));
       if (catCama) {
           const altCombo = await buscarComboAlternativoPorTamano(targetProduct, catCama, env, trace);
-          if (altCombo) targetProduct = altCombo;
+          if (altCombo) {
+              targetProduct = altCombo;
+              esSeleccionReciente = true; // Forzar envío de título e imágenes
+          }
       }
     }
     if (metaMatch) {
@@ -1143,9 +1145,12 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
     if (!targetProduct && !pideCatalogo && !pideInformacion && !catMencionada) targetProduct = await buscarProductoPorNombreEnMensaje(message, env, trace);
 
     if (targetProduct) {
-      if (trace) trace.add("Producto identificado: " + targetProduct.titulo + " (" + targetProduct.id + ")");
+      if (trace) trace.add("Producto identificado: " + (targetProduct.titulo || targetProduct.nombre || "Sin Título") + " (" + targetProduct.id + ")");
       await setCustomFieldValue(contact, fields.prodId, targetProduct.id, env, trace);
-      await setCustomFieldValue(contact, fields.offset, "0", env, trace);
+      // Solo resetear offset si es una selección real de un producto nuevo (no cargado de memoria)
+      if (esSeleccionReciente || metaMatch) {
+          await setCustomFieldValue(contact, fields.offset, "0", env, trace);
+      }
     }
     if (pideGarantia) {
       await triggerHandover(contactId, env, trace);
@@ -1163,8 +1168,9 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
         return;
       }
     }
-    if (targetProduct && catMencionada && !pideInformacion && !pideFotos) {
-      if (!normalizarTextoGlobal(targetProduct.titulo).includes(catMencionada)) {
+    if (targetProduct && catMencionada && !pideInformacion && !pideFotos && !pideCatalogo) {
+      const tituloNormal = normalizarTextoGlobal(targetProduct.titulo || targetProduct.nombre || "");
+      if (!tituloNormal.includes(catMencionada)) {
         await setCustomFieldValue(contact, fields.propCat, catMencionada, env, trace);
         responseText = await callVendedorElitePro(message, contact, env, targetProduct, false, null, esSoloSaludo, state.currentEstado === "nuevo", state.yaEnvioMenu, false, catMencionada, false, trace);
         await setCustomFieldValue(contact, fields.estado, "confirmacion_categoria", env, trace);
@@ -1173,7 +1179,10 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       }
     }
 
-    if (targetProduct && !pideCatalogo && !pideCobertura) {
+    // V7.5: Si pide "otras opciones" o "variedad", forzar flujo de catálogo incluso si hay producto activo
+    const pideMasOpciones = /variedad|otros?|otras?|mas opciones|catalogo|muestreme mas/i.test(norm);
+
+    if (targetProduct && !pideCatalogo && !pideCobertura && !pideMasOpciones) {
       if (state.currentEstado === "producto" && esAfirmacionGenerica) pideFotos = true;
 
       if (pideSoloParte && targetProduct.tipo === "combo" && Array.isArray(targetProduct.items)) {
@@ -1200,7 +1209,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
         }
       }
 
-      const catProd = categorias.find(c => normalizarTextoGlobal(targetProduct.titulo).includes(c)) || getCustomFieldValue(contact, fields.ultimaCat);
+      const catProd = categorias.find(c => normalizarTextoGlobal(targetProduct.titulo || targetProduct.nombre || "").includes(c)) || getCustomFieldValue(contact, fields.ultimaCat);
       if (catProd) {
         await setCustomFieldValue(contact, fields.ultimaCat, catProd, env, trace);
         await setCustomFieldValue(contact, fields.catInteres, catProd, env, trace);
@@ -1232,8 +1241,9 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       estadoPropuesto = pideCompra ? "cierre" : "producto";
       await setCustomFieldValue(contact, fields.estado, estadoPropuesto, env, trace);
       let final = responseText;
-      if (esNuevoProducto && targetProduct.titulo && !responseText.toUpperCase().includes(targetProduct.titulo.toUpperCase())) {
-          final = "*" + targetProduct.titulo.toUpperCase() + "*\n\n" + responseText;
+      const currentTitle = (targetProduct?.titulo || targetProduct?.nombre || "");
+      if (esNuevoProducto && currentTitle && !responseText.toUpperCase().includes(currentTitle.toUpperCase())) {
+          final = "*" + currentTitle.toUpperCase() + "*\n\n" + responseText;
       }
 
       // Fix for double bolding if AI already bolded it
@@ -1242,7 +1252,7 @@ async function processFullFlow(rawMsg, contactId, contact, env, trace, conversat
       await sendMessageToGHL(contactId, final, env, trace, responseImgs, (env.GHL_LOCATION_ID || contact.locationId), conversationId);
       if (pideCompra && !pideInformacion) await triggerHandover(contactId, env, trace);
       return;
-    } else if (pideCatalogo || catMencionada || /\b(mediano|mediana|medianos|medianas|grande|grandes|pequeño|pequeña|pequeños|pequeñas|chico|chica|chicos|chicas|enorme|enormes|gigante|gigantes|estandar|media|grando|grandos)\b/i.test(norm) || (state.currentEstado === "catalogo" && norm.length > 3)) {
+    } else if (pideCatalogo || catMencionada || pideMasOpciones || /\b(mediano|mediana|medianos|medianas|grande|grandes|pequeño|pequeña|pequeños|pequeñas|chico|chica|chicos|chicas|enorme|enormes|gigante|gigantes|estandar|media|grando|grandos)\b/i.test(norm) || (state.currentEstado === "catalogo" && norm.length > 3)) {
       let resCat = await moduloCatalogo(message, contact, env, trace);
       if (resCat.retryWithoutKeywords) resCat = await moduloCatalogo("ver mas", contact, env, trace);
       if (resCat.text) await sendMessageToGHL(contactId, resCat.text, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
