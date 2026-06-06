@@ -34,14 +34,14 @@ export default {
             messages: [
               {
                 role: "system",
-                content: `Eres un experto en muebles. Analiza 3 fotos y crea un prompt para DALL-E.
-                REGLAS:
-                1. Describe cada mueble exactamente: color, materiales, patas, módulos, sin añadir vidrios o piezas extra.
-                2. Mantén escala lógica (ropero > mesita).
-                3. Ambiente coherente sin alterar el mueble.
-                4. Estilo fotorealista natural, catálogo profesional.
-                5. Prompt en Inglés.
-                6. Devuelve SOLO el prompt.`
+                content: `Eres un experto en muebles y diseño de interiores. Tu tarea es analizar 3 fotos de productos y crear un prompt para generación de imagen (estilo gpt-image).
+                REGLAS DE ORO:
+                1. MANTÉN LA INTEGRIDAD: Describe cada mueble exactamente como es (colores, materiales, patas, módulos). NO añadas elementos que no existan (ej. no pongas vidrios si no tiene).
+                2. ESCALA Y POSICIÓN: El mueble más grande va al centro, los pequeños a los lados. Mantén proporciones reales (Ropero >> Mesita).
+                3. AMBIENTE: Crea un "Showroom elegante" o estilo "IKEA/Catálogo Premium". Iluminación cálida y profesional.
+                4. ESTILO: Fotorealista, limpio, fondo coherente con el ambiente solicitado pero que resalte los productos.
+                5. IDIOMA: El prompt final DEBE estar en INGLÉS.
+                6. SALIDA: Devuelve ÚNICAMENTE el texto del prompt.`
               },
               {
                 role: "user",
@@ -420,6 +420,16 @@ function getHTML() {
                 <option value="high">Calidad Pro (GPT-Image - 1024px)</option>
                 <option value="low">Ahorro de Tokens (GPT-Image-Mini - 512px)</option>
             </select>
+        </div>
+
+        <!-- Consejos de Calidad -->
+        <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 1rem; margin-bottom: 2rem; border-radius: 0.5rem;">
+            <p style="font-weight: 700; color: #1e40af; font-size: 0.875rem; margin-bottom: 0.5rem;">💡 Consejos para mejores resultados:</p>
+            <ul style="font-size: 0.75rem; color: #1e3a8a; padding-left: 1.25rem;">
+                <li>Usa fotos con fondo blanco o productos recortados.</li>
+                <li>Asegúrate de que los muebles tengan buena iluminación.</li>
+                <li>Evita marcas de agua sobre los productos.</li>
+            </ul>
         </div>
 
         <button id="generateBtn" class="btn-generate">
