@@ -64,8 +64,8 @@ export default {
 
         const generatedPrompt = gptData.choices[0].message.content.trim();
 
-        // 2. Generar imagen con DALL-E 3
-        const dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
+        // 2. Generar imagen con DALL-E 3 (con fallback a DALL-E 2)
+        let dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -79,12 +79,33 @@ export default {
           })
         });
 
-        const dallEData = await dallEResponse.json();
+        let dallEData = await dallEResponse.json();
+
+        // Fallback si DALL-E 3 no está disponible
+        if (dallEData.error && dallEData.error.message.includes("dall-e-3")) {
+          console.log("DALL-E 3 no disponible, intentando con DALL-E 2...");
+          dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+            },
+            body: JSON.stringify({
+              model: "dall-e-2",
+              prompt: generatedPrompt,
+              n: 1,
+              size: "1024x1024"
+            })
+          });
+          dallEData = await dallEResponse.json();
+        }
+
         if (dallEData.error) throw new Error(`DALL-E Error: ${dallEData.error.message}`);
 
         return new Response(JSON.stringify({
           imageUrl: dallEData.data[0].url,
-          promptUsed: generatedPrompt
+          promptUsed: generatedPrompt,
+          modelUsed: dallEData.model || (dallEData.error ? "none" : "fallback-check")
         }), {
           headers: { "Content-Type": "application/json" }
         });
