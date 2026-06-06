@@ -34,14 +34,14 @@ export default {
             messages: [
               {
                 role: "system",
-                content: `Eres un experto en muebles y diseño de interiores. Tu tarea es analizar 3 fotos de productos y crear un prompt para generación de imagen (estilo gpt-image).
+                content: `Eres un experto en muebles y diseño de interiores. Tu tarea es analizar 3 fotos y crear un prompt para generación de imagen técnica y limpia.
                 REGLAS DE ORO:
-                1. MANTÉN LA INTEGRIDAD: Describe cada mueble exactamente como es (colores, materiales, patas, módulos). NO añadas elementos que no existan (ej. no pongas vidrios si no tiene).
-                2. ESCALA Y POSICIÓN: El mueble más grande va al centro, los pequeños a los lados. Mantén proporciones reales (Ropero >> Mesita).
-                3. AMBIENTE: Crea un "Showroom elegante" o estilo "IKEA/Catálogo Premium". Iluminación cálida y profesional.
-                4. ESTILO: Fotorealista, limpio, fondo coherente con el ambiente solicitado pero que resalte los productos.
-                5. IDIOMA: El prompt final DEBE estar en INGLÉS.
-                6. SALIDA: Devuelve ÚNICAMENTE el texto del prompt.`
+                1. AISLAMIENTO: Identifica el producto principal en cada foto. IGNORA personas, decoraciones sucias, fondos irrelevantes u otros muebles secundarios en la foto original.
+                2. MANTÉN LA INTEGRIDAD: Describe el producto principal exactamente (colores, materiales, patas, tiradores). No añadas vidrios o módulos extras.
+                3. ESCALA Y POSICIÓN: El mueble más grande (Cama/Ropero) al centro, los pequeños a los lados. Proporciones reales.
+                4. AMBIENTE MAESTRO: Usa exactamente la descripción de ambiente proporcionada. El fondo (paredes, suelo, iluminación) debe ser consistente. Estilo Showroom IKEA/Catálogo Premium.
+                5. IDIOMA: Prompt final en INGLÉS.
+                6. SALIDA: Solo el texto del prompt.`
               },
               {
                 role: "user",
@@ -409,9 +409,13 @@ function getHTML() {
         </div>
 
         <div class="environment-section">
-            <label class="label">Descripción del Ambiente</label>
-            <textarea id="environment" placeholder="Ej: Fondo verde con ambientado de sala de estar que genere paz..."></textarea>
-            <p class="hint">La IA respetará la forma y elementos originales de tus productos.</p>
+            <label class="label">Descripción del Ambiente / Escenario Maestro</label>
+            <textarea id="environment" placeholder="Ej: Dormitorio moderno minimalista, pared beige clara, piso madera natural, iluminación cálida..."></textarea>
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+                <input type="checkbox" id="lockEnvironment" style="width: 1rem; height: 1rem; cursor: pointer;">
+                <label for="lockEnvironment" class="hint" style="cursor: pointer; font-weight: 600; color: #1e40af;">Bloquear este ambiente para toda la campaña (Consistencia)</label>
+            </div>
+            <p class="hint">Al bloquear, GPT usará exactamente la misma descripción de fondo para cada combo.</p>
         </div>
 
         <div class="environment-section">
@@ -458,6 +462,13 @@ function getHTML() {
             { file: 'file2', url: 'url2', preview: 'preview2' },
             { file: 'file3', url: 'url3', preview: 'preview3' }
         ];
+
+        // Cargar estado guardado de ambiente
+        const savedEnv = localStorage.getItem('master_env');
+        if (savedEnv) {
+            document.getElementById('environment').value = savedEnv;
+            document.getElementById('lockEnvironment').checked = true;
+        }
 
         inputs.forEach(input => {
             const fileEl = document.getElementById(input.file);
@@ -512,6 +523,13 @@ function getHTML() {
             if (!environment) {
                 alert('Por favor describe el ambiente.');
                 return;
+            }
+
+            // Persistencia de ambiente maestro
+            if (document.getElementById('lockEnvironment').checked) {
+                localStorage.setItem('master_env', environment);
+            } else {
+                localStorage.removeItem('master_env');
             }
 
             try {
