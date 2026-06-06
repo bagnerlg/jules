@@ -89,14 +89,24 @@ export default {
 
         let dallEData = await dallEResponse.json();
 
-        // Fallback si los modelos especiales fallan, intentar modelos estándar o legacy
+        // Fallback si los modelos especiales fallan, intentar modelos estándar o alternativos
         if (dallEData.error) {
-          console.warn(`Error con ${modelUsed}:`, dallEData.error.message);
+          console.warn(`Error con ${modelUsed}:`, dallEData.error.message, "| Detalle:", JSON.stringify(dallEData.error));
 
-          const fallbacks = ["chatgpt-image-latest", "dall-e-3", "dall-e-2"];
+          // Lista de fallbacks priorizada basándome en los modelos vistos en billing
+          const fallbacks = [
+            { model: "chatgpt-image-latest", size: "1024x1024" },
+            { model: "gpt-image", size: "1024x1024" },
+            { model: "gpt-image-1-mini", size: "512x512" },
+            { model: "dall-e-3", size: "1024x1024" },
+            { model: "dall-e-2", size: "1024x1024" },
+            { model: "dall-e-2", size: "512x512" }
+          ];
 
-          for (const fallbackModel of fallbacks) {
-            console.log(`Intentando fallback a: ${fallbackModel}...`);
+          for (const fallback of fallbacks) {
+            if (fallback.model === modelUsed && fallback.size === size) continue; // Saltar si ya falló exactamente este
+
+            console.log(`Intentando fallback a: ${fallback.model} (${fallback.size})...`);
             dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
               method: "POST",
               headers: {
@@ -104,37 +114,19 @@ export default {
                 "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
               },
               body: JSON.stringify({
-                model: fallbackModel,
+                model: fallback.model,
                 prompt: generatedPrompt,
                 n: 1,
-                size: "1024x1024"
+                size: fallback.size
               })
             });
             dallEData = await dallEResponse.json();
             if (!dallEData.error) {
-              modelUsed = fallbackModel;
+              modelUsed = fallback.model;
+              console.log("Fallback exitoso con:", modelUsed);
               break;
             }
-            console.warn(`Falló ${fallbackModel}:`, dallEData.error.message);
-          }
-
-          // Último recurso: Petición sin parámetro de modelo
-          if (dallEData.error) {
-            console.log("Intentando último recurso: Petición sin parámetro de modelo...");
-            dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
-              },
-              body: JSON.stringify({
-                prompt: generatedPrompt,
-                n: 1,
-                size: "1024x1024"
-              })
-            });
-            dallEData = await dallEResponse.json();
-            if (!dallEData.error) modelUsed = "legacy-auto";
+            console.warn(`Falló ${fallback.model}:`, dallEData.error.message);
           }
         }
 
