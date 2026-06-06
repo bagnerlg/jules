@@ -13,13 +13,14 @@ export default {
     // Manejar la generación de imagen
     if (request.method === "POST" && url.pathname === "/generate") {
       try {
-        const { images, environment } = await request.json();
+        const body = await request.json();
+        const { images, environment, quality: selectedQuality } = body;
 
         if (!images || images.length !== 3) {
           return new Response(JSON.stringify({ error: "Se requieren exactamente 3 imágenes." }), { status: 400 });
         }
 
-        // 1. Analizar imágenes con GPT-4o-mini para generar el prompt de DALL-E 3
+        // 1. Analizar imágenes con GPT-4o-mini para generar el prompt
         const gptResponse = await fetch("https://api.openai.com/v1/chat/completions", {
           method: "POST",
           headers: {
@@ -31,18 +32,14 @@ export default {
             messages: [
               {
                 role: "system",
-                content: `Eres un experto en diseño de interiores y descripción técnica de muebles.
-                Tu tarea es analizar 3 fotos de productos diferentes y crear un prompt detallado para DALL-E 3.
-                El objetivo es situar estos 3 productos en un solo ambiente coherente.
-
-                REGLAS CRÍTICAS PARA EL PROMPT DE DALL-E 3:
-                1. Describe cada producto con precisión quirúrgica basándote en las fotos: color exacto, materiales, forma de las patas, presencia o ausencia de vidrios, cantidad de módulos, tiradores, etc.
-                2. NO añadas elementos que no estén en las fotos originales (ej: no añadas vidrios si el mueble no tiene, no añadas patas extras).
-                3. Mantén las proporciones lógicas: un ropero es más grande que una mesita de noche, una cama es más grande que una cabecera, etc.
-                4. La iluminación y el ambiente deben ser coherentes pero NO deben alterar el color ni la forma de los productos originales.
-                5. El estilo debe ser fotorealista, de catálogo profesional, alta resolución.
-                6. El prompt debe estar en inglés para mejores resultados con DALL-E 3.
-                7. Devuelve SOLO el texto del prompt, nada más.`
+                content: `Eres un experto en muebles. Analiza 3 fotos y crea un prompt para DALL-E.
+                REGLAS:
+                1. Describe cada mueble exactamente: color, materiales, patas, módulos, sin añadir vidrios o piezas extra.
+                2. Mantén escala lógica (ropero > mesita).
+                3. Ambiente coherente sin alterar el mueble.
+                4. Estilo fotorealista natural, catálogo profesional.
+                5. Prompt en Inglés.
+                6. Devuelve SOLO el prompt.`
               },
               {
                 role: "user",
@@ -55,7 +52,7 @@ export default {
                 ]
               }
             ],
-            max_tokens: 500
+            max_tokens: 350
           })
         });
 
@@ -64,7 +61,17 @@ export default {
 
         const generatedPrompt = gptData.choices[0].message.content.trim();
 
-        // 2. Generar imagen con DALL-E 3 (con fallback a DALL-E 2)
+        // 2. Generar imagen con selección de modelo y calidad
+        let model = "dall-e-3";
+        let size = "1024x1024";
+        let extraParams = { style: "natural" };
+
+        if (selectedQuality === "low") {
+          model = "dall-e-2";
+          size = "512x512";
+          extraParams = {};
+        }
+
         let dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
           method: "POST",
           headers: {
@@ -72,18 +79,21 @@ export default {
             "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
           },
           body: JSON.stringify({
-            model: "dall-e-3",
+            model: model,
             prompt: generatedPrompt,
             n: 1,
-            size: "1024x1024"
+            size: size,
+            ...extraParams
           })
         });
 
         let dallEData = await dallEResponse.json();
 
-        // Fallback si DALL-E 3 no está disponible
-        if (dallEData.error && dallEData.error.message.includes("dall-e-3")) {
-          console.log("DALL-E 3 no disponible, intentando con DALL-E 2...");
+        // Fallback robusto si el modelo seleccionado no existe en la cuenta
+        if (dallEData.error && (dallEData.error.message.includes("does not exist") || dallEData.error.code === "model_not_found")) {
+          const fallbackModel = model === "dall-e-3" ? "dall-e-2" : "dall-e-3";
+          console.log(`Modelo ${model} no disponible, intentando fallback a ${fallbackModel}...`);
+
           dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
             method: "POST",
             headers: {
@@ -91,10 +101,10 @@ export default {
               "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
             },
             body: JSON.stringify({
-              model: "dall-e-2",
+              model: fallbackModel,
               prompt: generatedPrompt,
               n: 1,
-              size: "1024x1024"
+              size: fallbackModel === "dall-e-2" ? "512x512" : "1024x1024"
             })
           });
           dallEData = await dallEResponse.json();
@@ -105,7 +115,7 @@ export default {
         return new Response(JSON.stringify({
           imageUrl: dallEData.data[0].url,
           promptUsed: generatedPrompt,
-          modelUsed: dallEData.model || (dallEData.error ? "none" : "fallback-check")
+          modelUsed: model
         }), {
           headers: { "Content-Type": "application/json" }
         });
@@ -381,6 +391,14 @@ function getHTML() {
             <p class="hint">La IA respetará la forma y elementos originales de tus productos.</p>
         </div>
 
+        <div class="environment-section">
+            <label class="label">Calidad y Gasto</label>
+            <select id="quality" class="input-text" style="height: 3rem; font-size: 1rem;">
+                <option value="high">Calidad Pro (DALL-E 3 - 1024px - Realista)</option>
+                <option value="low">Ahorro de Tokens (DALL-E 2 - 512px)</option>
+            </select>
+        </div>
+
         <button id="generateBtn" class="btn-generate">
             <span>Generar Imagen de Campaña</span>
             <div id="btnLoader" class="loader hidden"></div>
@@ -477,10 +495,12 @@ function getHTML() {
                     return;
                 }
 
+                const quality = document.getElementById('quality').value;
+
                 const response = await fetch('/generate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ images, environment })
+                    body: JSON.stringify({ images, environment, quality })
                 });
 
                 const data = await response.json();
