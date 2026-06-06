@@ -15,8 +15,10 @@ export default {
       try {
         const body = await request.json();
         const { images, environment, quality: selectedQuality } = body;
+        console.log("Petición recibida:", { environment, quality: selectedQuality, imagesCount: images?.length });
 
         if (!images || images.length !== 3) {
+          console.error("Error: Se requieren 3 imágenes.");
           return new Response(JSON.stringify({ error: "Se requieren exactamente 3 imágenes." }), { status: 400 });
         }
 
@@ -57,20 +59,19 @@ export default {
         });
 
         const gptData = await gptResponse.json();
-        if (gptData.error) throw new Error(`GPT Error: ${gptData.error.message}`);
+        if (gptData.error) {
+          console.error("GPT API Error:", gptData.error);
+          throw new Error(`GPT Error: ${gptData.error.message}`);
+        }
 
         const generatedPrompt = gptData.choices[0].message.content.trim();
+        console.log("Prompt generado por GPT:", generatedPrompt);
 
         // 2. Generar imagen con selección de modelo y calidad
-        let model = "dall-e-3";
-        let size = "1024x1024";
-        let extraParams = { style: "natural" };
+        let model = selectedQuality === "low" ? "dall-e-2" : "dall-e-3";
+        let size = selectedQuality === "low" ? "512x512" : "1024x1024";
 
-        if (selectedQuality === "low") {
-          model = "dall-e-2";
-          size = "512x512";
-          extraParams = {};
-        }
+        console.log(`Iniciando generación de imagen con ${model} (${size})...`);
 
         let dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
           method: "POST",
@@ -82,17 +83,18 @@ export default {
             model: model,
             prompt: generatedPrompt,
             n: 1,
-            size: size,
-            ...extraParams
+            size: size
           })
         });
 
         let dallEData = await dallEResponse.json();
 
-        // Fallback robusto si el modelo seleccionado no existe en la cuenta
-        if (dallEData.error && (dallEData.error.message.includes("does not exist") || dallEData.error.code === "model_not_found")) {
+        // Fallback robusto si falla el primer modelo (por no existir o parámetros)
+        if (dallEData.error) {
+          console.warn(`Error con ${model}:`, dallEData.error.message);
+
           const fallbackModel = model === "dall-e-3" ? "dall-e-2" : "dall-e-3";
-          console.log(`Modelo ${model} no disponible, intentando fallback a ${fallbackModel}...`);
+          console.log(`Intentando fallback automático a ${fallbackModel}...`);
 
           dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
             method: "POST",
@@ -108,9 +110,16 @@ export default {
             })
           });
           dallEData = await dallEResponse.json();
+          if (!dallEData.error) {
+            model = fallbackModel; // Actualizar el modelo usado con éxito
+            console.log("Fallback exitoso con:", model);
+          }
         }
 
-        if (dallEData.error) throw new Error(`DALL-E Error: ${dallEData.error.message}`);
+        if (dallEData.error) {
+          console.error("DALL-E Final Error:", dallEData.error);
+          throw new Error(`DALL-E Error: ${dallEData.error.message}`);
+        }
 
         return new Response(JSON.stringify({
           imageUrl: dallEData.data[0].url,
