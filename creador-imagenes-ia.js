@@ -111,79 +111,272 @@ function getHTML() {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Creador de Imágenes IA - Muebles</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --success: #16a34a;
+            --success-hover: #15803d;
+            --gray-bg: #f3f4f6;
+            --white: #ffffff;
+            --text-main: #1f2937;
+            --text-muted: #6b7280;
+            --border-color: #e5e7eb;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--gray-bg);
+            color: var(--text-main);
+            line-height: 1.5;
+            padding: 2rem 1rem;
+        }
+
+        .container {
+            max-width: 64rem;
+            margin: 0 auto;
+            background: var(--white);
+            border-radius: 0.75rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            padding: 1.5rem;
+        }
+
+        h1 {
+            font-size: 1.875rem;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 2rem;
+            color: var(--primary);
+        }
+
+        .products-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        @media (min-width: 768px) {
+            .products-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+
+        .product-card {
+            padding: 1rem;
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            background-color: #f9fafb;
+        }
+
+        .label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .input-file {
+            width: 100%;
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .input-text {
+            width: 100%;
+            padding: 0.5rem;
+            font-size: 0.875rem;
+            border: 1px solid var(--border-color);
+            border-radius: 0.25rem;
+            outline: none;
+        }
+
+        .preview-box {
+            margin-top: 0.5rem;
+            height: 8rem;
+            background-color: #e5e7eb;
+            border-radius: 0.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .preview-box img {
+            height: 100%;
+            width: 100%;
+            object-fit: contain;
+        }
+
+        .preview-placeholder {
+            color: #9ca3af;
+            font-size: 0.75rem;
+        }
+
+        .environment-section { margin-bottom: 2rem; }
+
+        textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            outline: none;
+            resize: vertical;
+            min-height: 5rem;
+        }
+
+        textarea:focus { border-color: #a5b4fc; box-shadow: 0 0 0 2px #a5b4fc; }
+
+        .hint {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+
+        .btn-generate {
+            width: 100%;
+            background-color: var(--primary);
+            color: white;
+            font-weight: 700;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            font-size: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn-generate:hover { background-color: var(--primary-hover); }
+        .btn-generate:disabled { opacity: 0.7; cursor: not-allowed; }
+
         .loader {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #3498db;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
             border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 2s linear infinite;
+            width: 1.5rem;
+            height: 1.5rem;
+            animation: spin 1s linear infinite;
             display: inline-block;
-            vertical-align: middle;
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .result-container {
+            margin-top: 3rem;
+            border-top: 1px solid var(--border-color);
+            padding-top: 2rem;
+            text-align: center;
+            display: none;
         }
+
+        .result-container.active { display: block; }
+
+        h2 { font-size: 1.5rem; font-weight: 700; margin-bottom: 1rem; }
+
+        #resultImage {
+            max-width: 100%;
+            border-radius: 0.5rem;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            margin-bottom: 1.5rem;
+        }
+
+        .actions { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+
+        .btn-download {
+            background-color: var(--success);
+            color: white;
+            padding: 0.5rem 1.5rem;
+            border-radius: 0.5rem;
+            text-decoration: none;
+            font-weight: 600;
+            transition: background-color 0.2s;
+        }
+        .btn-download:hover { background-color: var(--success-hover); }
+
+        .btn-new {
+            background-color: var(--text-muted);
+            color: white;
+            padding: 0.5rem 1.5rem;
+            border-radius: 0.5rem;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        details { margin-top: 1.5rem; text-align: left; }
+        summary { color: var(--text-muted); cursor: pointer; font-size: 0.875rem; }
+        .prompt-text {
+            margin-top: 0.5rem;
+            padding: 1rem;
+            background-color: #f3f4f6;
+            border-radius: 0.5rem;
+            font-size: 0.75rem;
+            font-style: italic;
+            color: #374151;
+        }
+
+        .hidden { display: none !important; }
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen p-4 md:p-8">
-    <div class="max-w-4xl mx-auto bg-white rounded-xl shadow-lg p-6">
-        <h1 class="text-3xl font-bold text-center mb-8 text-indigo-600">Creador de Imágenes IA ✨</h1>
+<body>
+    <div class="container">
+        <h1>Creador de Imágenes IA ✨</h1>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="products-grid">
             <!-- Producto 1 -->
-            <div class="p-4 border rounded-lg bg-gray-50">
-                <label class="block font-semibold mb-2">Producto 1</label>
-                <input type="file" id="file1" accept="image/*" class="mb-2 w-full text-sm">
-                <input type="text" id="url1" placeholder="O pega URL de imagen" class="w-full p-2 text-sm border rounded">
-                <div id="preview1" class="mt-2 h-32 bg-gray-200 rounded flex items-center justify-center overflow-hidden">
-                    <span class="text-gray-400 text-xs">Sin imagen</span>
+            <div class="product-card">
+                <label class="label">Producto 1</label>
+                <input type="file" id="file1" accept="image/*" class="input-file">
+                <input type="text" id="url1" placeholder="O pega URL de imagen" class="input-text">
+                <div id="preview1" class="preview-box">
+                    <span class="preview-placeholder">Sin imagen</span>
                 </div>
             </div>
             <!-- Producto 2 -->
-            <div class="p-4 border rounded-lg bg-gray-50">
-                <label class="block font-semibold mb-2">Producto 2</label>
-                <input type="file" id="file2" accept="image/*" class="mb-2 w-full text-sm">
-                <input type="text" id="url2" placeholder="O pega URL de imagen" class="w-full p-2 text-sm border rounded">
-                <div id="preview2" class="mt-2 h-32 bg-gray-200 rounded flex items-center justify-center overflow-hidden">
-                    <span class="text-gray-400 text-xs">Sin imagen</span>
+            <div class="product-card">
+                <label class="label">Producto 2</label>
+                <input type="file" id="file2" accept="image/*" class="input-file">
+                <input type="text" id="url2" placeholder="O pega URL de imagen" class="input-text">
+                <div id="preview2" class="preview-box">
+                    <span class="preview-placeholder">Sin imagen</span>
                 </div>
             </div>
             <!-- Producto 3 -->
-            <div class="p-4 border rounded-lg bg-gray-50">
-                <label class="block font-semibold mb-2">Producto 3</label>
-                <input type="file" id="file3" accept="image/*" class="mb-2 w-full text-sm">
-                <input type="text" id="url3" placeholder="O pega URL de imagen" class="w-full p-2 text-sm border rounded">
-                <div id="preview3" class="mt-2 h-32 bg-gray-200 rounded flex items-center justify-center overflow-hidden">
-                    <span class="text-gray-400 text-xs">Sin imagen</span>
+            <div class="product-card">
+                <label class="label">Producto 3</label>
+                <input type="file" id="file3" accept="image/*" class="input-file">
+                <input type="text" id="url3" placeholder="O pega URL de imagen" class="input-text">
+                <div id="preview3" class="preview-box">
+                    <span class="preview-placeholder">Sin imagen</span>
                 </div>
             </div>
         </div>
 
-        <div class="mb-8">
-            <label class="block font-semibold mb-2">Descripción del Ambiente</label>
-            <textarea id="environment" rows="3" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-400 outline-none" placeholder="Ej: Fondo verde con ambientado de sala de estar que genere paz..."></textarea>
-            <p class="text-xs text-gray-500 mt-1">La IA respetará la forma y elementos originales de tus productos.</p>
+        <div class="environment-section">
+            <label class="label">Descripción del Ambiente</label>
+            <textarea id="environment" placeholder="Ej: Fondo verde con ambientado de sala de estar que genere paz..."></textarea>
+            <p class="hint">La IA respetará la forma y elementos originales de tus productos.</p>
         </div>
 
-        <button id="generateBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-lg transition-colors flex items-center justify-center gap-3 shadow-md">
+        <button id="generateBtn" class="btn-generate">
             <span>Generar Imagen de Campaña</span>
             <div id="btnLoader" class="loader hidden"></div>
         </button>
 
-        <div id="resultContainer" class="mt-12 hidden border-t pt-8 text-center">
-            <h2 class="text-2xl font-bold mb-4">Resultado Final</h2>
-            <img id="resultImage" src="" alt="Imagen Generada" class="mx-auto rounded-lg shadow-2xl mb-6 max-w-full">
-            <div class="flex gap-4 justify-center">
-                <a id="downloadBtn" href="#" download="campaña-ia.png" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors">Descargar Imagen</a>
-                <button onclick="window.location.reload()" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-2 rounded-lg font-semibold transition-colors">Nueva Imagen</button>
+        <div id="resultContainer" class="result-container">
+            <h2>Resultado Final</h2>
+            <img id="resultImage" src="" alt="Imagen Generada">
+            <div class="actions">
+                <a id="downloadBtn" href="#" download="campaña-ia.png" class="btn-download">Descargar Imagen</a>
+                <button onclick="window.location.reload()" class="btn-new">Nueva Imagen</button>
             </div>
-            <details class="mt-6 text-left">
-                <summary class="text-gray-500 cursor-pointer text-sm">Ver Prompt generado por IA</summary>
-                <p id="promptText" class="mt-2 p-4 bg-gray-100 rounded text-xs italic text-gray-700"></p>
+            <details>
+                <summary>Ver Prompt generado por IA</summary>
+                <p id="promptText" class="prompt-text"></p>
             </details>
         </div>
     </div>
@@ -195,7 +388,6 @@ function getHTML() {
             { file: 'file3', url: 'url3', preview: 'preview3' }
         ];
 
-        // Lógica de previsualización
         inputs.forEach(input => {
             const fileEl = document.getElementById(input.file);
             const urlEl = document.getElementById(input.url);
@@ -206,7 +398,7 @@ function getHTML() {
                 if (file) {
                     const reader = new FileReader();
                     reader.onload = (re) => {
-                        previewEl.innerHTML = \`<img src="\${re.target.result}" class="h-full w-full object-contain">\`;
+                        previewEl.innerHTML = \`<img src="\${re.target.result}">\`;
                         urlEl.value = '';
                     };
                     reader.readAsDataURL(file);
@@ -215,7 +407,7 @@ function getHTML() {
 
             urlEl.addEventListener('input', (e) => {
                 if (e.target.value) {
-                    previewEl.innerHTML = \`<img src="\${e.target.value}" class="h-full w-full object-contain" onerror="this.parentElement.innerHTML='<span class=\\'text-red-500 text-xs\\'>Error URL</span>'">\`;
+                    previewEl.innerHTML = \`<img src="\${e.target.value}" onerror="this.parentElement.innerHTML='<span style=\\'color:red;font-size:10px\\'>Error URL</span>'">\`;
                     fileEl.value = '';
                 }
             });
@@ -244,7 +436,7 @@ function getHTML() {
             try {
                 btn.disabled = true;
                 loader.classList.remove('hidden');
-                resultContainer.classList.add('hidden');
+                resultContainer.classList.remove('active');
 
                 const images = [];
                 for (const input of inputs) {
@@ -260,7 +452,7 @@ function getHTML() {
                 }
 
                 if (images.length !== 3) {
-                    alert('Debes proporcionar las 3 imágenes (ya sea por archivo o por URL).');
+                    alert('Debes proporcionar las 3 imágenes.');
                     btn.disabled = false;
                     loader.classList.add('hidden');
                     return;
@@ -273,13 +465,12 @@ function getHTML() {
                 });
 
                 const data = await response.json();
-
                 if (data.error) throw new Error(data.error);
 
                 document.getElementById('resultImage').src = data.imageUrl;
                 document.getElementById('downloadBtn').href = data.imageUrl;
                 document.getElementById('promptText').innerText = data.promptUsed;
-                resultContainer.classList.remove('hidden');
+                resultContainer.classList.add('active');
                 resultContainer.scrollIntoView({ behavior: 'smooth' });
 
             } catch (err) {
