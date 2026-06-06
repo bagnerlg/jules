@@ -90,18 +90,23 @@ export default {
 
         let dallEData = await dallEResponse.json();
 
-        // Fallback inteligente: solo si el modelo no existe. Si es cuota o saldo, detenerse.
+        // Fallback inteligente: solo si el modelo no existe o no hay permisos. Si es cuota o saldo, detenerse.
         if (dallEData.error) {
           const errMsg = dallEData.error.message || "";
-          const isModelError = errMsg.includes("does not exist") || errMsg.includes("not found") || dallEData.error.code === "model_not_found";
+          const isRetryableError =
+            errMsg.includes("does not exist") ||
+            errMsg.includes("not found") ||
+            errMsg.includes("must be verified") ||
+            errMsg.includes("permission_denied") ||
+            dallEData.error.code === "model_not_found";
 
-          if (isModelError) {
-            console.warn(`Modelo ${modelUsed} no disponible. Intentando fallbacks...`);
+          if (isRetryableError) {
+            console.warn(`Modelo ${modelUsed} no disponible o sin permisos. Intentando fallbacks...`);
 
             const fallbacks = [
-              { model: "chatgpt-image-latest", size: "1024x1024" },
               { model: "gpt-image", size: "1024x1024" },
               { model: "gpt-image-1-mini", size: "1024x1024" },
+              { model: "chatgpt-image-latest", size: "1024x1024" },
               { model: "dall-e-3", size: "1024x1024" },
               { model: "dall-e-2", size: "512x512" }
             ];
@@ -129,8 +134,16 @@ export default {
                 console.log("Logrado con:", modelUsed);
                 break;
               }
-              // Si el error del fallback ya NO es sobre el modelo (ej. es cuota), salir del bucle
-              if (!dallEData.error.message.includes("not exist")) break;
+              // Si el error del fallback ya NO es reintentable (ej. es cuota), salir del bucle
+              const nextErrMsg = dallEData.error.message || "";
+              const nextIsRetryable =
+                nextErrMsg.includes("does not exist") ||
+                nextErrMsg.includes("not found") ||
+                nextErrMsg.includes("must be verified") ||
+                nextErrMsg.includes("permission_denied") ||
+                dallEData.error.code === "model_not_found";
+
+              if (!nextIsRetryable) break;
             }
           } else {
             console.error("Error crítico (no es de modelo):", dallEData.error);
