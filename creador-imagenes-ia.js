@@ -89,44 +89,50 @@ export default {
 
         let dallEData = await dallEResponse.json();
 
-        // Fallback si los modelos especiales fallan, intentar modelos estándar o alternativos
+        // Fallback inteligente: solo si el modelo no existe. Si es cuota o saldo, detenerse.
         if (dallEData.error) {
-          console.warn(`Error con ${modelUsed}:`, dallEData.error.message, "| Detalle:", JSON.stringify(dallEData.error));
+          const errMsg = dallEData.error.message || "";
+          const isModelError = errMsg.includes("does not exist") || errMsg.includes("not found") || dallEData.error.code === "model_not_found";
 
-          // Lista de fallbacks priorizada basándome en los modelos vistos en billing
-          const fallbacks = [
-            { model: "chatgpt-image-latest", size: "1024x1024" },
-            { model: "gpt-image", size: "1024x1024" },
-            { model: "gpt-image-1-mini", size: "512x512" },
-            { model: "dall-e-3", size: "1024x1024" },
-            { model: "dall-e-2", size: "1024x1024" },
-            { model: "dall-e-2", size: "512x512" }
-          ];
+          if (isModelError) {
+            console.warn(`Modelo ${modelUsed} no disponible. Intentando fallbacks...`);
 
-          for (const fallback of fallbacks) {
-            if (fallback.model === modelUsed && fallback.size === size) continue; // Saltar si ya falló exactamente este
+            const fallbacks = [
+              { model: "chatgpt-image-latest", size: "1024x1024" },
+              { model: "gpt-image", size: "1024x1024" },
+              { model: "gpt-image-1-mini", size: "512x512" },
+              { model: "dall-e-3", size: "1024x1024" },
+              { model: "dall-e-2", size: "512x512" }
+            ];
 
-            console.log(`Intentando fallback a: ${fallback.model} (${fallback.size})...`);
-            dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
-              },
-              body: JSON.stringify({
-                model: fallback.model,
-                prompt: generatedPrompt,
-                n: 1,
-                size: fallback.size
-              })
-            });
-            dallEData = await dallEResponse.json();
-            if (!dallEData.error) {
-              modelUsed = fallback.model;
-              console.log("Fallback exitoso con:", modelUsed);
-              break;
+            for (const fallback of fallbacks) {
+              if (fallback.model === modelUsed) continue;
+
+              console.log(`Intentando: ${fallback.model}...`);
+              dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+                },
+                body: JSON.stringify({
+                  model: fallback.model,
+                  prompt: generatedPrompt,
+                  n: 1,
+                  size: fallback.size
+                })
+              });
+              dallEData = await dallEResponse.json();
+              if (!dallEData.error) {
+                modelUsed = fallback.model;
+                console.log("Logrado con:", modelUsed);
+                break;
+              }
+              // Si el error del fallback ya NO es sobre el modelo (ej. es cuota), salir del bucle
+              if (!dallEData.error.message.includes("not exist")) break;
             }
-            console.warn(`Falló ${fallback.model}:`, dallEData.error.message);
+          } else {
+            console.error("Error crítico (no es de modelo):", dallEData.error);
           }
         }
 
