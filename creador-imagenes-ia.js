@@ -69,7 +69,8 @@ export default {
 
         // 2. Generar imagen con selección de modelo y calidad (basado en billing detectado)
         let modelUsed = selectedQuality === "low" ? "gpt-image-1-mini" : "gpt-image";
-        let size = selectedQuality === "low" ? "512x512" : "1024x1024";
+        // Los modelos gpt-image requieren mínimo 1024x1024 según el error reportado
+        let size = "1024x1024";
 
         console.log(`Iniciando generación con modelo detectado: ${modelUsed} (${size})...`);
 
@@ -100,7 +101,7 @@ export default {
             const fallbacks = [
               { model: "chatgpt-image-latest", size: "1024x1024" },
               { model: "gpt-image", size: "1024x1024" },
-              { model: "gpt-image-1-mini", size: "512x512" },
+              { model: "gpt-image-1-mini", size: "1024x1024" },
               { model: "dall-e-3", size: "1024x1024" },
               { model: "dall-e-2", size: "512x512" }
             ];
@@ -425,10 +426,10 @@ function getHTML() {
         </div>
 
         <div class="environment-section">
-            <label class="label">Calidad y Gasto</label>
+            <label class="label">Modelo de Generación</label>
             <select id="quality" class="input-text" style="height: 3rem; font-size: 1rem;">
-                <option value="high">Calidad Pro (GPT-Image - 1024px)</option>
-                <option value="low">Ahorro de Tokens (GPT-Image-Mini - 512px)</option>
+                <option value="high">Calidad Premium (GPT-Image)</option>
+                <option value="low">Ahorro de Saldo (GPT-Image-Mini)</option>
             </select>
         </div>
 
