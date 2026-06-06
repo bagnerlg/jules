@@ -75,9 +75,7 @@ export default {
             model: "dall-e-3",
             prompt: generatedPrompt,
             n: 1,
-            size: "1024x1024",
-            quality: "standard",
-            response_format: "url"
+            size: "1024x1024"
           })
         });
 
