@@ -155,12 +155,39 @@ export default {
           throw new Error(`DALL-E Error: ${dallEData.error.message}`);
         }
 
-        return new Response(JSON.stringify({
-          imageUrl: dallEData.data[0].url,
+        // Log de diagnóstico profundo
+        console.log("DALL-E Response exitosa (Estructura):", JSON.stringify(dallEData).substring(0, 500));
+
+        if (!dallEData.data || !dallEData.data[0]) {
+          console.error("DALL-E Response sin datos:", dallEData);
+          throw new Error("La IA no devolvió una imagen.");
+        }
+
+        let finalImage = dallEData.data[0].url;
+        if (!finalImage && dallEData.data[0].b64_json) {
+          finalImage = `data:image/png;base64,${dallEData.data[0].b64_json}`;
+        }
+
+        if (!finalImage) {
+          console.error("No se encontró URL ni b64 en:", dallEData.data[0]);
+          throw new Error("No se pudo extraer la imagen de la respuesta de OpenAI.");
+        }
+
+        console.log(`Imagen lista. Tipo: ${dallEData.data[0].url ? 'URL' : 'Base64'}. Inicio: ${finalImage.substring(0, 50)}...`);
+
+        const finalPayload = {
+          imageUrl: finalImage,
           promptUsed: generatedPrompt,
           modelUsed: modelUsed
-        }), {
-          headers: { "Content-Type": "application/json" }
+        };
+
+        console.log("Enviando respuesta al cliente...");
+
+        return new Response(JSON.stringify(finalPayload), {
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+          }
         });
 
       } catch (error) {
@@ -401,27 +428,27 @@ function getHTML() {
         <div class="products-grid">
             <!-- Producto 1 -->
             <div class="product-card">
-                <label class="label">Producto 1</label>
+                <label class="label" for="file1">Producto 1</label>
                 <input type="file" id="file1" accept="image/*" class="input-file">
-                <input type="text" id="url1" placeholder="O pega URL de imagen" class="input-text">
+                <input type="text" id="url1" placeholder="O pega URL de imagen" aria-label="URL Producto 1" class="input-text">
                 <div id="preview1" class="preview-box">
                     <span class="preview-placeholder">Sin imagen</span>
                 </div>
             </div>
             <!-- Producto 2 -->
             <div class="product-card">
-                <label class="label">Producto 2</label>
+                <label class="label" for="file2">Producto 2</label>
                 <input type="file" id="file2" accept="image/*" class="input-file">
-                <input type="text" id="url2" placeholder="O pega URL de imagen" class="input-text">
+                <input type="text" id="url2" placeholder="O pega URL de imagen" aria-label="URL Producto 2" class="input-text">
                 <div id="preview2" class="preview-box">
                     <span class="preview-placeholder">Sin imagen</span>
                 </div>
             </div>
             <!-- Producto 3 -->
             <div class="product-card">
-                <label class="label">Producto 3</label>
+                <label class="label" for="file3">Producto 3</label>
                 <input type="file" id="file3" accept="image/*" class="input-file">
-                <input type="text" id="url3" placeholder="O pega URL de imagen" class="input-text">
+                <input type="text" id="url3" placeholder="O pega URL de imagen" aria-label="URL Producto 3" class="input-text">
                 <div id="preview3" class="preview-box">
                     <span class="preview-placeholder">Sin imagen</span>
                 </div>
@@ -429,7 +456,7 @@ function getHTML() {
         </div>
 
         <div class="environment-section">
-            <label class="label">Descripción del Ambiente / Escenario Maestro</label>
+            <label class="label" for="environment">Descripción del Ambiente / Escenario Maestro</label>
             <textarea id="environment" placeholder="Ej: Dormitorio moderno minimalista, pared beige clara, piso madera natural, iluminación cálida..."></textarea>
             <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
                 <input type="checkbox" id="lockEnvironment" style="width: 1rem; height: 1rem; cursor: pointer;">
@@ -439,7 +466,7 @@ function getHTML() {
         </div>
 
         <div class="environment-section">
-            <label class="label">Modelo de Generación</label>
+            <label class="label" for="quality">Modelo de Generación</label>
             <select id="quality" class="input-text" style="height: 3rem; font-size: 1rem;">
                 <option value="high">Calidad Premium (GPT-Image)</option>
                 <option value="low">Ahorro de Saldo (GPT-Image-Mini)</option>
