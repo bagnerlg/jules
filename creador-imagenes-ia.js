@@ -67,11 +67,11 @@ export default {
         const generatedPrompt = gptData.choices[0].message.content.trim();
         console.log("Prompt generado por GPT:", generatedPrompt);
 
-        // 2. Generar imagen con selección de modelo y calidad
-        let modelUsed = selectedQuality === "low" ? "dall-e-2" : "dall-e-3";
+        // 2. Generar imagen con selección de modelo y calidad (basado en billing detectado)
+        let modelUsed = selectedQuality === "low" ? "gpt-image-1-mini" : "gpt-image";
         let size = selectedQuality === "low" ? "512x512" : "1024x1024";
 
-        console.log(`Iniciando generación de imagen con ${modelUsed} (${size})...`);
+        console.log(`Iniciando generación con modelo detectado: ${modelUsed} (${size})...`);
 
         let dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
           method: "POST",
@@ -89,45 +89,38 @@ export default {
 
         let dallEData = await dallEResponse.json();
 
-        // Fallback robusto si falla el primer modelo
+        // Fallback si los modelos especiales fallan, intentar modelos estándar o legacy
         if (dallEData.error) {
           console.warn(`Error con ${modelUsed}:`, dallEData.error.message);
 
-          // Debug: Listar modelos disponibles si falla
-          try {
-            const modelsList = await fetch("https://api.openai.com/v1/models", {
-              headers: { "Authorization": `Bearer ${env.OPENAI_API_KEY}` }
+          const fallbacks = ["chatgpt-image-latest", "dall-e-3", "dall-e-2"];
+
+          for (const fallbackModel of fallbacks) {
+            console.log(`Intentando fallback a: ${fallbackModel}...`);
+            dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+              },
+              body: JSON.stringify({
+                model: fallbackModel,
+                prompt: generatedPrompt,
+                n: 1,
+                size: "1024x1024"
+              })
             });
-            const modelsData = await modelsList.json();
-            const availableImageModels = modelsData.data?.filter(m => m.id.includes("dall-e")).map(m => m.id);
-            console.log("Modelos DALL-E disponibles en esta cuenta:", availableImageModels);
-          } catch (e) {
-            console.log("No se pudieron listar los modelos para depuración.");
+            dallEData = await dallEResponse.json();
+            if (!dallEData.error) {
+              modelUsed = fallbackModel;
+              break;
+            }
+            console.warn(`Falló ${fallbackModel}:`, dallEData.error.message);
           }
 
-          const fallbackModel = modelUsed === "dall-e-3" ? "dall-e-2" : "dall-e-3";
-          console.log(`Intentando fallback automático a ${fallbackModel}...`);
-
-          dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
-            },
-            body: JSON.stringify({
-              model: fallbackModel,
-              prompt: generatedPrompt,
-              n: 1,
-              size: fallbackModel === "dall-e-2" ? "512x512" : "1024x1024"
-            })
-          });
-          dallEData = await dallEResponse.json();
-
-          // Tercer intento: Sin especificar modelo (Legacy Fallback)
+          // Último recurso: Petición sin parámetro de modelo
           if (dallEData.error) {
-            console.warn(`Error con fallback ${fallbackModel}:`, dallEData.error.message);
             console.log("Intentando último recurso: Petición sin parámetro de modelo...");
-
             dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
               method: "POST",
               headers: {
@@ -137,17 +130,11 @@ export default {
               body: JSON.stringify({
                 prompt: generatedPrompt,
                 n: 1,
-                size: "512x512" // Usamos 512x512 para ahorrar tokens y mayor compatibilidad
+                size: "1024x1024"
               })
             });
             dallEData = await dallEResponse.json();
-            if (!dallEData.error) {
-               modelUsed = "legacy-auto";
-               console.log("Logrado con legacy-auto");
-            }
-          } else {
-            modelUsed = fallbackModel;
-            console.log("Fallback exitoso con:", modelUsed);
+            if (!dallEData.error) modelUsed = "legacy-auto";
           }
         }
 
@@ -438,8 +425,8 @@ function getHTML() {
         <div class="environment-section">
             <label class="label">Calidad y Gasto</label>
             <select id="quality" class="input-text" style="height: 3rem; font-size: 1rem;">
-                <option value="high">Calidad Pro (DALL-E 3 - 1024px)</option>
-                <option value="low">Ahorro de Tokens (DALL-E 2 - 512px)</option>
+                <option value="high">Calidad Pro (GPT-Image - 1024px)</option>
+                <option value="low">Ahorro de Tokens (GPT-Image-Mini - 512px)</option>
             </select>
         </div>
 
