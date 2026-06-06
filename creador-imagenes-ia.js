@@ -68,10 +68,10 @@ export default {
         console.log("Prompt generado por GPT:", generatedPrompt);
 
         // 2. Generar imagen con selección de modelo y calidad
-        let model = selectedQuality === "low" ? "dall-e-2" : "dall-e-3";
+        let modelUsed = selectedQuality === "low" ? "dall-e-2" : "dall-e-3";
         let size = selectedQuality === "low" ? "512x512" : "1024x1024";
 
-        console.log(`Iniciando generación de imagen con ${model} (${size})...`);
+        console.log(`Iniciando generación de imagen con ${modelUsed} (${size})...`);
 
         let dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
           method: "POST",
@@ -80,7 +80,7 @@ export default {
             "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
           },
           body: JSON.stringify({
-            model: model,
+            model: modelUsed,
             prompt: generatedPrompt,
             n: 1,
             size: size
@@ -89,11 +89,23 @@ export default {
 
         let dallEData = await dallEResponse.json();
 
-        // Fallback robusto si falla el primer modelo (por no existir o parámetros)
+        // Fallback robusto si falla el primer modelo
         if (dallEData.error) {
-          console.warn(`Error con ${model}:`, dallEData.error.message);
+          console.warn(`Error con ${modelUsed}:`, dallEData.error.message);
 
-          const fallbackModel = model === "dall-e-3" ? "dall-e-2" : "dall-e-3";
+          // Debug: Listar modelos disponibles si falla
+          try {
+            const modelsList = await fetch("https://api.openai.com/v1/models", {
+              headers: { "Authorization": `Bearer ${env.OPENAI_API_KEY}` }
+            });
+            const modelsData = await modelsList.json();
+            const availableImageModels = modelsData.data?.filter(m => m.id.includes("dall-e")).map(m => m.id);
+            console.log("Modelos DALL-E disponibles en esta cuenta:", availableImageModels);
+          } catch (e) {
+            console.log("No se pudieron listar los modelos para depuración.");
+          }
+
+          const fallbackModel = modelUsed === "dall-e-3" ? "dall-e-2" : "dall-e-3";
           console.log(`Intentando fallback automático a ${fallbackModel}...`);
 
           dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
@@ -110,9 +122,32 @@ export default {
             })
           });
           dallEData = await dallEResponse.json();
-          if (!dallEData.error) {
-            model = fallbackModel; // Actualizar el modelo usado con éxito
-            console.log("Fallback exitoso con:", model);
+
+          // Tercer intento: Sin especificar modelo (Legacy Fallback)
+          if (dallEData.error) {
+            console.warn(`Error con fallback ${fallbackModel}:`, dallEData.error.message);
+            console.log("Intentando último recurso: Petición sin parámetro de modelo...");
+
+            dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+              },
+              body: JSON.stringify({
+                prompt: generatedPrompt,
+                n: 1,
+                size: "512x512" // Usamos 512x512 para ahorrar tokens y mayor compatibilidad
+              })
+            });
+            dallEData = await dallEResponse.json();
+            if (!dallEData.error) {
+               modelUsed = "legacy-auto";
+               console.log("Logrado con legacy-auto");
+            }
+          } else {
+            modelUsed = fallbackModel;
+            console.log("Fallback exitoso con:", modelUsed);
           }
         }
 
@@ -124,7 +159,7 @@ export default {
         return new Response(JSON.stringify({
           imageUrl: dallEData.data[0].url,
           promptUsed: generatedPrompt,
-          modelUsed: model
+          modelUsed: modelUsed
         }), {
           headers: { "Content-Type": "application/json" }
         });
@@ -403,7 +438,7 @@ function getHTML() {
         <div class="environment-section">
             <label class="label">Calidad y Gasto</label>
             <select id="quality" class="input-text" style="height: 3rem; font-size: 1rem;">
-                <option value="high">Calidad Pro (DALL-E 3 - 1024px - Realista)</option>
+                <option value="high">Calidad Pro (DALL-E 3 - 1024px)</option>
                 <option value="low">Ahorro de Tokens (DALL-E 2 - 512px)</option>
             </select>
         </div>
@@ -414,7 +449,8 @@ function getHTML() {
         </button>
 
         <div id="resultContainer" class="result-container">
-            <h2>Resultado Final</h2>
+            <h2 id="resultTitle">Resultado Final</h2>
+            <p id="modelBadge" style="font-size: 10px; color: #6b7280; margin-bottom: 10px;"></p>
             <img id="resultImage" src="" alt="Imagen Generada">
             <div class="actions">
                 <a id="downloadBtn" href="#" download="campaña-ia.png" class="btn-download">Descargar Imagen</a>
@@ -444,7 +480,10 @@ function getHTML() {
                 if (file) {
                     const reader = new FileReader();
                     reader.onload = (re) => {
-                        previewEl.innerHTML = \`<img src="\${re.target.result}">\`;
+                        const img = document.createElement('img');
+                        img.src = re.target.result;
+                        previewEl.innerHTML = '';
+                        previewEl.appendChild(img);
                         urlEl.value = '';
                     };
                     reader.readAsDataURL(file);
@@ -452,8 +491,15 @@ function getHTML() {
             });
 
             urlEl.addEventListener('input', (e) => {
-                if (e.target.value) {
-                    previewEl.innerHTML = \`<img src="\${e.target.value}" onerror="this.parentElement.innerHTML='<span style=\\'color:red;font-size:10px\\'>Error URL</span>'">\`;
+                const val = e.target.value;
+                if (val) {
+                    const img = document.createElement('img');
+                    img.src = val;
+                    img.onerror = () => {
+                        previewEl.innerHTML = '<span style="color:red;font-size:10px">Error URL</span>';
+                    };
+                    previewEl.innerHTML = '';
+                    previewEl.appendChild(img);
                     fileEl.value = '';
                 }
             });
@@ -518,6 +564,8 @@ function getHTML() {
                 document.getElementById('resultImage').src = data.imageUrl;
                 document.getElementById('downloadBtn').href = data.imageUrl;
                 document.getElementById('promptText').innerText = data.promptUsed;
+                document.getElementById('modelBadge').innerText = 'Generado con: ' + data.modelUsed;
+
                 resultContainer.classList.add('active');
                 resultContainer.scrollIntoView({ behavior: 'smooth' });
 
