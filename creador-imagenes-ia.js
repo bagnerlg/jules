@@ -14,15 +14,20 @@ export default {
     if (request.method === "POST" && url.pathname === "/generate") {
       try {
         const body = await request.json();
-        const { images, environment, quality: selectedQuality } = body;
-        console.log("Petición recibida:", { environment, quality: selectedQuality, imagesCount: images?.length });
+        const { config, quality: selectedQuality } = body;
 
-        if (!images || images.length !== 3) {
-          console.error("Error: Se requieren 3 imágenes.");
-          return new Response(JSON.stringify({ error: "Se requieren exactamente 3 imágenes." }), { status: 400 });
+        console.log("Configuración recibida:", JSON.stringify(config, null, 2).substring(0, 500));
+
+        if (!config.productos || config.productos.length === 0) {
+          return new Response(JSON.stringify({ error: "Se requieren productos." }), { status: 400 });
         }
 
-        // 1. Analizar imágenes con GPT-4o-mini para generar el prompt
+        // 1. Construir el Prompt Maestro (Basado en la estructura del usuario)
+        const promptMaestro = construirPrompt(config);
+        console.log("Prompt Maestro Construido:", promptMaestro);
+
+        // 2. Analizar imágenes con GPT-4o-mini para generar el prompt técnico final de DALL-E
+        // Enviamos el Fondo Maestro + Los Productos
         const gptResponse = await fetch("https://api.openai.com/v1/chat/completions", {
           method: "POST",
           headers: {
@@ -34,45 +39,51 @@ export default {
             messages: [
               {
                 role: "system",
-                content: `Eres un experto en muebles y diseño de interiores. Tu tarea es analizar 3 fotos y crear un prompt para generación de imagen técnica y limpia.
-                REGLAS DE ORO:
-                1. AISLAMIENTO: Identifica el producto principal en cada foto. IGNORA personas, decoraciones sucias, fondos irrelevantes u otros muebles secundarios en la foto original.
-                2. MANTÉN LA INTEGRIDAD: Describe el producto principal exactamente (colores, materiales, patas, tiradores). No añadas vidrios o módulos extras.
-                3. ESCALA Y POSICIÓN: El mueble más grande (Cama/Ropero) al centro, los pequeños a los lados. Proporciones reales.
-                4. AMBIENTE MAESTRO: Usa exactamente la descripción de ambiente proporcionada. El fondo (paredes, suelo, iluminación) debe ser consistente. Estilo Showroom IKEA/Catálogo Premium.
-                5. IDIOMA: Prompt final en INGLÉS.
-                6. SALIDA: Solo el texto del prompt.`
+                content: `Eres un experto en fotografía de catálogo y diseño de interiores. Tu objetivo es convertir una "Configuración Maestra" y fotos de referencia en un PROMPT DETALLADO para DALL-E 3.
+
+                REGLA SUPREMA: Debes describir los productos con tal precisión técnica que DALL-E no los modifique. Describe materiales (textura de madera, tipo de tela), herrajes, colores exactos y proporciones.
+
+                INSTRUCCIONES:
+                1. Analiza el Fondo Maestro proporcionado como primera imagen.
+                2. Analiza cada producto proporcionado a continuación.
+                3. Genera un prompt en INGLÉS que describa la escena final integrando todo según las posiciones indicadas.
+                4. NO uses palabras vagas. Usa términos técnicos: "matte finish", "oak wood grain", "brushed gold handles", "1:1 scale fidelity".`
               },
               {
                 role: "user",
                 content: [
-                  { type: "text", text: `Ambiente solicitado: ${environment}. Aquí están los 3 productos:` },
-                  ...images.map(img => ({
+                  { type: "text", text: promptMaestro },
+                  // Imagen de Fondo si existe
+                  ...(config.fondoMaestro ? [{
                     type: "image_url",
-                    image_url: { url: img.startsWith("http") ? img : `data:image/jpeg;base64,${img}` }
+                    image_url: { url: config.fondoMaestro.startsWith("http") ? config.fondoMaestro : `data:image/jpeg;base64,${config.fondoMaestro}` }
+                  }] : []),
+                  // Imágenes de Productos
+                  ...config.productos.map(p => ({
+                    type: "image_url",
+                    image_url: { url: p.url.startsWith("http") ? p.url : `data:image/jpeg;base64,${p.url}` }
                   }))
                 ]
               }
             ],
-            max_tokens: 350
+            max_tokens: 500
           })
         });
 
         const gptData = await gptResponse.json();
-        if (gptData.error) {
-          console.error("GPT API Error:", gptData.error);
-          throw new Error(`GPT Error: ${gptData.error.message}`);
-        }
+        if (gptData.error) throw new Error(`GPT Error: ${gptData.error.message}`);
 
-        const generatedPrompt = gptData.choices[0].message.content.trim();
-        console.log("Prompt generado por GPT:", generatedPrompt);
+        let finalPromptForDallE = gptData.choices[0].message.content.trim();
+        // Limpiar markdown si existe
+        finalPromptForDallE = finalPromptForDallE.replace(/^```[a-zA-Z]*\n/g, "").replace(/\n```$/g, "").trim();
 
-        // 2. Generar imagen con selección de modelo y calidad (basado en billing detectado)
+        console.log("Prompt Final para DALL-E:", finalPromptForDallE);
+
+        // 3. Generación de Imagen (DALL-E 3)
         let modelUsed = selectedQuality === "low" ? "gpt-image-1-mini" : "gpt-image";
-        // Los modelos gpt-image requieren mínimo 1024x1024 según el error reportado
         let size = "1024x1024";
 
-        console.log(`Iniciando generación con modelo detectado: ${modelUsed} (${size})...`);
+        console.log(`Intentando generar con modelo: ${modelUsed}...`);
 
         let dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
           method: "POST",
@@ -82,7 +93,7 @@ export default {
           },
           body: JSON.stringify({
             model: modelUsed,
-            prompt: generatedPrompt,
+            prompt: finalPromptForDallE,
             n: 1,
             size: size
           })
@@ -90,31 +101,17 @@ export default {
 
         let dallEData = await dallEResponse.json();
 
-        // Fallback inteligente: solo si el modelo no existe o no hay permisos. Si es cuota o saldo, detenerse.
+        // Fallback inteligente en cadena
         if (dallEData.error) {
           const errMsg = dallEData.error.message || "";
-          const isRetryableError =
-            errMsg.includes("does not exist") ||
-            errMsg.includes("not found") ||
-            errMsg.includes("must be verified") ||
-            errMsg.includes("permission_denied") ||
-            dallEData.error.code === "model_not_found";
+          const isModelError = errMsg.includes("not found") || errMsg.includes("does not exist") || dallEData.error.code === "model_not_found";
 
-          if (isRetryableError) {
-            console.warn(`Modelo ${modelUsed} no disponible o sin permisos. Intentando fallbacks...`);
+          if (isModelError) {
+            const fallbacks = ["gpt-image", "gpt-image-1-mini", "dall-e-3", "dall-e-2"];
+            for (const fallbackModel of fallbacks) {
+              if (fallbackModel === modelUsed) continue;
 
-            const fallbacks = [
-              { model: "gpt-image", size: "1024x1024" },
-              { model: "gpt-image-1-mini", size: "1024x1024" },
-              { model: "chatgpt-image-latest", size: "1024x1024" },
-              { model: "dall-e-3", size: "1024x1024" },
-              { model: "dall-e-2", size: "512x512" }
-            ];
-
-            for (const fallback of fallbacks) {
-              if (fallback.model === modelUsed) continue;
-
-              console.log(`Intentando: ${fallback.model}...`);
+              console.log(`Reintentando con fallback: ${fallbackModel}...`);
               dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
                 method: "POST",
                 headers: {
@@ -122,75 +119,35 @@ export default {
                   "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
                 },
                 body: JSON.stringify({
-                  model: fallback.model,
-                  prompt: generatedPrompt,
+                  model: fallbackModel,
+                  prompt: finalPromptForDallE,
                   n: 1,
-                  size: fallback.size
+                  size: fallbackModel === "dall-e-2" ? "512x512" : "1024x1024"
                 })
               });
               dallEData = await dallEResponse.json();
               if (!dallEData.error) {
-                modelUsed = fallback.model;
-                console.log("Logrado con:", modelUsed);
+                modelUsed = fallbackModel;
                 break;
               }
-              // Si el error del fallback ya NO es reintentable (ej. es cuota), salir del bucle
-              const nextErrMsg = dallEData.error.message || "";
-              const nextIsRetryable =
-                nextErrMsg.includes("does not exist") ||
-                nextErrMsg.includes("not found") ||
-                nextErrMsg.includes("must be verified") ||
-                nextErrMsg.includes("permission_denied") ||
-                dallEData.error.code === "model_not_found";
-
-              if (!nextIsRetryable) break;
             }
-          } else {
-            console.error("Error crítico (no es de modelo):", dallEData.error);
           }
         }
 
-        if (dallEData.error) {
-          console.error("DALL-E Final Error:", dallEData.error);
-          throw new Error(`DALL-E Error: ${dallEData.error.message}`);
-        }
+        if (dallEData.error) throw new Error(`DALL-E Final Error: ${dallEData.error.message}`);
 
-        // Log de diagnóstico profundo
-        console.log("DALL-E Response exitosa (Estructura):", JSON.stringify(dallEData).substring(0, 500));
+        const finalImage = dallEData.data[0].url || `data:image/png;base64,${dallEData.data[0].b64_json}`;
 
-        if (!dallEData.data || !dallEData.data[0]) {
-          console.error("DALL-E Response sin datos:", dallEData);
-          throw new Error("La IA no devolvió una imagen.");
-        }
-
-        let finalImage = dallEData.data[0].url;
-        if (!finalImage && dallEData.data[0].b64_json) {
-          finalImage = `data:image/png;base64,${dallEData.data[0].b64_json}`;
-        }
-
-        if (!finalImage) {
-          console.error("No se encontró URL ni b64 en:", dallEData.data[0]);
-          throw new Error("No se pudo extraer la imagen de la respuesta de OpenAI.");
-        }
-
-        console.log(`Imagen lista. Tipo: ${dallEData.data[0].url ? 'URL' : 'Base64'}. Inicio: ${finalImage.substring(0, 50)}...`);
-
-        const finalPayload = {
+        return new Response(JSON.stringify({
           imageUrl: finalImage,
-          promptUsed: generatedPrompt,
+          promptUsed: finalPromptForDallE,
           modelUsed: modelUsed
-        };
-
-        console.log("Enviando respuesta al cliente...");
-
-        return new Response(JSON.stringify(finalPayload), {
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-          }
+        }), {
+          headers: { "Content-Type": "application/json" }
         });
 
       } catch (error) {
+        console.error("Error en Worker:", error);
         return new Response(JSON.stringify({ error: error.message }), {
           status: 500,
           headers: { "Content-Type": "application/json" }
@@ -202,6 +159,64 @@ export default {
   }
 };
 
+/**
+ * Genera el prompt basado en la estructura solicitada por el usuario
+ */
+function construirPrompt(config) {
+  const listaProductos = config.productos
+    .map(p => `- ${p.nombre}: ${p.posicion}`)
+    .join("\n");
+
+  return `
+Crea UNA SOLA imagen ambientada profesional.
+
+OBJETIVO:
+Crear una escena tipo catálogo premium usando EXACTAMENTE
+los productos enviados como referencia.
+
+REGLAS OBLIGATORIAS:
+
+- Usa EXACTAMENTE los productos enviados.
+- NO cambies colores.
+- NO rediseñes muebles.
+- NO alteres tamaños reales.
+- NO cambies materiales.
+- NO inventes muebles nuevos.
+- NO agregues productos adicionales.
+- Mantén apariencia fotográfica real.
+- Conserva texturas originales.
+- Mantén proporciones reales.
+- Integra los productos naturalmente.
+- Mantén calidad tipo fotografía profesional.
+
+IMPORTANTE:
+Los productos deben verse como fotografías reales
+integradas en el ambiente.
+
+MANTENER EXACTAMENTE:
+- iluminación
+- estilo
+- perspectiva
+- fondo base
+- decoración general
+
+ESTILO DEL AMBIENTE:
+- ${config.estilo.tipo}
+- iluminación ${config.estilo.iluminacion}
+- piso ${config.estilo.piso}
+- paredes ${config.estilo.paredes}
+- decoración ${config.estilo.decoracion}
+- ${config.estilo.calidad}
+
+DISTRIBUCION DE PRODUCTOS:
+${listaProductos}
+
+RESULTADO ESPERADO:
+Una imagen profesional de catálogo de muebles,
+realista, elegante y coherente visualmente.
+`;
+}
+
 function getHTML() {
   return `
 <!DOCTYPE html>
@@ -209,427 +224,496 @@ function getHTML() {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Creador de Imágenes IA - Muebles</title>
+    <title>Creador de Imágenes IA - Configuración Maestra</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         :root {
             --primary: #4f46e5;
             --primary-hover: #4338ca;
-            --success: #16a34a;
-            --success-hover: #15803d;
-            --gray-bg: #f3f4f6;
-            --white: #ffffff;
-            --text-main: #1f2937;
-            --text-muted: #6b7280;
-            --border-color: #e5e7eb;
+            --secondary: #6366f1;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #1e293b;
+            --border: #e2e8f0;
         }
-
-        * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--gray-bg);
-            color: var(--text-main);
-            line-height: 1.5;
-            padding: 2rem 1rem;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
         }
 
-        .container {
-            max-width: 64rem;
+        .main-container {
+            max-width: 1000px;
             margin: 0 auto;
-            background: var(--white);
-            border-radius: 0.75rem;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-            padding: 1.5rem;
+            background: var(--card);
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
         }
 
         h1 {
-            font-size: 1.875rem;
+            color: var(--primary);
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .section-title {
+            font-size: 1.1rem;
             font-weight: 700;
-            text-align: center;
-            margin-bottom: 2rem;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
             color: var(--primary);
         }
 
-        .products-grid {
+        .grid-config {
             display: grid;
-            grid-template-columns: 1fr;
-            gap: 1.5rem;
-            margin-bottom: 2rem;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
         }
 
-        @media (min-width: 768px) {
-            .products-grid { grid-template-columns: repeat(3, 1fr); }
+        @media (max-width: 768px) {
+            .grid-config { grid-template-columns: 1fr; }
+        }
+
+        .panel {
+            border: 1px solid var(--border);
+            padding: 20px;
+            border-radius: 12px;
+            background: #fdfdfd;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            box-sizing: border-box;
+        }
+
+        .products-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
         }
 
         .product-card {
-            padding: 1rem;
-            border: 1px solid var(--border-color);
-            border-radius: 0.5rem;
-            background-color: #f9fafb;
+            border: 1px solid var(--border);
+            padding: 15px;
+            border-radius: 12px;
+            position: relative;
+            background: white;
+            transition: transform 0.2s;
         }
 
-        .label {
-            display: block;
-            font-weight: 600;
-            margin-bottom: 0.5rem;
+        .product-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
 
-        .input-file {
+        .preview-img {
             width: 100%;
-            font-size: 0.875rem;
-            margin-bottom: 0.5rem;
-        }
-
-        .input-text {
-            width: 100%;
-            padding: 0.5rem;
-            font-size: 0.875rem;
-            border: 1px solid var(--border-color);
-            border-radius: 0.25rem;
-            outline: none;
-        }
-
-        .preview-box {
-            margin-top: 0.5rem;
-            height: 8rem;
-            background-color: #e5e7eb;
-            border-radius: 0.25rem;
+            height: 120px;
+            background: #f1f5f9;
+            border-radius: 8px;
+            margin-bottom: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
             overflow: hidden;
         }
 
-        .preview-box img {
-            height: 100%;
-            width: 100%;
+        .preview-img img {
+            max-width: 100%;
+            max-height: 100%;
             object-fit: contain;
         }
 
-        .preview-placeholder {
-            color: #9ca3af;
-            font-size: 0.75rem;
-        }
-
-        .environment-section { margin-bottom: 2rem; }
-
-        textarea {
-            width: 100%;
-            padding: 0.75rem;
-            border: 1px solid var(--border-color);
-            border-radius: 0.5rem;
-            outline: none;
-            resize: vertical;
-            min-height: 5rem;
-        }
-
-        textarea:focus { border-color: #a5b4fc; box-shadow: 0 0 0 2px #a5b4fc; }
-
-        .hint {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            margin-top: 0.25rem;
-        }
-
         .btn-generate {
-            width: 100%;
-            background-color: var(--primary);
+            background: var(--primary);
             color: white;
-            font-weight: 700;
-            padding: 1rem;
-            border-radius: 0.5rem;
             border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 1.1rem;
+            width: 100%;
             cursor: pointer;
-            transition: background-color 0.2s;
+            transition: background 0.3s;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 0.75rem;
-            font-size: 1rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            gap: 10px;
         }
 
-        .btn-generate:hover { background-color: var(--primary-hover); }
-        .btn-generate:disabled { opacity: 0.7; cursor: not-allowed; }
-
-        .loader {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #3498db;
-            border-radius: 50%;
-            width: 1.5rem;
-            height: 1.5rem;
-            animation: spin 1s linear infinite;
-            display: inline-block;
+        .btn-generate:hover {
+            background: var(--primary-hover);
         }
 
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .btn-generate:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
 
-        .result-container {
-            margin-top: 3rem;
-            border-top: 1px solid var(--border-color);
-            padding-top: 2rem;
+        #resultArea {
+            margin-top: 30px;
             text-align: center;
             display: none;
         }
 
-        .result-container.active { display: block; }
-
-        h2 { font-size: 1.5rem; font-weight: 700; margin-bottom: 1rem; }
-
         #resultImage {
             max-width: 100%;
-            border-radius: 0.5rem;
+            border-radius: 12px;
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-            margin-bottom: 1.5rem;
         }
 
-        .actions { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+        .loading-spinner {
+            display: none;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
 
-        .btn-download {
-            background-color: var(--success);
-            color: white;
-            padding: 0.5rem 1.5rem;
-            border-radius: 0.5rem;
-            text-decoration: none;
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        details {
+            margin-top: 20px;
+            background: #f1f5f9;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+
+        summary {
             font-weight: 600;
-            transition: background-color 0.2s;
-        }
-        .btn-download:hover { background-color: var(--success-hover); }
-
-        .btn-new {
-            background-color: var(--text-muted);
-            color: white;
-            padding: 0.5rem 1.5rem;
-            border-radius: 0.5rem;
-            border: none;
             cursor: pointer;
-            font-weight: 600;
+            color: #475569;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
 
-        details { margin-top: 1.5rem; text-align: left; }
-        summary { color: var(--text-muted); cursor: pointer; font-size: 0.875rem; }
-        .prompt-text {
-            margin-top: 0.5rem;
-            padding: 1rem;
-            background-color: #f3f4f6;
-            border-radius: 0.5rem;
-            font-size: 0.75rem;
-            font-style: italic;
-            color: #374151;
+        summary::after {
+            content: '▼';
+            font-size: 0.7rem;
+            transition: transform 0.3s;
         }
 
-        .hidden { display: none !important; }
+        details[open] summary::after {
+            transform: rotate(180deg);
+        }
+
+        pre {
+            white-space: pre-wrap;
+            font-size: 0.8rem;
+            color: #334155;
+            margin-top: 10px;
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px inset var(--border);
+        }
+
+        .campaign-badge {
+            background: #fee2e2;
+            color: #b91c1c;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: bold;
+            display: inline-block;
+            margin-left: 10px;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Creador de Imágenes IA ✨</h1>
+    <div class="main-container">
+        <header>
+            <h1><i class="fas fa-magic"></i> Creador de Imágenes IA <span class="campaign-badge">MODO CAMPAÑA</span></h1>
+            <p>Configuración Maestra para Catálogo Premium</p>
+        </header>
 
-        <div class="products-grid">
-            <!-- Producto 1 -->
-            <div class="product-card">
-                <label class="label" for="file1">Producto 1</label>
-                <input type="file" id="file1" accept="image/*" class="input-file">
-                <input type="text" id="url1" placeholder="O pega URL de imagen" aria-label="URL Producto 1" class="input-text">
-                <div id="preview1" class="preview-box">
-                    <span class="preview-placeholder">Sin imagen</span>
+        <!-- CONFIGURACIÓN DE ESCENARIO -->
+        <div class="grid-config">
+            <div class="panel">
+                <div class="section-title">
+                    <i class="fas fa-mountain"></i> Escenario Base
+                    <button onclick="toggleLockFondo()" id="lockFondoBtn" style="margin-left:auto; font-size:0.7rem; padding:2px 5px; cursor:pointer;">
+                        <i class="fas fa-unlock"></i> Bloquear Fondo
+                    </button>
+                </div>
+                <div class="input-group">
+                    <label>Fondo Maestro (Imagen de ambiente)</label>
+                    <input type="file" id="fondoFile" accept="image/*" style="margin-bottom: 10px;">
+                    <input type="text" id="fondoUrl" placeholder="O pega URL de fondo">
+                    <div id="fondoPreview" class="preview-img" style="height: 150px; margin-top:10px">
+                        <span>Fondo no seleccionado</span>
+                    </div>
                 </div>
             </div>
-            <!-- Producto 2 -->
-            <div class="product-card">
-                <label class="label" for="file2">Producto 2</label>
-                <input type="file" id="file2" accept="image/*" class="input-file">
-                <input type="text" id="url2" placeholder="O pega URL de imagen" aria-label="URL Producto 2" class="input-text">
-                <div id="preview2" class="preview-box">
-                    <span class="preview-placeholder">Sin imagen</span>
+
+            <div class="panel">
+                <div class="section-title"><i class="fas fa-paint-roller"></i> Estilo General</div>
+                <div class="grid-config" style="grid-template-columns: 1fr 1fr; margin-bottom: 0; gap: 10px;">
+                    <div class="input-group">
+                        <label>Tipo</label>
+                        <input type="text" id="estiloTipo" value="Catálogo Premium">
+                    </div>
+                    <div class="input-group">
+                        <label>Iluminación</label>
+                        <input type="text" id="estiloLuz" value="Cálida y Elegante">
+                    </div>
+                    <div class="input-group">
+                        <label>Piso</label>
+                        <input type="text" id="estiloPiso" value="Madera clara">
+                    </div>
+                    <div class="input-group">
+                        <label>Paredes</label>
+                        <input type="text" id="estiloParedes" value="Minimalistas modernas">
+                    </div>
                 </div>
-            </div>
-            <!-- Producto 3 -->
-            <div class="product-card">
-                <label class="label" for="file3">Producto 3</label>
-                <input type="file" id="file3" accept="image/*" class="input-file">
-                <input type="text" id="url3" placeholder="O pega URL de imagen" aria-label="URL Producto 3" class="input-text">
-                <div id="preview3" class="preview-box">
-                    <span class="preview-placeholder">Sin imagen</span>
+                <div class="input-group">
+                    <label>Decoración</label>
+                    <input type="text" id="estiloDeco" value="Minimal y elegante">
                 </div>
             </div>
         </div>
 
-        <div class="environment-section">
-            <label class="label" for="environment">Descripción del Ambiente / Escenario Maestro</label>
-            <textarea id="environment" placeholder="Ej: Dormitorio moderno minimalista, pared beige clara, piso madera natural, iluminación cálida..."></textarea>
-            <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
-                <input type="checkbox" id="lockEnvironment" style="width: 1rem; height: 1rem; cursor: pointer;">
-                <label for="lockEnvironment" class="hint" style="cursor: pointer; font-weight: 600; color: #1e40af;">Bloquear este ambiente para toda la campaña (Consistencia)</label>
-            </div>
-            <p class="hint">Al bloquear, GPT usará exactamente la misma descripción de fondo para cada combo.</p>
+        <div class="section-title"><i class="fas fa-couch"></i> Productos a Integrar</div>
+        <div class="products-container" id="productsGrid">
+            <!-- Los productos se generan aquí dinámicamente -->
         </div>
 
-        <div class="environment-section">
-            <label class="label" for="quality">Modelo de Generación</label>
-            <select id="quality" class="input-text" style="height: 3rem; font-size: 1rem;">
-                <option value="high">Calidad Premium (GPT-Image)</option>
-                <option value="low">Ahorro de Saldo (GPT-Image-Mini)</option>
+        <button type="button" onclick="addProduct()" style="margin-bottom: 20px; background: #e2e8f0; border:none; padding: 8px 15px; border-radius: 5px; cursor: pointer;">
+            <i class="fas fa-plus"></i> Añadir Producto
+        </button>
+
+        <div class="input-group">
+            <label>Calidad de Generación</label>
+            <select id="quality">
+                <option value="high">Alta Fidelidad (GPT-Image)</option>
+                <option value="low">Rápida / Ahorro (GPT-Image-Mini)</option>
             </select>
         </div>
 
-        <!-- Consejos de Calidad -->
-        <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 1rem; margin-bottom: 2rem; border-radius: 0.5rem;">
-            <p style="font-weight: 700; color: #1e40af; font-size: 0.875rem; margin-bottom: 0.5rem;">💡 Consejos para mejores resultados:</p>
-            <ul style="font-size: 0.75rem; color: #1e3a8a; padding-left: 1.25rem;">
-                <li>Usa fotos con fondo blanco o productos recortados.</li>
-                <li>Asegúrate de que los muebles tengan buena iluminación.</li>
-                <li>Evita marcas de agua sobre los productos.</li>
-            </ul>
-        </div>
-
-        <button id="generateBtn" class="btn-generate">
-            <span>Generar Imagen de Campaña</span>
-            <div id="btnLoader" class="loader hidden"></div>
+        <button id="generateBtn" class="btn-generate" onclick="generate()">
+            <span>GENERAR IMAGEN AMBIENTADA</span>
+            <div class="loading-spinner" id="spinner"></div>
         </button>
 
-        <div id="resultContainer" class="result-container">
-            <h2 id="resultTitle">Resultado Final</h2>
-            <p id="modelBadge" style="font-size: 10px; color: #6b7280; margin-bottom: 10px;"></p>
-            <img id="resultImage" src="" alt="Imagen Generada">
-            <div class="actions">
-                <a id="downloadBtn" href="#" download="campaña-ia.png" class="btn-download">Descargar Imagen</a>
-                <button onclick="window.location.reload()" class="btn-new">Nueva Imagen</button>
+        <div id="resultArea">
+            <div class="section-title"><i class="fas fa-check-circle"></i> Resultado Final</div>
+            <img id="resultImage" src="">
+            <div style="margin-top: 15px;">
+                <a id="downloadLink" href="#" download="resultado-ia.png" style="background: #16a34a; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: 600;">
+                    <i class="fas fa-download"></i> Descargar
+                </a>
             </div>
             <details>
-                <summary>Ver Prompt generado por IA</summary>
-                <p id="promptText" class="prompt-text"></p>
+                <summary>Detalles Técnicos del Prompt</summary>
+                <pre id="promptDebug">El prompt generado aparecerá aquí después de la primera generación...</pre>
             </details>
         </div>
     </div>
 
     <script>
-        const inputs = [
-            { file: 'file1', url: 'url1', preview: 'preview1' },
-            { file: 'file2', url: 'url2', preview: 'preview2' },
-            { file: 'file3', url: 'url3', preview: 'preview3' }
+        let products = [
+            { id: 1, nombre: 'Cama Matrimonial', posicion: 'centro' },
+            { id: 2, nombre: 'Ropero 3 Puertas', posicion: 'izquierda' },
+            { id: 3, nombre: 'Mesa de Noche', posicion: 'laterales' }
         ];
 
-        // Cargar estado guardado de ambiente
-        const savedEnv = localStorage.getItem('master_env');
-        if (savedEnv) {
-            document.getElementById('environment').value = savedEnv;
-            document.getElementById('lockEnvironment').checked = true;
+        function renderProducts() {
+            const grid = document.getElementById('productsGrid');
+            grid.innerHTML = products.map((p, idx) => `
+                <div class="product-card" id="p-card-${idx}">
+                    <button onclick="removeProduct(${idx})" style="position:absolute; top:5px; right:5px; border:none; background:none; color:#ef4444; cursor:pointer;"><i class="fas fa-times"></i></button>
+                    <div class="preview-img" id="prev-${idx}"><span>Producto ${idx+1}</span></div>
+                    <div class="input-group">
+                        <label>Nombre</label>
+                        <input type="text" class="p-nombre" value="${p.nombre}" onchange="updateProduct(${idx}, 'nombre', this.value)">
+                    </div>
+                    <div class="input-group">
+                        <label>Imagen (URL o Archivo)</label>
+                        <input type="file" class="p-file" onchange="handleFile(${idx}, this)" style="font-size: 0.7rem; margin-bottom:5px">
+                        <input type="text" class="p-url" placeholder="URL de imagen" oninput="updateProduct(${idx}, 'url', this.value)">
+                    </div>
+                    <div class="input-group">
+                        <label>Posición</label>
+                        <select class="p-posicion" onchange="updateProduct(${idx}, 'posicion', this.value)">
+                            <option value="centro" ${p.posicion==='centro'?'selected':''}>Centro</option>
+                            <option value="izquierda" ${p.posicion==='izquierda'?'selected':''}>Izquierda</option>
+                            <option value="derecha" ${p.posicion==='derecha'?'selected':''}>Derecha</option>
+                            <option value="laterales" ${p.posicion==='laterales'?'selected':''}>Laterales</option>
+                            <option value="fondo" ${p.posicion==='fondo'?'selected':''}>Al fondo</option>
+                        </select>
+                    </div>
+                </div>
+            `).join('');
         }
 
-        inputs.forEach(input => {
-            const fileEl = document.getElementById(input.file);
-            const urlEl = document.getElementById(input.url);
-            const previewEl = document.getElementById(input.preview);
+        function addProduct() {
+            products.push({ id: Date.now(), nombre: 'Nuevo Producto', posicion: 'derecha', url: '' });
+            renderProducts();
+        }
 
-            fileEl.addEventListener('change', (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    const reader = new FileReader();
-                    reader.onload = (re) => {
-                        const img = document.createElement('img');
-                        img.src = re.target.result;
-                        previewEl.innerHTML = '';
-                        previewEl.appendChild(img);
-                        urlEl.value = '';
-                    };
-                    reader.readAsDataURL(file);
-                }
-            });
+        function removeProduct(idx) {
+            products.splice(idx, 1);
+            renderProducts();
+        }
 
-            urlEl.addEventListener('input', (e) => {
-                const val = e.target.value;
-                if (val) {
-                    const img = document.createElement('img');
-                    img.src = val;
-                    img.onerror = () => {
-                        previewEl.innerHTML = '<span style="color:red;font-size:10px">Error URL</span>';
-                    };
-                    previewEl.innerHTML = '';
-                    previewEl.appendChild(img);
-                    fileEl.value = '';
-                }
-            });
+        function updateProduct(idx, field, value) {
+            products[idx][field] = value;
+            if (field === 'url' && value) {
+                const prev = document.getElementById('prev-'+idx);
+                prev.innerHTML = \`<img src="\${value}">\`;
+            }
+        }
+
+        async function handleFile(idx, input) {
+            const file = input.files[0];
+            if (file) {
+                const base64 = await toBase64(file);
+                products[idx].fileData = base64;
+                const prev = document.getElementById('prev-'+idx);
+                prev.innerHTML = \`<img src="data:image/jpeg;base64,\${base64}">\`;
+            }
+        }
+
+        const toBase64 = file => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = error => reject(error);
         });
 
-        async function getBase64(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = () => resolve(reader.result.split(',')[1]);
-                reader.onerror = error => reject(error);
-            });
-        }
+        // Manejo de Fondo
+        document.getElementById('fondoFile').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const base64 = await toBase64(file);
+                window.fondoBase64 = base64;
+                document.getElementById('fondoPreview').innerHTML = \`<img src="data:image/jpeg;base64,\${base64}">\`;
+            }
+        });
 
-        document.getElementById('generateBtn').addEventListener('click', async () => {
+        document.getElementById('fondoUrl').addEventListener('input', (e) => {
+            const url = e.target.value;
+            if (url) {
+                document.getElementById('fondoPreview').innerHTML = \`<img src="\${url}">\`;
+            }
+        });
+
+        async function generate() {
             const btn = document.getElementById('generateBtn');
-            const loader = document.getElementById('btnLoader');
-            const resultContainer = document.getElementById('resultContainer');
-            const environment = document.getElementById('environment').value;
-
-            if (!environment) {
-                alert('Por favor describe el ambiente.');
-                return;
-            }
-
-            // Persistencia de ambiente maestro
-            if (document.getElementById('lockEnvironment').checked) {
-                localStorage.setItem('master_env', environment);
-            } else {
-                localStorage.removeItem('master_env');
-            }
+            const spinner = document.getElementById('spinner');
+            const resultArea = document.getElementById('resultArea');
 
             try {
                 btn.disabled = true;
-                loader.classList.remove('hidden');
-                resultContainer.classList.remove('active');
+                spinner.style.display = 'inline-block';
+                resultArea.style.display = 'none';
 
-                const images = [];
-                for (const input of inputs) {
-                    const file = document.getElementById(input.file).files[0];
-                    const url = document.getElementById(input.url).value;
-
-                    if (file) {
-                        const b64 = await getBase64(file);
-                        images.push(b64);
-                    } else if (url) {
-                        images.push(url);
+                const config = {
+                    fondoMaestro: window.fondoBase64 || document.getElementById('fondoUrl').value,
+                    productos: products.map(p => ({
+                        nombre: p.nombre,
+                        url: p.fileData || p.url,
+                        posicion: p.posicion
+                    })).filter(p => p.url),
+                    estilo: {
+                        tipo: document.getElementById('estiloTipo').value,
+                        iluminacion: document.getElementById('estiloLuz').value,
+                        piso: document.getElementById('estiloPiso').value,
+                        paredes: document.getElementById('estiloParedes').value,
+                        decoracion: document.getElementById('estiloDeco').value,
+                        calidad: 'ultra realista'
                     }
-                }
-
-                if (images.length !== 3) {
-                    alert('Debes proporcionar las 3 imágenes.');
-                    btn.disabled = false;
-                    loader.classList.add('hidden');
-                    return;
-                }
-
-                const quality = document.getElementById('quality').value;
+                };
 
                 const response = await fetch('/generate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ images, environment, quality })
+                    body: JSON.stringify({ config, quality: document.getElementById('quality').value })
                 });
 
                 const data = await response.json();
                 if (data.error) throw new Error(data.error);
 
                 document.getElementById('resultImage').src = data.imageUrl;
-                document.getElementById('downloadBtn').href = data.imageUrl;
-                document.getElementById('promptText').innerText = data.promptUsed;
-                document.getElementById('modelBadge').innerText = 'Generado con: ' + data.modelUsed;
-
-                resultContainer.classList.add('active');
-                resultContainer.scrollIntoView({ behavior: 'smooth' });
+                document.getElementById('downloadLink').href = data.imageUrl;
+                document.getElementById('promptDebug').innerText = data.promptUsed;
+                resultArea.style.display = 'block';
+                resultArea.scrollIntoView({ behavior: 'smooth' });
 
             } catch (err) {
                 alert('Error: ' + err.message);
             } finally {
                 btn.disabled = false;
-                loader.classList.add('hidden');
+                spinner.style.display = 'none';
             }
-        });
+        }
+
+        // Persistencia de Fondo
+        let isFondoLocked = localStorage.getItem('fondoLocked') === 'true';
+        if (isFondoLocked) {
+            window.fondoBase64 = localStorage.getItem('fondoBase64');
+            const url = localStorage.getItem('fondoUrl');
+            if (url) document.getElementById('fondoUrl').value = url;
+            if (window.fondoBase64) {
+                document.getElementById('fondoPreview').innerHTML = `<img src="data:image/jpeg;base64,${window.fondoBase64}">`;
+            } else if (url) {
+                document.getElementById('fondoPreview').innerHTML = `<img src="${url}">`;
+            }
+            updateLockButton();
+        }
+
+        function toggleLockFondo() {
+            isFondoLocked = !isFondoLocked;
+            if (isFondoLocked) {
+                localStorage.setItem('fondoLocked', 'true');
+                localStorage.setItem('fondoBase64', window.fondoBase64 || '');
+                localStorage.setItem('fondoUrl', document.getElementById('fondoUrl').value || '');
+            } else {
+                localStorage.setItem('fondoLocked', 'false');
+            }
+            updateLockButton();
+        }
+
+        function updateLockButton() {
+            const btn = document.getElementById('lockFondoBtn');
+            btn.innerHTML = isFondoLocked ? '<i class="fas fa-lock"></i> Fondo Bloqueado' : '<i class="fas fa-unlock"></i> Bloquear Fondo';
+            btn.style.color = isFondoLocked ? '#16a34a' : '#475569';
+        }
+
+        renderProducts();
     </script>
 </body>
 </html>
