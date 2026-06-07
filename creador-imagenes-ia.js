@@ -119,37 +119,33 @@ function construirPrompt(config) {
     .join("\n");
 
   return `
-Crea UNA SOLA imagen ambientada profesional.
+Crea UNA SOLA imagen ambientada profesional para campaña publicitaria.
 
 OBJETIVO:
-Crear una escena tipo catálogo premium usando EXACTAMENTE
-los productos enviados como referencia.
+Crear una escena tipo catálogo premium usando EXACTAMENTE los muebles enviados como referencia.
+Los productos son muebles de alta calidad (cocinas, camas, roperos, cabeceras, mesas de noche, vanyty o marquesa).
 
-REGLAS OBLIGATORIAS:
-
-- Usa EXACTAMENTE los productos enviados.
-- NO cambies colores.
-- NO rediseñes muebles.
-- NO alteres tamaños reales.
-- NO cambies materiales.
-- NO inventes muebles nuevos.
-- NO agregues productos adicionales.
-- Mantén apariencia fotográfica real.
-- Conserva texturas originales.
-- Mantén proporciones reales.
-- Integra los productos naturalmente.
-- Mantén calidad tipo fotografía profesional.
+REGLAS OBLIGATORIAS DE FIDELIDAD (MODO CAMPAÑA):
+- Usa EXACTAMENTE los productos enviados en las imágenes de referencia.
+- PROHIBIDO cambiar la forma, diseño o elementos estructurales del producto.
+- NO cambies colores ni acabados de los materiales originales.
+- NO rediseñes los muebles; deben ser reconocibles e idénticos al original.
+- NO alteres tamaños reales ni proporciones entre productos.
+- NO inventes muebles nuevos ni agregues productos que no estén en la lista.
+- Mantén apariencia fotográfica 100% real.
+- Conserva texturas originales de maderas, telas y metales.
+- Integra los productos naturalmente en el ambiente sin deformarlos.
 
 IMPORTANTE:
-Los productos deben verse como fotografías reales
-integradas en el ambiente.
+Los productos deben verse como fotografías reales integradas en el ambiente, no como renders o ilustraciones.
+La forma del producto es SAGRADA y no debe variar en absoluto.
 
 MANTENER EXACTAMENTE:
-- iluminación
-- estilo
-- perspectiva
-- fondo base
-- decoración general
+- iluminación coherente
+- estilo elegante
+- perspectiva realista
+- fondo base (si se proporciona) o generado según el estilo
+- decoración complementaria
 
 ESTILO DEL AMBIENTE:
 - ${config.estilo.tipo}
@@ -163,8 +159,7 @@ DISTRIBUCION DE PRODUCTOS:
 ${listaProductos}
 
 RESULTADO ESPERADO:
-Una imagen profesional de catálogo de muebles,
-realista, elegante y coherente visualmente.
+Una imagen profesional de catálogo de muebles para campaña, realista, elegante y coherente visualmente, donde los productos son los protagonistas exactos sin alteraciones.
 `;
 }
 
@@ -175,7 +170,7 @@ function getHTML() {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Creador de Imágenes IA - Configuración Maestra</title>
+    <title>Creador de Imágenes IA - MODO CAMPAÑA</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         :root {
@@ -427,11 +422,11 @@ function getHTML() {
                     </button>
                 </div>
                 <div class="input-group">
-                    <label>Fondo Maestro (Imagen de ambiente)</label>
+                    <label>Fondo Maestro (Opcional - Imagen de ambiente)</label>
                     <input type="file" id="fondoFile" accept="image/*" style="margin-bottom: 10px;">
                     <input type="text" id="fondoUrl" placeholder="O pega URL de fondo" oninput="handleFondoUrl(this.value)">
                     <div id="fondoPreview" class="preview-img" style="height: 150px; margin-top:10px">
-                        <span class="placeholder-text">Fondo no seleccionado</span>
+                        <span class="placeholder-text">Fondo no seleccionado (se generará uno si está vacío)</span>
                     </div>
                 </div>
             </div>
@@ -473,8 +468,7 @@ function getHTML() {
         <div class="input-group">
             <label>Modelo de Chat GPT</label>
             <select id="quality">
-                <option value="gpt-5.5">GPT-5.5 (Recomendado)</option>
-                <option value="gpt-4.1">GPT-4.1</option>
+                <option value="gpt-4o-mini">GPT-4o Mini (Recomendado)</option>
                 <option value="gpt-4o">GPT-4o</option>
             </select>
         </div>
