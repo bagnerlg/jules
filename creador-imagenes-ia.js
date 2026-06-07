@@ -14,7 +14,7 @@ export default {
     if (request.method === "POST" && url.pathname === "/generate") {
       try {
         const body = await request.json();
-        const { config, quality: selectedQuality } = body;
+        const { config, quality: selectedModel } = body;
 
         console.log("Configuración recibida:", JSON.stringify(config, null, 2).substring(0, 500));
 
@@ -22,128 +22,79 @@ export default {
           return new Response(JSON.stringify({ error: "Se requieren productos." }), { status: 400 });
         }
 
-        // 1. Construir el Prompt Maestro (Basado en la estructura del usuario)
+        // 1. Construir el Prompt Maestro
         const promptMaestro = construirPrompt(config);
         console.log("Prompt Maestro Construido:", promptMaestro);
 
-        // 2. Analizar imágenes con GPT-4o-mini para generar el prompt técnico final de DALL-E
-        // Enviamos el Fondo Maestro + Los Productos
-        const gptResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
-          },
-          body: JSON.stringify({
-            model: "gpt-4o-mini",
-            messages: [
-              {
-                role: "system",
-                content: `Eres un experto en fotografía de catálogo y diseño de interiores. Tu objetivo es convertir una "Configuración Maestra" y fotos de referencia en un PROMPT DETALLADO para DALL-E 3.
+        // 2. Construir Contenido (Prompt + Imágenes)
+        const contenido = [];
+        contenido.push({ type: "input_text", text: promptMaestro });
 
-                REGLA SUPREMA: Debes describir los productos con tal precisión técnica que DALL-E no los modifique. Describe materiales (textura de madera, tipo de tela), herrajes, colores exactos y proporciones.
-
-                INSTRUCCIONES:
-                1. Analiza el Fondo Maestro proporcionado como primera imagen.
-                2. Analiza cada producto proporcionado a continuación.
-                3. Genera un prompt en INGLÉS que describa la escena final integrando todo según las posiciones indicadas.
-                4. NO uses palabras vagas. Usa términos técnicos: "matte finish", "oak wood grain", "brushed gold handles", "1:1 scale fidelity".`
-              },
-              {
-                role: "user",
-                content: [
-                  { type: "text", text: promptMaestro },
-                  // Imagen de Fondo si existe
-                  ...(config.fondoMaestro ? [{
-                    type: "image_url",
-                    image_url: { url: config.fondoMaestro.startsWith("http") ? config.fondoMaestro : `data:image/jpeg;base64,${config.fondoMaestro}` }
-                  }] : []),
-                  // Imágenes de Productos
-                  ...config.productos.map(p => ({
-                    type: "image_url",
-                    image_url: { url: p.url.startsWith("http") ? p.url : `data:image/jpeg;base64,${p.url}` }
-                  }))
-                ]
-              }
-            ],
-            max_tokens: 500
-          })
-        });
-
-        const gptData = await gptResponse.json();
-        if (gptData.error) throw new Error(`GPT Error: ${gptData.error.message}`);
-
-        let finalPromptForDallE = gptData.choices[0].message.content.trim();
-        // Limpiar markdown si existe
-        finalPromptForDallE = finalPromptForDallE.replace(/^```[a-zA-Z]*\n/g, "").replace(/\n```$/g, "").trim();
-
-        console.log("Prompt Final para DALL-E:", finalPromptForDallE);
-
-        // 3. Generación de Imagen (DALL-E 3)
-        let modelUsed = selectedQuality === "low" ? "gpt-image-1-mini" : "gpt-image";
-        let size = "1024x1024";
-
-        console.log(`Intentando generar con modelo: ${modelUsed}...`);
-
-        let dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
-          },
-          body: JSON.stringify({
-            model: modelUsed,
-            prompt: finalPromptForDallE,
-            n: 1,
-            size: size
-          })
-        });
-
-        let dallEData = await dallEResponse.json();
-
-        // Fallback inteligente en cadena
-        if (dallEData.error) {
-          const errMsg = dallEData.error.message || "";
-          const isModelError = errMsg.includes("not found") || errMsg.includes("does not exist") || dallEData.error.code === "model_not_found";
-
-          if (isModelError) {
-            const fallbacks = ["gpt-image", "gpt-image-1-mini", "dall-e-3", "dall-e-2"];
-            for (const fallbackModel of fallbacks) {
-              if (fallbackModel === modelUsed) continue;
-
-              console.log(`Reintentando con fallback: ${fallbackModel}...`);
-              dallEResponse = await fetch("https://api.openai.com/v1/images/generations", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
-                },
-                body: JSON.stringify({
-                  model: fallbackModel,
-                  prompt: finalPromptForDallE,
-                  n: 1,
-                  size: fallbackModel === "dall-e-2" ? "512x512" : "1024x1024"
-                })
-              });
-              dallEData = await dallEResponse.json();
-              if (!dallEData.error) {
-                modelUsed = fallbackModel;
-                break;
-              }
-            }
-          }
+        if (config.fondoMaestro) {
+          contenido.push({
+            type: "input_image",
+            image_url: config.fondoMaestro.startsWith("http") ? config.fondoMaestro : `data:image/jpeg;base64,${config.fondoMaestro}`
+          });
         }
 
-        if (dallEData.error) throw new Error(`DALL-E Final Error: ${dallEData.error.message}`);
+        for (const p of config.productos) {
+          contenido.push({
+            type: "input_image",
+            image_url: p.url.startsWith("http") ? p.url : `data:image/jpeg;base64,${p.url}`
+          });
+        }
 
-        const finalImage = dallEData.data[0].url || `data:image/png;base64,${dallEData.data[0].b64_json}`;
+        // 3. Llamada al endpoint de RESPONSES (Multimodal Image Generation)
+        console.log(`Iniciando generación multimodal con modelo: ${selectedModel}...`);
+
+        const response = await fetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: selectedModel,
+            input: [
+              {
+                role: "user",
+                content: contenido
+              }
+            ],
+            tools: [
+              { type: "image_generation" }
+            ]
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+          console.error("OpenAI API Error:", data.error);
+          throw new Error(`Error: ${data.error.message}`);
+        }
+
+        // 4. Obtener imagen del resultado
+        const imageResult = data.output?.find(item => item.type === "image_generation_call");
+
+        if (!imageResult || !imageResult.result) {
+          console.error("No se generó imagen en la respuesta:", data);
+          throw new Error("La IA no devolvió ninguna imagen generada.");
+        }
+
+        const finalImage = `data:image/png;base64,${imageResult.result}`;
+
+        console.log("Imagen generada correctamente (Base64)");
 
         return new Response(JSON.stringify({
           imageUrl: finalImage,
-          promptUsed: finalPromptForDallE,
-          modelUsed: modelUsed
+          promptUsed: promptMaestro,
+          modelUsed: selectedModel
         }), {
-          headers: { "Content-Type": "application/json" }
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+          }
         });
 
       } catch (error) {
@@ -344,12 +295,18 @@ function getHTML() {
             align-items: center;
             justify-content: center;
             overflow: hidden;
+            position: relative;
         }
 
         .preview-img img {
             max-width: 100%;
             max-height: 100%;
             object-fit: contain;
+        }
+
+        .preview-img .placeholder-text {
+            color: #94a3b8;
+            font-size: 0.8rem;
         }
 
         .btn-generate {
@@ -472,9 +429,9 @@ function getHTML() {
                 <div class="input-group">
                     <label>Fondo Maestro (Imagen de ambiente)</label>
                     <input type="file" id="fondoFile" accept="image/*" style="margin-bottom: 10px;">
-                    <input type="text" id="fondoUrl" placeholder="O pega URL de fondo">
+                    <input type="text" id="fondoUrl" placeholder="O pega URL de fondo" oninput="handleFondoUrl(this.value)">
                     <div id="fondoPreview" class="preview-img" style="height: 150px; margin-top:10px">
-                        <span>Fondo no seleccionado</span>
+                        <span class="placeholder-text">Fondo no seleccionado</span>
                     </div>
                 </div>
             </div>
@@ -507,19 +464,18 @@ function getHTML() {
         </div>
 
         <div class="section-title"><i class="fas fa-couch"></i> Productos a Integrar</div>
-        <div class="products-container" id="productsGrid">
-            <!-- Los productos se generan aquí dinámicamente -->
-        </div>
+        <div class="products-container" id="productsGrid"></div>
 
         <button type="button" onclick="addProduct()" style="margin-bottom: 20px; background: #e2e8f0; border:none; padding: 8px 15px; border-radius: 5px; cursor: pointer;">
             <i class="fas fa-plus"></i> Añadir Producto
         </button>
 
         <div class="input-group">
-            <label>Calidad de Generación</label>
+            <label>Modelo de Chat GPT</label>
             <select id="quality">
-                <option value="high">Alta Fidelidad (GPT-Image)</option>
-                <option value="low">Rápida / Ahorro (GPT-Image-Mini)</option>
+                <option value="gpt-5.5">GPT-5.5 (Recomendado)</option>
+                <option value="gpt-4.1">GPT-4.1</option>
+                <option value="gpt-4o">GPT-4o</option>
             </select>
         </div>
 
@@ -545,38 +501,101 @@ function getHTML() {
 
     <script>
         let products = [
-            { id: 1, nombre: 'Cama Matrimonial', posicion: 'centro' },
-            { id: 2, nombre: 'Ropero 3 Puertas', posicion: 'izquierda' },
-            { id: 3, nombre: 'Mesa de Noche', posicion: 'laterales' }
+            { id: 1, nombre: 'Cama Matrimonial', posicion: 'centro', url: '' },
+            { id: 2, nombre: 'Ropero 3 Puertas', posicion: 'izquierda', url: '' },
+            { id: 3, nombre: 'Mesa de Noche', posicion: 'laterales', url: '' }
         ];
 
         function renderProducts() {
             const grid = document.getElementById('productsGrid');
-            grid.innerHTML = products.map((p, idx) => `
-                <div class="product-card" id="p-card-${idx}">
-                    <button onclick="removeProduct(${idx})" style="position:absolute; top:5px; right:5px; border:none; background:none; color:#ef4444; cursor:pointer;"><i class="fas fa-times"></i></button>
-                    <div class="preview-img" id="prev-${idx}"><span>Producto ${idx+1}</span></div>
-                    <div class="input-group">
-                        <label>Nombre</label>
-                        <input type="text" class="p-nombre" value="${p.nombre}" onchange="updateProduct(${idx}, 'nombre', this.value)">
-                    </div>
-                    <div class="input-group">
-                        <label>Imagen (URL o Archivo)</label>
-                        <input type="file" class="p-file" onchange="handleFile(${idx}, this)" style="font-size: 0.7rem; margin-bottom:5px">
-                        <input type="text" class="p-url" placeholder="URL de imagen" oninput="updateProduct(${idx}, 'url', this.value)">
-                    </div>
-                    <div class="input-group">
-                        <label>Posición</label>
-                        <select class="p-posicion" onchange="updateProduct(${idx}, 'posicion', this.value)">
-                            <option value="centro" ${p.posicion==='centro'?'selected':''}>Centro</option>
-                            <option value="izquierda" ${p.posicion==='izquierda'?'selected':''}>Izquierda</option>
-                            <option value="derecha" ${p.posicion==='derecha'?'selected':''}>Derecha</option>
-                            <option value="laterales" ${p.posicion==='laterales'?'selected':''}>Laterales</option>
-                            <option value="fondo" ${p.posicion==='fondo'?'selected':''}>Al fondo</option>
-                        </select>
-                    </div>
-                </div>
-            `).join('');
+            grid.innerHTML = '';
+
+            products.forEach((p, idx) => {
+                const card = document.createElement('div');
+                card.className = 'product-card';
+                card.id = 'p-card-' + idx;
+
+                const removeBtn = document.createElement('button');
+                removeBtn.innerHTML = '<i class="fas fa-times"></i>';
+                removeBtn.style.cssText = 'position:absolute; top:5px; right:5px; border:none; background:none; color:#ef4444; cursor:pointer;';
+                removeBtn.onclick = () => removeProduct(idx);
+                card.appendChild(removeBtn);
+
+                const previewDiv = document.createElement('div');
+                previewDiv.className = 'preview-img';
+                previewDiv.id = 'prev-' + idx;
+
+                if (p.url) {
+                    const img = document.createElement('img');
+                    img.src = p.url;
+                    previewDiv.appendChild(img);
+                } else {
+                    const span = document.createElement('span');
+                    span.className = 'placeholder-text';
+                    span.textContent = 'Producto ' + (idx + 1);
+                    previewDiv.appendChild(span);
+                }
+                card.appendChild(previewDiv);
+
+                const nameGroup = createInputGroup('Nombre', (val) => updateProduct(idx, 'nombre', val), p.nombre);
+                card.appendChild(nameGroup);
+
+                const imageGroup = document.createElement('div');
+                imageGroup.className = 'input-group';
+                const imgLabel = document.createElement('label');
+                imgLabel.textContent = 'Imagen (URL o Archivo)';
+                imageGroup.appendChild(imgLabel);
+
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.className = 'p-file';
+                fileInput.style.cssText = 'font-size: 0.7rem; margin-bottom:5px';
+                fileInput.onchange = (e) => handleFile(idx, e.target);
+                imageGroup.appendChild(fileInput);
+
+                const urlInput = document.createElement('input');
+                urlInput.type = 'text';
+                urlInput.className = 'p-url';
+                urlInput.placeholder = 'URL de imagen';
+                urlInput.value = p.url.startsWith('data:') ? '' : p.url;
+                urlInput.oninput = (e) => updateProduct(idx, 'url', e.target.value);
+                imageGroup.appendChild(urlInput);
+                card.appendChild(imageGroup);
+
+                const posGroup = document.createElement('div');
+                posGroup.className = 'input-group';
+                const posLabel = document.createElement('label');
+                posLabel.textContent = 'Posición';
+                posGroup.appendChild(posLabel);
+
+                const select = document.createElement('select');
+                ['centro', 'izquierda', 'derecha', 'laterales', 'fondo'].forEach(opt => {
+                    const option = document.createElement('option');
+                    option.value = opt;
+                    option.textContent = opt.charAt(0).toUpperCase() + opt.slice(1);
+                    if (p.posicion === opt) option.selected = true;
+                    select.appendChild(option);
+                });
+                select.onchange = (e) => updateProduct(idx, 'posicion', e.target.value);
+                posGroup.appendChild(select);
+                card.appendChild(posGroup);
+
+                grid.appendChild(card);
+            });
+        }
+
+        function createInputGroup(labelText, onChange, initialValue) {
+            const group = document.createElement('div');
+            group.className = 'input-group';
+            const label = document.createElement('label');
+            label.textContent = labelText;
+            group.appendChild(label);
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = initialValue;
+            input.onchange = (e) => onChange(e.target.value);
+            group.appendChild(input);
+            return group;
         }
 
         function addProduct() {
@@ -591,9 +610,19 @@ function getHTML() {
 
         function updateProduct(idx, field, value) {
             products[idx][field] = value;
-            if (field === 'url' && value) {
-                const prev = document.getElementById('prev-'+idx);
-                prev.innerHTML = \`<img src="\${value}">\`;
+            if (field === 'url') {
+                const prev = document.getElementById('prev-' + idx);
+                prev.innerHTML = '';
+                if (value) {
+                    const img = document.createElement('img');
+                    img.src = value;
+                    prev.appendChild(img);
+                } else {
+                    const span = document.createElement('span');
+                    span.className = 'placeholder-text';
+                    span.textContent = 'Producto ' + (idx + 1);
+                    prev.appendChild(span);
+                }
             }
         }
 
@@ -601,9 +630,13 @@ function getHTML() {
             const file = input.files[0];
             if (file) {
                 const base64 = await toBase64(file);
-                products[idx].fileData = base64;
-                const prev = document.getElementById('prev-'+idx);
-                prev.innerHTML = \`<img src="data:image/jpeg;base64,\${base64}">\`;
+                const dataUrl = 'data:image/jpeg;base64,' + base64;
+                products[idx].url = dataUrl;
+                const prev = document.getElementById('prev-' + idx);
+                prev.innerHTML = '';
+                const img = document.createElement('img');
+                img.src = dataUrl;
+                prev.appendChild(img);
             }
         }
 
@@ -620,16 +653,33 @@ function getHTML() {
             if (file) {
                 const base64 = await toBase64(file);
                 window.fondoBase64 = base64;
-                document.getElementById('fondoPreview').innerHTML = \`<img src="data:image/jpeg;base64,\${base64}">\`;
+                updateFondoPreview('data:image/jpeg;base64,' + base64);
             }
         });
 
-        document.getElementById('fondoUrl').addEventListener('input', (e) => {
-            const url = e.target.value;
+        function handleFondoUrl(url) {
             if (url) {
-                document.getElementById('fondoPreview').innerHTML = \`<img src="\${url}">\`;
+                window.fondoBase64 = null;
+                updateFondoPreview(url);
+            } else {
+                updateFondoPreview(null);
             }
-        });
+        }
+
+        function updateFondoPreview(src) {
+            const preview = document.getElementById('fondoPreview');
+            preview.innerHTML = '';
+            if (src) {
+                const img = document.createElement('img');
+                img.src = src;
+                preview.appendChild(img);
+            } else {
+                const span = document.createElement('span');
+                span.className = 'placeholder-text';
+                span.textContent = 'Fondo no seleccionado';
+                preview.appendChild(span);
+            }
+        }
 
         async function generate() {
             const btn = document.getElementById('generateBtn');
@@ -645,7 +695,7 @@ function getHTML() {
                     fondoMaestro: window.fondoBase64 || document.getElementById('fondoUrl').value,
                     productos: products.map(p => ({
                         nombre: p.nombre,
-                        url: p.fileData || p.url,
+                        url: p.url,
                         posicion: p.posicion
                     })).filter(p => p.url),
                     estilo: {
@@ -669,7 +719,7 @@ function getHTML() {
 
                 document.getElementById('resultImage').src = data.imageUrl;
                 document.getElementById('downloadLink').href = data.imageUrl;
-                document.getElementById('promptDebug').innerText = data.promptUsed;
+                document.getElementById('promptDebug').textContent = data.promptUsed;
                 resultArea.style.display = 'block';
                 resultArea.scrollIntoView({ behavior: 'smooth' });
 
@@ -688,9 +738,9 @@ function getHTML() {
             const url = localStorage.getItem('fondoUrl');
             if (url) document.getElementById('fondoUrl').value = url;
             if (window.fondoBase64) {
-                document.getElementById('fondoPreview').innerHTML = `<img src="data:image/jpeg;base64,${window.fondoBase64}">`;
+                updateFondoPreview('data:image/jpeg;base64,' + window.fondoBase64);
             } else if (url) {
-                document.getElementById('fondoPreview').innerHTML = `<img src="${url}">`;
+                updateFondoPreview(url);
             }
             updateLockButton();
         }
