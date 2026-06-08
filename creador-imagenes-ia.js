@@ -1,4 +1,3 @@
-
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -10,33 +9,52 @@ export default {
       });
     }
 
-    // Endpoint para remover fondo (Hugging Face)
+    // Endpoint para remover fondo (ClearBackdrop API)
     if (request.method === "POST" && url.pathname === "/remove-bg") {
       try {
         const formData = await request.formData();
         const imageFile = formData.get("image");
-        if (!imageFile) throw new Error("No image provided");
+        const imageUrl = formData.get("image_url");
+
+        let imageToProcess;
+        if (imageFile) {
+          imageToProcess = imageFile;
+        } else if (imageUrl) {
+          const imgRes = await fetch(imageUrl);
+          if (!imgRes.ok) throw new Error("Could not fetch image from URL");
+          imageToProcess = await imgRes.blob();
+        } else {
+          throw new Error("No image provided");
+        }
+
+        const cbFormData = new FormData();
+        cbFormData.append("image", imageToProcess);
 
         const response = await fetch(
-          "https://api-inference.huggingface.co/models/briaai/RMBG-1.4",
+          "https://clearbackdrop.com/api/v1/remove-background",
           {
-            headers: { Authorization: `Bearer ${env.HF_API_KEY}` },
             method: "POST",
-            body: await imageFile.arrayBuffer(),
+            body: cbFormData,
           }
         );
 
         if (!response.ok) {
-          const err = await response.text();
-          throw new Error(`HF Error: ${err}`);
+          const errText = await response.text();
+          throw new Error(`ClearBackdrop (${response.status}): ${errText.substring(0, 100)}`);
         }
 
         const blob = await response.blob();
         return new Response(blob, {
-          headers: { "Content-Type": "image/png" },
+          headers: {
+            "Content-Type": "image/png",
+            "Access-Control-Allow-Origin": "*"
+          },
         });
       } catch (error) {
-        return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
       }
     }
 
@@ -48,28 +66,27 @@ export default {
         const messages = [
           {
             role: "system",
-            content: `Eres un Director de Arte experto en fotografía de catálogos de muebles.
-Tu tarea es analizar los productos enviados y las preferencias de estilo del usuario para diseñar una escena de campaña.
-Debes devolver un JSON estrictamente estructurado con:
-1. bg_prompt: Un prompt detallado en inglés para generar el fondo (background) de la escena usando DALL-E 3. El fondo debe estar vacío en los lugares donde se colocarán los productos.
-2. layout: Una lista de objetos para cada producto con:
-   - id: el nombre del producto.
-   - x: posición horizontal (0 a 1024).
-   - y: posición vertical (0 a 1024, base del mueble).
-   - scale: escala relativa (ej. 0.8).
-   - zIndex: orden de capa.
-   - flip: boolean (opcional).
+            content: `Eres un Director de Arte experto en campañas publicitarias de muebles de lujo.
+Tu tarea es diseñar una composición 1024x1024 realista.
+Debes devolver un JSON con:
+1. bg_prompt: Un prompt en inglés MUY DETALLADO para DALL-E 3 describiendo un ambiente de lujo (dormitorio, sala o cocina) TOTALMENTE VACÍO. Debe decir: "Completely empty room, absolutely NO furniture, clear floors, architectural photography, 8k, professional lighting".
+2. layout: Lista de objetos para posicionar los productos reales:
+   - id: nombre del producto.
+   - x: centro horizontal (0-1024).
+   - y: BASE del mueble tocando el suelo (600-950).
+   - scale: escala relativa (0.5 a 1.3).
+   - zIndex: orden de capas (1 atrás, 10 adelante).
+   - shadow_opacity: opacidad de la sombra (0.2 a 0.6).
+   - shadow_blur: difusión de la sombra (5 a 20).
 
-REGLAS:
-- La imagen es cuadrada (1024x1024).
-- Los muebles deben estar apoyados en el suelo de la escena.
-- Mantén proporciones realistas entre cama, roperos y mesas de noche.
-- El prompt del fondo NO debe incluir los muebles, solo el ambiente (paredes, piso, ventanas, iluminación, decoración de fondo).`
+REGLAS DE ORO:
+- Los productos deben estar apoyados en el suelo (no flotando).
+- Mantén la coherencia: la cama al centro, roperos a los lados, etc.`
           },
           {
             role: "user",
             content: [
-              { type: "text", text: `Estilo deseado: ${JSON.stringify(config.estilo)}. Productos a integrar: ${config.productos.map(p => p.nombre).join(", ")}. Por favor, analiza la mejor distribución y genera el prompt del fondo.` },
+              { type: "text", text: `Estilo: ${JSON.stringify(config.estilo)}. Productos a integrar: ${config.productos.map(p => p.nombre).join(", ")}.` },
               ...config.productos.map(p => ({
                 type: "image_url",
                 image_url: { url: p.url }
@@ -93,7 +110,7 @@ REGLAS:
 
         const data = await response.json();
         return new Response(JSON.stringify(data.choices[0].message.content), {
-          headers: { "Content-Type": "application/json" }
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
         });
       } catch (error) {
         return new Response(JSON.stringify({ error: error.message }), { status: 500 });
@@ -112,7 +129,7 @@ REGLAS:
           },
           body: JSON.stringify({
             model: "dall-e-3",
-            prompt: `Professional architectural interior photography, empty room, NO FURNITURE, ${prompt}, ultra realistic, 8k, highly detailed, campaign style.`,
+            prompt: `Professional architectural interior, high-end catalog style, strictly EMPTY ROOM, ZERO FURNITURE, ${prompt}`,
             n: 1,
             size: "1024x1024",
             response_format: "b64_json"
@@ -121,9 +138,8 @@ REGLAS:
 
         const data = await response.json();
         if (data.error) throw new Error(data.error.message);
-
         return new Response(JSON.stringify({ b64: data.data[0].b64_json }), {
-          headers: { "Content-Type": "application/json" }
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
         });
       } catch (error) {
         return new Response(JSON.stringify({ error: error.message }), { status: 500 });
@@ -141,295 +157,83 @@ function getHTML() {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Creador de Imágenes IA - MODO CAMPAÑA</title>
+    <title>IA Campaign Creator - Fidelidad 100%</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        :root {
-            --primary: #4f46e5;
-            --primary-hover: #4338ca;
-            --secondary: #6366f1;
-            --bg: #f8fafc;
-            --card: #ffffff;
-            --text: #1e293b;
-            --border: #e2e8f0;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: var(--bg);
-            color: var(--text);
-            margin: 0;
-            padding: 20px;
-        }
-
-        .main-container {
-            max-width: 1100px;
-            margin: 0 auto;
-            background: var(--card);
-            padding: 30px;
-            border-radius: 16px;
-            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
-        }
-
-        header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-
-        h1 {
-            color: var(--primary);
-            font-size: 2rem;
-            margin-bottom: 10px;
-        }
-
-        .section-title {
-            font-size: 1.1rem;
-            font-weight: 700;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            color: var(--primary);
-        }
-
-        .grid-config {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        @media (max-width: 768px) {
-            .grid-config { grid-template-columns: 1fr; }
-        }
-
-        .panel {
-            border: 1px solid var(--border);
-            padding: 20px;
-            border-radius: 12px;
-            background: #fdfdfd;
-        }
-
-        .input-group {
-            margin-bottom: 15px;
-        }
-
-        label {
-            display: block;
-            font-size: 0.85rem;
-            font-weight: 600;
-            margin-bottom: 5px;
-        }
-
-        input, select, textarea {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            font-size: 0.9rem;
-            box-sizing: border-box;
-        }
-
-        .products-container {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 15px;
-            margin-bottom: 30px;
-        }
-
-        .product-card {
-            border: 1px solid var(--border);
-            padding: 15px;
-            border-radius: 12px;
-            position: relative;
-            background: white;
-            transition: transform 0.2s;
-        }
-
-        .preview-img {
-            width: 100%;
-            height: 120px;
-            background: #f1f5f9;
-            border-radius: 8px;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-            position: relative;
-        }
-
-        .preview-img img {
-            max-width: 100%;
-            max-height: 100%;
-            object-fit: contain;
-        }
-
-        .btn-generate {
-            background: var(--primary);
-            color: white;
-            border: none;
-            padding: 15px 30px;
-            border-radius: 10px;
-            font-weight: 700;
-            font-size: 1.1rem;
-            width: 100%;
-            cursor: pointer;
-            transition: all 0.3s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-        }
-
-        .btn-generate:hover {
-            background: var(--primary-hover);
-            transform: translateY(-1px);
-        }
-
-        .btn-generate:disabled {
-            background: #94a3b8;
-            cursor: not-allowed;
-        }
-
-        #resultArea {
-            margin-top: 30px;
-            text-align: center;
-            display: none;
-        }
-
-        canvas {
-            max-width: 100%;
-            height: auto;
-            border-radius: 12px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-            background: #eee;
-        }
-
-        .loading-overlay {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(255,255,255,0.8);
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-        }
-
-        .spinner {
-            width: 50px;
-            height: 50px;
-            border: 5px solid var(--border);
-            border-top: 5px solid var(--primary);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-bottom: 15px;
-        }
-
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-        .status-text {
-            font-weight: 600;
-            color: var(--primary);
-        }
-
-        .campaign-badge {
-            background: #fee2e2;
-            color: #b91c1c;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 0.7rem;
-            font-weight: bold;
-            display: inline-block;
-            margin-left: 10px;
-        }
-
-        .step-info {
-            font-size: 0.8rem;
-            color: #64748b;
-            margin-top: 5px;
-        }
+        :root { --primary: #4f46e5; --primary-hover: #4338ca; --bg: #f3f4f6; --text: #111827; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+        .header { text-align: center; margin-bottom: 30px; }
+        .badge { background: #fee2e2; color: #b91c1c; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 800; vertical-align: middle; }
+        .grid-config { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px; }
+        .config-card { border: 1px solid #e5e7eb; padding: 20px; border-radius: 15px; background: #fafafa; }
+        .label { display: block; font-size: 0.8rem; font-weight: 700; margin-bottom: 6px; text-transform: uppercase; color: #4b5563; }
+        input, select { width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 10px; margin-bottom: 15px; font-family: inherit; }
+        .products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .p-card { border: 1px solid #e5e7eb; padding: 15px; border-radius: 15px; background: white; transition: 0.2s; position: relative; }
+        .p-card:hover { border-color: var(--primary); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        .p-preview { width: 100%; height: 160px; background: #f9fafb; border-radius: 10px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 12px; border: 1px dashed #d1d5db; }
+        .p-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .btn-main { background: var(--primary); color: white; border: none; padding: 18px; border-radius: 12px; width: 100%; font-weight: 700; font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; transition: background 0.3s; }
+        .btn-main:hover { background: var(--primary-hover); }
+        .btn-main:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-remove { position: absolute; top: 10px; right: 10px; background: #fee2e2; color: #b91c1c; border: none; width: 24px; height: 24px; border-radius: 50%; cursor: pointer; font-size: 0.7rem; display: flex; align-items: center; justify-content: center; z-index: 10; }
+        #result-area { margin-top: 40px; display: none; text-align: center; }
+        canvas { max-width: 100%; border-radius: 15px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
+        .loading-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.9); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; }
+        .spinner { width: 50px; height: 50px; border: 5px solid #f3f3f3; border-top: 5px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
     <div class="loading-overlay" id="loader">
         <div class="spinner"></div>
-        <div class="status-text" id="loaderText">Procesando...</div>
-        <div class="step-info" id="loaderStep">Iniciando flujo de campaña</div>
+        <p id="loader-text" style="margin-top:20px; font-weight:800; color:var(--primary); font-size:1.2rem;"></p>
     </div>
 
-    <div class="main-container">
-        <header>
-            <h1><i class="fas fa-camera-retro"></i> Creador de Imágenes IA <span class="campaign-badge">FIDELIDAD 100%</span></h1>
-            <p>Generación de Ambientes con Productos Reales Integrados</p>
-        </header>
+    <div class="container">
+        <div class="header">
+            <h1>🎨 IA Campaign Creator <span class="badge">FIDELIDAD 100%</span></h1>
+            <p>Tus productos reales integrados en ambientes profesionales sin cambiar su forma.</p>
+        </div>
 
         <div class="grid-config">
-            <div class="panel">
-                <div class="section-title"><i class="fas fa-paint-roller"></i> Estilo del Ambiente</div>
-                <div class="input-group">
-                    <label>Tipo de Habitación</label>
-                    <input type="text" id="estiloHabitacion" value="Dormitorio moderno de lujo">
-                </div>
-                <div class="grid-config" style="grid-template-columns: 1fr 1fr; margin-bottom: 0; gap: 10px;">
-                    <div class="input-group">
-                        <label>Iluminación</label>
-                        <select id="estiloLuz">
-                            <option value="Natural de tarde">Natural de tarde</option>
-                            <option value="Estudio profesional">Estudio profesional</option>
-                            <option value="Cálida acogedora">Cálida acogedora</option>
-                            <option value="Minimalista fría">Minimalista fría</option>
-                        </select>
-                    </div>
-                    <div class="input-group">
-                        <label>Piso</label>
-                        <input type="text" id="estiloPiso" value="Parquet de roble claro">
-                    </div>
-                </div>
-                <div class="input-group">
-                    <label>Decoración Adicional</label>
-                    <input type="text" id="estiloDeco" value="Plantas de interior, cuadros minimalistas, alfombra de lana">
-                </div>
+            <div class="config-card">
+                <label class="label">Ambiente Deseado</label>
+                <input type="text" id="env-room-type" value="Dormitorio moderno de lujo">
+                <label class="label">Iluminación</label>
+                <select id="env-lighting">
+                    <option value="Natural cálida de atardecer">Atardecer (Cálido)</option>
+                    <option value="Estudio profesional neutra">Estudio (Limpio)</option>
+                    <option value="Mañana luminosa">Mañana (Brillante)</option>
+                </select>
             </div>
-
-            <div class="panel">
-                <div class="section-title"><i class="fas fa-cog"></i> Configuración Técnica</div>
-                <div class="input-group">
-                    <label>Calidad de Sombra</label>
-                    <select id="sombraCalidad">
-                        <option value="8">Suave (Recomendado)</option>
-                        <option value="4">Muy Suave</option>
-                        <option value="15">Marcada</option>
-                        <option value="0">Sin Sombra</option>
-                    </select>
-                </div>
-                <p style="font-size: 0.75rem; color: #64748b;">
-                    <i class="fas fa-info-circle"></i> Este modo utiliza GPT-4o mini para diseñar la escena y DALL-E 3 para el fondo. El producto se mantiene idéntico.
-                </p>
+            <div class="config-card">
+                <label class="label">Texturas y Materiales</label>
+                <input type="text" id="env-textures" value="Piso de madera clara, paredes grises seda">
+                <label class="label">Decoración Extra</label>
+                <input type="text" id="env-decoration" value="Plantas, cuadros abstractos, alfombra suave">
             </div>
         </div>
 
-        <div class="section-title"><i class="fas fa-couch"></i> Productos (Máx. 3 sugerido)</div>
-        <div class="products-container" id="productsGrid"></div>
-
-        <button type="button" onclick="addProduct()" style="margin-bottom: 20px; background: #f1f5f9; border:1px solid var(--border); padding: 8px 15px; border-radius: 8px; cursor: pointer; font-weight: 600;">
-            <i class="fas fa-plus"></i> Añadir Producto
+        <div class="products-grid" id="products-grid"></div>
+        <button onclick="addProduct()" style="margin-bottom:25px; padding:10px 20px; border-radius:10px; border:1px solid #ddd; cursor:pointer; font-weight:600; background: white;">
+            <i class="fas fa-plus"></i> Agregar Producto
         </button>
 
-        <button id="generateBtn" class="btn-generate" onclick="startCampaignFlow()">
-            <span>GENERAR COMPOSICIÓN DE CAMPAÑA</span>
+        <button id="generate-btn" class="btn-main" onclick="runGenerationFlow()">
+            <i class="fas fa-sparkles"></i> GENERAR IMAGEN DE CAMPAÑA
         </button>
 
-        <div id="resultArea">
-            <div class="section-title"><i class="fas fa-check-circle"></i> Resultado Final (1024x1024)</div>
-            <canvas id="mainCanvas" width="1024" height="1024"></canvas>
-            <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: center;">
-                <button onclick="downloadCanvas()" style="background: #16a34a; color: white; padding: 12px 25px; border-radius: 8px; border:none; font-weight: 600; cursor:pointer;">
-                    <i class="fas fa-download"></i> Descargar Imagen
+        <div id="result-area">
+            <h2 style="margin-bottom:20px;">Resultado Final de Campaña</h2>
+            <canvas id="main-canvas" width="1024" height="1024"></canvas>
+            <div style="margin-top:25px; display:flex; gap:15px; justify-content:center;">
+                <button onclick="downloadImage()" style="background:#059669; color:white; padding:15px 30px; border-radius:12px; border:none; font-weight:700; cursor:pointer;">
+                    <i class="fas fa-download"></i> DESCARGAR IMAGEN
                 </button>
-                <button onclick="location.reload()" style="background: #64748b; color: white; padding: 12px 25px; border-radius: 8px; border:none; font-weight: 600; cursor:pointer;">
-                    <i class="fas fa-redo"></i> Nueva Imagen
+                <button onclick="location.reload()" style="background:#4b5563; color:white; padding:15px 30px; border-radius:12px; border:none; font-weight:700; cursor:pointer;">
+                    <i class="fas fa-undo"></i> NUEVA ESCENA
                 </button>
             </div>
         </div>
@@ -437,197 +241,177 @@ function getHTML() {
 
     <script>
         let products = [
-            { id: 1, nombre: 'Cama Principal', file: null, preview: '', noBg: null },
-            { id: 2, nombre: 'Mueble Lateral', file: null, preview: '', noBg: null },
-            { id: 3, nombre: 'Accesorio', file: null, preview: '', noBg: null }
+            { id: 1, name: 'Cama Principal', file: null, url: '', preview: '', noBgBlob: null },
+            { id: 2, name: 'Mueble Lateral', file: null, url: '', preview: '', noBgBlob: null }
         ];
 
         function renderProducts() {
-            const grid = document.getElementById('productsGrid');
+            const grid = document.getElementById('products-grid');
+            if (!grid) return;
             grid.innerHTML = '';
-            products.forEach((p, idx) => {
+            products.forEach((p, i) => {
                 const card = document.createElement('div');
-                card.className = 'product-card';
+                card.className = 'p-card';
                 card.innerHTML = \`
-                    <button onclick="removeProduct(\${idx})" style="position:absolute; top:5px; right:5px; border:none; background:none; color:#ef4444; cursor:pointer;"><i class="fas fa-times"></i></button>
-                    <div class="preview-img" id="prev-\${idx}">
-                        \${p.preview ? \`<img src="\${p.preview}">\` : '<span style="color:#94a3b8; font-size:0.8rem;">Sin imagen</span>'}
-                    </div>
-                    <div class="input-group">
-                        <label>Nombre</label>
-                        <input type="text" value="\${p.nombre}" onchange="products[\${idx}].nombre = this.value">
-                    </div>
-                    <div class="input-group">
-                        <label>Foto del Producto</label>
-                        <input type="file" accept="image/*" onchange="handleProductFile(\${idx}, this)">
-                    </div>
+                    <button class="btn-remove" onclick="removeProduct(\${i})"><i class="fas fa-times"></i></button>
+                    <div class="p-preview">\${p.preview ? \`<img src="\${p.preview}">\` : '<i class="fas fa-image" style="color:#ccc; font-size:2rem;"></i>'}</div>
+
+                    <label class="label">Nombre del Producto</label>
+                    <input type="text" value="\${p.name}" onchange="products[\${i}].name=this.value" placeholder="Ej: Cama King">
+
+                    <label class="label">Imagen (Archivo o URL)</label>
+                    <input type="file" accept="image/*" onchange="handleFileChange(\${i}, this)" style="font-size:0.75rem; margin-bottom:5px;">
+                    <input type="text" value="\${p.url || ''}" onchange="handleUrlChange(\${i}, this.value)" placeholder="Pega URL de imagen">
                 \`;
                 grid.appendChild(card);
             });
         }
 
-        function addProduct() {
-            products.push({ id: Date.now(), nombre: 'Nuevo Producto', file: null, preview: '', noBg: null });
-            renderProducts();
-        }
-
-        function removeProduct(idx) {
-            products.splice(idx, 1);
-            renderProducts();
-        }
-
-        async function handleProductFile(idx, input) {
+        async function handleFileChange(i, input) {
             const file = input.files[0];
-            if (file) {
-                products[idx].file = file;
+            if (!file) return;
+            products[i].file = file;
+            products[i].url = '';
+            products[i].preview = await fileToBase64(file);
+            renderProducts();
+        }
+
+        function handleUrlChange(i, url) {
+            products[i].url = url;
+            products[i].file = null;
+            products[i].preview = url || '';
+            renderProducts();
+        }
+
+        function fileToBase64(file) {
+            return new Promise(resolve => {
                 const reader = new FileReader();
-                reader.onload = (e) => {
-                    products[idx].preview = e.target.result;
-                    renderProducts();
-                };
+                reader.onload = e => resolve(reader.result);
                 reader.readAsDataURL(file);
-            }
+            });
         }
 
-        function showLoader(text, step) {
-            document.getElementById('loader').style.display = 'flex';
-            document.getElementById('loaderText').textContent = text;
-            document.getElementById('loaderStep').textContent = step;
+        function addProduct() {
+            products.push({ id: Date.now(), name: 'Nuevo Producto', file: null, url: '', preview: '' });
+            renderProducts();
         }
 
-        function hideLoader() {
-            document.getElementById('loader').style.display = 'none';
+        function removeProduct(i) {
+            products.splice(i, 1);
+            renderProducts();
         }
 
-        async function startCampaignFlow() {
-            const validProducts = products.filter(p => p.file);
-            if (validProducts.length === 0) return alert("Carga al menos un producto.");
+        async function runGenerationFlow() {
+            const activeProducts = products.filter(p => p.file || p.url);
+            if (!activeProducts.length) return alert("Por favor sube al menos una imagen o pega una URL.");
+
+            const loader = document.getElementById('loader');
+            const loaderText = document.getElementById('loader-text');
+            loader.style.display = 'flex';
 
             try {
-                showLoader("Procesando Imágenes", "Paso 1/4: Removiendo fondos de productos...");
-
-                // 1. Quitar fondos
-                for (let p of validProducts) {
+                loaderText.textContent = "✨ Removiendo fondos de productos...";
+                for (let p of activeProducts) {
                     const formData = new FormData();
-                    formData.append('image', p.file);
+                    if (p.file) {
+                        formData.append('image', p.file);
+                    } else {
+                        formData.append('image_url', p.url);
+                    }
+
                     const res = await fetch('/remove-bg', { method: 'POST', body: formData });
-                    if (!res.ok) throw new Error("Error quitando fondo a " + p.nombre);
-                    const blob = await res.blob();
-                    p.noBg = await blobToImage(blob);
+                    if (!res.ok) throw new Error("Error quitando fondo de " + p.name);
+                    p.noBgBlob = await blobToImage(await res.blob());
                 }
 
-                // 2. Analizar Escena con GPT-4o mini
-                showLoader("Diseñando Escena", "Paso 2/4: GPT-4o mini analizando distribución...");
-                const analyzeConfig = {
+                loaderText.textContent = "🧠 GPT-4o mini diseñando composición...";
+                const config = {
                     estilo: {
-                        habitacion: document.getElementById('estiloHabitacion').value,
-                        iluminacion: document.getElementById('estiloLuz').value,
-                        piso: document.getElementById('estiloPiso').value,
-                        deco: document.getElementById('estiloDeco').value
+                        room: document.getElementById('env-room-type').value,
+                        light: document.getElementById('env-lighting').value,
+                        textures: document.getElementById('env-textures').value,
+                        decoration: document.getElementById('env-decoration').value
                     },
-                    productos: validProducts.map(p => ({ nombre: p.nombre, url: p.preview }))
+                    productos: activeProducts.map(p => ({ nombre: p.name, url: p.preview }))
                 };
-
                 const analyzeRes = await fetch('/analyze', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ config: analyzeConfig })
+                    body: JSON.stringify({ config })
                 });
-                const sceneData = JSON.parse(await analyzeRes.json());
+                const scene = JSON.parse(await analyzeRes.json());
 
-                // 3. Generar Fondo con DALL-E 3
-                showLoader("Generando Ambiente", "Paso 3/4: Creando fondo personalizado...");
-                const bgRes = await fetch('/generate-bg', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: sceneData.bg_prompt })
-                });
+                loaderText.textContent = "🖼️ DALL-E 3 creando ambiente de lujo...";
+                const bgRes = await fetch('/generate-bg', { method: 'POST', body: JSON.stringify({ prompt: scene.bg_prompt }) });
                 const bgData = await bgRes.json();
-                if (bgData.error) throw new Error(bgData.error);
                 const bgImage = await b64ToImage(bgData.b64);
 
-                // 4. Ensamblado Final en Canvas
-                showLoader("Ensamblado Final", "Paso 4/4: Integrando productos en el ambiente...");
-                await assembleCanvas(bgImage, validProducts, sceneData.layout);
+                loaderText.textContent = "🎨 Finalizando composición...";
+                drawFinalScene(bgImage, activeProducts, scene.layout);
 
-                hideLoader();
-                document.getElementById('resultArea').style.display = 'block';
-                document.getElementById('resultArea').scrollIntoView({ behavior: 'smooth' });
+                loader.style.display = 'none';
+                document.getElementById('result-area').style.display = 'block';
+                document.getElementById('result-area').scrollIntoView({ behavior: 'smooth' });
 
-            } catch (err) {
-                console.error(err);
-                alert("Error en el proceso: " + err.message);
-                hideLoader();
+            } catch (e) {
+                alert("Error: " + e.message);
+                loader.style.display = 'none';
             }
+        }
+
+        function b64ToImage(base64) {
+            return new Promise(resolve => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.src = "data:image/png;base64," + base64;
+            });
         }
 
         function blobToImage(blob) {
-            return new Promise((resolve) => {
-                const url = URL.createObjectURL(blob);
+            return new Promise(resolve => {
                 const img = new Image();
                 img.onload = () => resolve(img);
-                img.src = url;
+                img.src = URL.createObjectURL(blob);
             });
         }
 
-        function b64ToImage(b64) {
-            return new Promise((resolve) => {
-                const img = new Image();
-                img.onload = () => resolve(img);
-                img.src = 'data:image/png;base64,' + b64;
-            });
-        }
-
-        async function assembleCanvas(bg, productsWithNoBg, layout) {
-            const canvas = document.getElementById('mainCanvas');
+        function drawFinalScene(bg, productsWithNoBg, layout) {
+            const canvas = document.getElementById('main-canvas');
             const ctx = canvas.getContext('2d');
-
-            // Dibujar Fondo
             ctx.drawImage(bg, 0, 0, 1024, 1024);
 
-            // Ordenar productos por zIndex
-            const sortedLayout = layout.sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
-            const shadowBlur = parseInt(document.getElementById('sombraCalidad').value);
+            layout.sort((a,b) => (a.zIndex||0) - (b.zIndex||0)).forEach(item => {
+                const product = productsWithNoBg.find(x => x.name === item.id);
+                if (!product || !product.noBgBlob) return;
 
-            for (let item of sortedLayout) {
-                const p = productsWithNoBg.find(prod => prod.nombre === item.id);
-                if (!p || !p.noBg) continue;
-
-                const img = p.noBg;
-                const aspect = img.width / img.height;
-                const displayHeight = 400 * (item.scale || 1); // Escala base
-                const displayWidth = displayHeight * aspect;
+                const img = product.noBgBlob;
+                const scale = item.scale || 1;
+                const height = 480 * scale;
+                const width = (img.width / img.height) * height;
+                const xPos = item.x - (width/2);
+                const yPos = item.y - height;
 
                 ctx.save();
-
-                // Aplicar Sombra si es necesario
-                if (shadowBlur > 0) {
-                    ctx.shadowColor = "rgba(0,0,0,0.4)";
-                    ctx.shadowBlur = shadowBlur;
-                    ctx.shadowOffsetY = shadowBlur / 2;
-                }
-
-                // Dibujar Imagen (Posición Y es la base del mueble)
-                const posX = item.x - (displayWidth / 2);
-                const posY = item.y - displayHeight;
-
-                if (item.flip) {
-                    ctx.translate(posX + displayWidth, posY);
-                    ctx.scale(-1, 1);
-                    ctx.drawImage(img, 0, 0, displayWidth, displayHeight);
-                } else {
-                    ctx.drawImage(img, posX, posY, displayWidth, displayHeight);
-                }
-
+                ctx.beginPath();
+                ctx.ellipse(item.x, item.y, width/2.2, height/18, 0, 0, Math.PI*2);
+                ctx.fillStyle = \`rgba(0,0,0,\${item.shadow_opacity || 0.4})\`;
+                ctx.filter = \`blur(\${item.shadow_blur || 10}px)\`;
+                ctx.fill();
                 ctx.restore();
-            }
+
+                ctx.drawImage(img, xPos, yPos, width, height);
+                ctx.save();
+                ctx.globalCompositeOperation = 'source-atop';
+                ctx.fillStyle = 'rgba(255,255,255,0.03)';
+                ctx.fillRect(xPos, yPos, width, height);
+                ctx.restore();
+            });
         }
 
-        function downloadCanvas() {
-            const canvas = document.getElementById('mainCanvas');
+        function downloadImage() {
+            const canvas = document.getElementById('main-canvas');
             const link = document.createElement('a');
             link.download = 'campaña-muebles-ia.png';
-            link.href = canvas.toDataURL('image/png');
+            link.href = canvas.toDataURL();
             link.click();
         }
 
