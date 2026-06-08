@@ -21,10 +21,10 @@ export default {
           imageToProcess = imageFile;
         } else if (imageUrl) {
           const imgRes = await fetch(imageUrl);
-          if (!imgRes.ok) throw new Error("Could not fetch image from URL");
+          if (!imgRes.ok) throw new Error("No se pudo obtener la imagen desde la URL.");
           imageToProcess = await imgRes.blob();
         } else {
-          throw new Error("No image provided");
+          throw new Error("No se proporcionó ninguna imagen.");
         }
 
         const cbFormData = new FormData();
@@ -40,7 +40,7 @@ export default {
 
         if (!response.ok) {
           const errText = await response.text();
-          throw new Error(`ClearBackdrop (${response.status}): ${errText.substring(0, 100)}`);
+          throw new Error(`ClearBackdrop Error (${response.status}): ${errText.substring(0, 100)}`);
         }
 
         const blob = await response.blob();
@@ -51,6 +51,7 @@ export default {
           },
         });
       } catch (error) {
+        console.error("Remove-BG Error:", error);
         return new Response(JSON.stringify({ error: error.message }), {
           status: 500,
           headers: { "Content-Type": "application/json" }
@@ -69,9 +70,9 @@ export default {
             content: `Eres un Director de Arte experto en campañas publicitarias de muebles de lujo.
 Tu tarea es diseñar una composición 1024x1024 realista.
 Debes devolver un JSON con:
-1. bg_prompt: Un prompt en inglés MUY DETALLADO para DALL-E 3 describiendo un ambiente de lujo (dormitorio, sala o cocina) TOTALMENTE VACÍO. Debe decir: "Completely empty room, absolutely NO furniture, clear floors, architectural photography, 8k, professional lighting".
+1. bg_prompt: Un prompt en inglés MUY DETALLADO para DALL-E describiendo un ambiente de lujo TOTALMENTE VACÍO. Debe decir: "Completely empty room, absolutely NO furniture, clear floors, architectural photography, 8k, professional lighting".
 2. layout: Lista de objetos para posicionar los productos reales:
-   - id: nombre del producto.
+   - id: nombre del producto (exactamente como se envió).
    - x: centro horizontal (0-1024).
    - y: BASE del mueble tocando el suelo (600-950).
    - scale: escala relativa (0.5 a 1.3).
@@ -81,7 +82,8 @@ Debes devolver un JSON con:
 
 REGLAS DE ORO:
 - Los productos deben estar apoyados en el suelo (no flotando).
-- Mantén la coherencia: la cama al centro, roperos a los lados, etc.`
+- La cama suele ir al centro (x:512).
+- Roperos y cocinas suelen ir al fondo.`
           },
           {
             role: "user",
@@ -109,40 +111,84 @@ REGLAS DE ORO:
         });
 
         const data = await response.json();
+        if (data.error) throw new Error(`OpenAI Analyze Error: ${data.error.message}`);
+
         return new Response(JSON.stringify(data.choices[0].message.content), {
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+          }
         });
       } catch (error) {
+        console.error("Analyze Error:", error);
         return new Response(JSON.stringify({ error: error.message }), { status: 500 });
       }
     }
 
-    // Endpoint para generar fondo (DALL-E 3)
+    // Endpoint para generar fondo con Fallback inteligente de modelos
     if (request.method === "POST" && url.pathname === "/generate-bg") {
       try {
-        const { prompt } = await request.json();
-        const response = await fetch("https://api.openai.com/v1/images/generations", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
-          },
-          body: JSON.stringify({
-            model: "dall-e-3",
-            prompt: `Professional architectural interior, high-end catalog style, strictly EMPTY ROOM, ZERO FURNITURE, ${prompt}`,
-            n: 1,
-            size: "1024x1024",
-            response_format: "b64_json"
-          })
-        });
+        const body = await request.json();
+        const { prompt } = body;
 
-        const data = await response.json();
-        if (data.error) throw new Error(data.error.message);
-        return new Response(JSON.stringify({ b64: data.data[0].b64_json }), {
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-        });
+        const models = ["gpt-image", "gpt-image-1-mini", "chatgpt-image-latest", "dall-e-3"];
+        let lastError = null;
+
+        for (const model of models) {
+          try {
+            console.log(`Intentando generar imagen con modelo: ${model}`);
+            const response = await fetch("https://api.openai.com/v1/images/generations", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+              },
+              body: JSON.stringify({
+                model: model,
+                prompt: `Professional high-end architectural interior photography, strictly EMPTY LUXURY ROOM, ZERO FURNITURE, clear floors, ${prompt}`,
+                n: 1,
+                size: "1024x1024",
+                response_format: "b64_json"
+              })
+            });
+
+            const data = await response.json();
+
+            if (data.error) {
+              const code = data.error.code || "";
+              const msg = data.error.message || "";
+              console.warn(`Error con modelo ${model}: ${msg}`);
+
+              // Si es un error fatal (cuota, etc), detenemos
+              if (code === "insufficient_quota") throw new Error(msg);
+
+              lastError = msg;
+              continue; // Intentar siguiente modelo
+            }
+
+            if (data.data && data.data[0]) {
+              console.log(`Imagen generada exitosamente con ${model}`);
+              return new Response(JSON.stringify({ b64: data.data[0].b64_json, modelUsed: model }), {
+                headers: {
+                  "Content-Type": "application/json",
+                  "Access-Control-Allow-Origin": "*"
+                }
+              });
+            }
+          } catch (e) {
+            console.error(`Excepción probando modelo ${model}:`, e.message);
+            lastError = e.message;
+          }
+        }
+
+        throw new Error(`No se pudo generar la imagen con ningún modelo disponible. Último error: ${lastError}`);
+
       } catch (error) {
-        return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+        console.error("Generate-BG Fatal Error:", error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
       }
     }
 
@@ -310,6 +356,7 @@ function getHTML() {
             loader.style.display = 'flex';
 
             try {
+                // 1. Quitar fondos
                 loaderText.textContent = "✨ Removiendo fondos de productos...";
                 for (let p of activeProducts) {
                     const formData = new FormData();
@@ -320,10 +367,14 @@ function getHTML() {
                     }
 
                     const res = await fetch('/remove-bg', { method: 'POST', body: formData });
-                    if (!res.ok) throw new Error("Error quitando fondo de " + p.name);
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error("Error quitando fondo: " + (err.error || "Desconocido"));
+                    }
                     p.noBgBlob = await blobToImage(await res.blob());
                 }
 
+                // 2. Analizar Escena
                 loaderText.textContent = "🧠 GPT-4o mini diseñando composición...";
                 const config = {
                     estilo: {
@@ -336,15 +387,30 @@ function getHTML() {
                 };
                 const analyzeRes = await fetch('/analyze', {
                     method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ config })
                 });
+                if (!analyzeRes.ok) {
+                    const err = await analyzeRes.json();
+                    throw new Error("Error analizando escena: " + (err.error || "Desconocido"));
+                }
                 const scene = JSON.parse(await analyzeRes.json());
 
-                loaderText.textContent = "🖼️ DALL-E 3 creando ambiente de lujo...";
-                const bgRes = await fetch('/generate-bg', { method: 'POST', body: JSON.stringify({ prompt: scene.bg_prompt }) });
+                // 3. Generar Fondo
+                loaderText.textContent = "🖼️ Generando ambiente de lujo...";
+                const bgRes = await fetch('/generate-bg', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: scene.bg_prompt })
+                });
+                if (!bgRes.ok) {
+                    const err = await bgRes.json();
+                    throw new Error("Error generando fondo: " + (err.error || "Desconocido"));
+                }
                 const bgData = await bgRes.json();
                 const bgImage = await b64ToImage(bgData.b64);
 
+                // 4. Finalizar Composición
                 loaderText.textContent = "🎨 Finalizando composición...";
                 drawFinalScene(bgImage, activeProducts, scene.layout);
 
@@ -353,6 +419,7 @@ function getHTML() {
                 document.getElementById('result-area').scrollIntoView({ behavior: 'smooth' });
 
             } catch (e) {
+                console.error(e);
                 alert("Error: " + e.message);
                 loader.style.display = 'none';
             }
@@ -390,6 +457,7 @@ function getHTML() {
                 const xPos = item.x - (width/2);
                 const yPos = item.y - height;
 
+                // Sombra de contacto profesional
                 ctx.save();
                 ctx.beginPath();
                 ctx.ellipse(item.x, item.y, width/2.2, height/18, 0, 0, Math.PI*2);
@@ -398,6 +466,7 @@ function getHTML() {
                 ctx.fill();
                 ctx.restore();
 
+                // Integración de color sutil (luz ambiente)
                 ctx.drawImage(img, xPos, yPos, width, height);
                 ctx.save();
                 ctx.globalCompositeOperation = 'source-atop';
