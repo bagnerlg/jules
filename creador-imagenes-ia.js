@@ -10,158 +10,129 @@ export default {
       });
     }
 
-    // Manejar la generación de imagen
-    if (request.method === "POST" && url.pathname === "/generate") {
+    // Endpoint para remover fondo (Hugging Face)
+    if (request.method === "POST" && url.pathname === "/remove-bg") {
       try {
-        const body = await request.json();
-        const { config, quality: selectedModel } = body;
+        const formData = await request.formData();
+        const imageFile = formData.get("image");
+        if (!imageFile) throw new Error("No image provided");
 
-        console.log("Configuración recibida:", JSON.stringify(config, null, 2).substring(0, 500));
+        const response = await fetch(
+          "https://api-inference.huggingface.co/models/briaai/RMBG-1.4",
+          {
+            headers: { Authorization: `Bearer ${env.HF_API_KEY}` },
+            method: "POST",
+            body: await imageFile.arrayBuffer(),
+          }
+        );
 
-        if (!config.productos || config.productos.length === 0) {
-          return new Response(JSON.stringify({ error: "Se requieren productos." }), { status: 400 });
+        if (!response.ok) {
+          const err = await response.text();
+          throw new Error(`HF Error: ${err}`);
         }
 
-        // 1. Construir el Prompt Maestro
-        const promptMaestro = construirPrompt(config);
-        console.log("Prompt Maestro Construido:", promptMaestro);
+        const blob = await response.blob();
+        return new Response(blob, {
+          headers: { "Content-Type": "image/png" },
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+      }
+    }
 
-        // 2. Construir Contenido (Prompt + Imágenes)
-        const contenido = [];
-        contenido.push({ type: "input_text", text: promptMaestro });
+    // Endpoint para analizar escena y productos (GPT-4o mini)
+    if (request.method === "POST" && url.pathname === "/analyze") {
+      try {
+        const { config } = await request.json();
 
-        if (config.fondoMaestro) {
-          contenido.push({
-            type: "input_image",
-            image_url: config.fondoMaestro.startsWith("http") ? config.fondoMaestro : `data:image/jpeg;base64,${config.fondoMaestro}`
-          });
-        }
+        const messages = [
+          {
+            role: "system",
+            content: `Eres un Director de Arte experto en fotografía de catálogos de muebles.
+Tu tarea es analizar los productos enviados y las preferencias de estilo del usuario para diseñar una escena de campaña.
+Debes devolver un JSON estrictamente estructurado con:
+1. bg_prompt: Un prompt detallado en inglés para generar el fondo (background) de la escena usando DALL-E 3. El fondo debe estar vacío en los lugares donde se colocarán los productos.
+2. layout: Una lista de objetos para cada producto con:
+   - id: el nombre del producto.
+   - x: posición horizontal (0 a 1024).
+   - y: posición vertical (0 a 1024, base del mueble).
+   - scale: escala relativa (ej. 0.8).
+   - zIndex: orden de capa.
+   - flip: boolean (opcional).
 
-        for (const p of config.productos) {
-          contenido.push({
-            type: "input_image",
-            image_url: p.url.startsWith("http") ? p.url : `data:image/jpeg;base64,${p.url}`
-          });
-        }
+REGLAS:
+- La imagen es cuadrada (1024x1024).
+- Los muebles deben estar apoyados en el suelo de la escena.
+- Mantén proporciones realistas entre cama, roperos y mesas de noche.
+- El prompt del fondo NO debe incluir los muebles, solo el ambiente (paredes, piso, ventanas, iluminación, decoración de fondo).`
+          },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: `Estilo deseado: ${JSON.stringify(config.estilo)}. Productos a integrar: ${config.productos.map(p => p.nombre).join(", ")}. Por favor, analiza la mejor distribución y genera el prompt del fondo.` },
+              ...config.productos.map(p => ({
+                type: "image_url",
+                image_url: { url: p.url }
+              }))
+            ]
+          }
+        ];
 
-        // 3. Llamada al endpoint de RESPONSES (Multimodal Image Generation)
-        console.log(`Iniciando generación multimodal con modelo: ${selectedModel}...`);
-
-        const response = await fetch("https://api.openai.com/v1/responses", {
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
           },
           body: JSON.stringify({
-            model: selectedModel,
-            input: [
-              {
-                role: "user",
-                content: contenido
-              }
-            ],
-            tools: [
-              { type: "image_generation" }
-            ]
+            model: "gpt-4o-mini",
+            messages,
+            response_format: { type: "json_object" }
           })
         });
 
         const data = await response.json();
-
-        if (data.error) {
-          console.error("OpenAI API Error:", data.error);
-          throw new Error(`Error: ${data.error.message}`);
-        }
-
-        // 4. Obtener imagen del resultado
-        const imageResult = data.output?.find(item => item.type === "image_generation_call");
-
-        if (!imageResult || !imageResult.result) {
-          console.error("No se generó imagen en la respuesta:", data);
-          throw new Error("La IA no devolvió ninguna imagen generada.");
-        }
-
-        const finalImage = `data:image/png;base64,${imageResult.result}`;
-
-        console.log("Imagen generada correctamente (Base64)");
-
-        return new Response(JSON.stringify({
-          imageUrl: finalImage,
-          promptUsed: promptMaestro,
-          modelUsed: selectedModel
-        }), {
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-          }
-        });
-
-      } catch (error) {
-        console.error("Error en Worker:", error);
-        return new Response(JSON.stringify({ error: error.message }), {
-          status: 500,
+        return new Response(JSON.stringify(data.choices[0].message.content), {
           headers: { "Content-Type": "application/json" }
         });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+      }
+    }
+
+    // Endpoint para generar fondo (DALL-E 3)
+    if (request.method === "POST" && url.pathname === "/generate-bg") {
+      try {
+        const { prompt } = await request.json();
+        const response = await fetch("https://api.openai.com/v1/images/generations", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: "dall-e-3",
+            prompt: `Professional architectural interior photography, empty room, NO FURNITURE, ${prompt}, ultra realistic, 8k, highly detailed, campaign style.`,
+            n: 1,
+            size: "1024x1024",
+            response_format: "b64_json"
+          })
+        });
+
+        const data = await response.json();
+        if (data.error) throw new Error(data.error.message);
+
+        return new Response(JSON.stringify({ b64: data.data[0].b64_json }), {
+          headers: { "Content-Type": "application/json" }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: error.message }), { status: 500 });
       }
     }
 
     return new Response("Not Found", { status: 404 });
   }
 };
-
-/**
- * Genera el prompt basado en la estructura solicitada por el usuario
- */
-function construirPrompt(config) {
-  const listaProductos = config.productos
-    .map(p => `- ${p.nombre}: ${p.posicion}`)
-    .join("\n");
-
-  return `
-Crea UNA SOLA imagen ambientada profesional para campaña publicitaria.
-
-OBJETIVO:
-Crear una escena tipo catálogo premium usando EXACTAMENTE los muebles enviados como referencia.
-Los productos son muebles de alta calidad (cocinas, camas, roperos, cabeceras, mesas de noche, vanyty o marquesa).
-
-REGLAS OBLIGATORIAS DE FIDELIDAD (MODO CAMPAÑA):
-- Usa EXACTAMENTE los productos enviados en las imágenes de referencia.
-- PROHIBIDO cambiar la forma, diseño o elementos estructurales del producto.
-- NO cambies colores ni acabados de los materiales originales.
-- NO rediseñes los muebles; deben ser reconocibles e idénticos al original.
-- NO alteres tamaños reales ni proporciones entre productos.
-- NO inventes muebles nuevos ni agregues productos que no estén en la lista.
-- Mantén apariencia fotográfica 100% real.
-- Conserva texturas originales de maderas, telas y metales.
-- Integra los productos naturalmente en el ambiente sin deformarlos.
-
-IMPORTANTE:
-Los productos deben verse como fotografías reales integradas en el ambiente, no como renders o ilustraciones.
-La forma del producto es SAGRADA y no debe variar en absoluto.
-
-MANTENER EXACTAMENTE:
-- iluminación coherente
-- estilo elegante
-- perspectiva realista
-- fondo base (si se proporciona) o generado según el estilo
-- decoración complementaria
-
-ESTILO DEL AMBIENTE:
-- ${config.estilo.tipo}
-- iluminación ${config.estilo.iluminacion}
-- piso ${config.estilo.piso}
-- paredes ${config.estilo.paredes}
-- decoración ${config.estilo.decoracion}
-- ${config.estilo.calidad}
-
-DISTRIBUCION DE PRODUCTOS:
-${listaProductos}
-
-RESULTADO ESPERADO:
-Una imagen profesional de catálogo de muebles para campaña, realista, elegante y coherente visualmente, donde los productos son los protagonistas exactos sin alteraciones.
-`;
-}
 
 function getHTML() {
   return `
@@ -192,7 +163,7 @@ function getHTML() {
         }
 
         .main-container {
-            max-width: 1000px;
+            max-width: 1100px;
             margin: 0 auto;
             background: var(--card);
             padding: 30px;
@@ -275,11 +246,6 @@ function getHTML() {
             transition: transform 0.2s;
         }
 
-        .product-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-        }
-
         .preview-img {
             width: 100%;
             height: 120px;
@@ -299,11 +265,6 @@ function getHTML() {
             object-fit: contain;
         }
 
-        .preview-img .placeholder-text {
-            color: #94a3b8;
-            font-size: 0.8rem;
-        }
-
         .btn-generate {
             background: var(--primary);
             color: white;
@@ -314,7 +275,7 @@ function getHTML() {
             font-size: 1.1rem;
             width: 100%;
             cursor: pointer;
-            transition: background 0.3s;
+            transition: all 0.3s;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -323,6 +284,7 @@ function getHTML() {
 
         .btn-generate:hover {
             background: var(--primary-hover);
+            transform: translateY(-1px);
         }
 
         .btn-generate:disabled {
@@ -336,61 +298,40 @@ function getHTML() {
             display: none;
         }
 
-        #resultImage {
+        canvas {
             max-width: 100%;
+            height: auto;
             border-radius: 12px;
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            background: #eee;
         }
 
-        .loading-spinner {
+        .loading-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255,255,255,0.8);
             display: none;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(255,255,255,.3);
-            border-radius: 50%;
-            border-top-color: #fff;
-            animation: spin 1s ease-in-out infinite;
-        }
-
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        details {
-            margin-top: 20px;
-            background: #f1f5f9;
-            padding: 15px;
-            border-radius: 8px;
-            text-align: left;
-            border: 1px solid var(--border);
-        }
-
-        summary {
-            font-weight: 600;
-            cursor: pointer;
-            color: #475569;
-            display: flex;
+            flex-direction: column;
             align-items: center;
-            justify-content: space-between;
+            justify-content: center;
+            z-index: 1000;
         }
 
-        summary::after {
-            content: '▼';
-            font-size: 0.7rem;
-            transition: transform 0.3s;
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid var(--border);
+            border-top: 5px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
         }
 
-        details[open] summary::after {
-            transform: rotate(180deg);
-        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-        pre {
-            white-space: pre-wrap;
-            font-size: 0.8rem;
-            color: #334155;
-            margin-top: 10px;
-            background: white;
-            padding: 10px;
-            border-radius: 4px;
-            border: 1px inset var(--border);
+        .status-text {
+            font-weight: 600;
+            color: var(--primary);
         }
 
         .campaign-badge {
@@ -403,197 +344,130 @@ function getHTML() {
             display: inline-block;
             margin-left: 10px;
         }
+
+        .step-info {
+            font-size: 0.8rem;
+            color: #64748b;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
+    <div class="loading-overlay" id="loader">
+        <div class="spinner"></div>
+        <div class="status-text" id="loaderText">Procesando...</div>
+        <div class="step-info" id="loaderStep">Iniciando flujo de campaña</div>
+    </div>
+
     <div class="main-container">
         <header>
-            <h1><i class="fas fa-magic"></i> Creador de Imágenes IA <span class="campaign-badge">MODO CAMPAÑA</span></h1>
-            <p>Configuración Maestra para Catálogo Premium</p>
+            <h1><i class="fas fa-camera-retro"></i> Creador de Imágenes IA <span class="campaign-badge">FIDELIDAD 100%</span></h1>
+            <p>Generación de Ambientes con Productos Reales Integrados</p>
         </header>
 
-        <!-- CONFIGURACIÓN DE ESCENARIO -->
         <div class="grid-config">
             <div class="panel">
-                <div class="section-title">
-                    <i class="fas fa-mountain"></i> Escenario Base
-                    <button onclick="toggleLockFondo()" id="lockFondoBtn" style="margin-left:auto; font-size:0.7rem; padding:2px 5px; cursor:pointer;">
-                        <i class="fas fa-unlock"></i> Bloquear Fondo
-                    </button>
-                </div>
+                <div class="section-title"><i class="fas fa-paint-roller"></i> Estilo del Ambiente</div>
                 <div class="input-group">
-                    <label>Fondo Maestro (Opcional - Imagen de ambiente)</label>
-                    <input type="file" id="fondoFile" accept="image/*" style="margin-bottom: 10px;">
-                    <input type="text" id="fondoUrl" placeholder="O pega URL de fondo" oninput="handleFondoUrl(this.value)">
-                    <div id="fondoPreview" class="preview-img" style="height: 150px; margin-top:10px">
-                        <span class="placeholder-text">Fondo no seleccionado (se generará uno si está vacío)</span>
-                    </div>
+                    <label>Tipo de Habitación</label>
+                    <input type="text" id="estiloHabitacion" value="Dormitorio moderno de lujo">
                 </div>
-            </div>
-
-            <div class="panel">
-                <div class="section-title"><i class="fas fa-paint-roller"></i> Estilo General</div>
                 <div class="grid-config" style="grid-template-columns: 1fr 1fr; margin-bottom: 0; gap: 10px;">
                     <div class="input-group">
-                        <label>Tipo</label>
-                        <input type="text" id="estiloTipo" value="Catálogo Premium">
-                    </div>
-                    <div class="input-group">
                         <label>Iluminación</label>
-                        <input type="text" id="estiloLuz" value="Cálida y Elegante">
+                        <select id="estiloLuz">
+                            <option value="Natural de tarde">Natural de tarde</option>
+                            <option value="Estudio profesional">Estudio profesional</option>
+                            <option value="Cálida acogedora">Cálida acogedora</option>
+                            <option value="Minimalista fría">Minimalista fría</option>
+                        </select>
                     </div>
                     <div class="input-group">
                         <label>Piso</label>
-                        <input type="text" id="estiloPiso" value="Madera clara">
-                    </div>
-                    <div class="input-group">
-                        <label>Paredes</label>
-                        <input type="text" id="estiloParedes" value="Minimalistas modernas">
+                        <input type="text" id="estiloPiso" value="Parquet de roble claro">
                     </div>
                 </div>
                 <div class="input-group">
-                    <label>Decoración</label>
-                    <input type="text" id="estiloDeco" value="Minimal y elegante">
+                    <label>Decoración Adicional</label>
+                    <input type="text" id="estiloDeco" value="Plantas de interior, cuadros minimalistas, alfombra de lana">
                 </div>
+            </div>
+
+            <div class="panel">
+                <div class="section-title"><i class="fas fa-cog"></i> Configuración Técnica</div>
+                <div class="input-group">
+                    <label>Calidad de Sombra</label>
+                    <select id="sombraCalidad">
+                        <option value="8">Suave (Recomendado)</option>
+                        <option value="4">Muy Suave</option>
+                        <option value="15">Marcada</option>
+                        <option value="0">Sin Sombra</option>
+                    </select>
+                </div>
+                <p style="font-size: 0.75rem; color: #64748b;">
+                    <i class="fas fa-info-circle"></i> Este modo utiliza GPT-4o mini para diseñar la escena y DALL-E 3 para el fondo. El producto se mantiene idéntico.
+                </p>
             </div>
         </div>
 
-        <div class="section-title"><i class="fas fa-couch"></i> Productos a Integrar</div>
+        <div class="section-title"><i class="fas fa-couch"></i> Productos (Máx. 3 sugerido)</div>
         <div class="products-container" id="productsGrid"></div>
 
-        <button type="button" onclick="addProduct()" style="margin-bottom: 20px; background: #e2e8f0; border:none; padding: 8px 15px; border-radius: 5px; cursor: pointer;">
+        <button type="button" onclick="addProduct()" style="margin-bottom: 20px; background: #f1f5f9; border:1px solid var(--border); padding: 8px 15px; border-radius: 8px; cursor: pointer; font-weight: 600;">
             <i class="fas fa-plus"></i> Añadir Producto
         </button>
 
-        <div class="input-group">
-            <label>Modelo de Chat GPT</label>
-            <select id="quality">
-                <option value="gpt-4o-mini">GPT-4o Mini (Recomendado)</option>
-                <option value="gpt-4o">GPT-4o</option>
-            </select>
-        </div>
-
-        <button id="generateBtn" class="btn-generate" onclick="generate()">
-            <span>GENERAR IMAGEN AMBIENTADA</span>
-            <div class="loading-spinner" id="spinner"></div>
+        <button id="generateBtn" class="btn-generate" onclick="startCampaignFlow()">
+            <span>GENERAR COMPOSICIÓN DE CAMPAÑA</span>
         </button>
 
         <div id="resultArea">
-            <div class="section-title"><i class="fas fa-check-circle"></i> Resultado Final</div>
-            <img id="resultImage" src="">
-            <div style="margin-top: 15px;">
-                <a id="downloadLink" href="#" download="resultado-ia.png" style="background: #16a34a; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: 600;">
-                    <i class="fas fa-download"></i> Descargar
-                </a>
+            <div class="section-title"><i class="fas fa-check-circle"></i> Resultado Final (1024x1024)</div>
+            <canvas id="mainCanvas" width="1024" height="1024"></canvas>
+            <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: center;">
+                <button onclick="downloadCanvas()" style="background: #16a34a; color: white; padding: 12px 25px; border-radius: 8px; border:none; font-weight: 600; cursor:pointer;">
+                    <i class="fas fa-download"></i> Descargar Imagen
+                </button>
+                <button onclick="location.reload()" style="background: #64748b; color: white; padding: 12px 25px; border-radius: 8px; border:none; font-weight: 600; cursor:pointer;">
+                    <i class="fas fa-redo"></i> Nueva Imagen
+                </button>
             </div>
-            <details>
-                <summary>Detalles Técnicos del Prompt</summary>
-                <pre id="promptDebug">El prompt generado aparecerá aquí después de la primera generación...</pre>
-            </details>
         </div>
     </div>
 
     <script>
         let products = [
-            { id: 1, nombre: 'Cama Matrimonial', posicion: 'centro', url: '' },
-            { id: 2, nombre: 'Ropero 3 Puertas', posicion: 'izquierda', url: '' },
-            { id: 3, nombre: 'Mesa de Noche', posicion: 'laterales', url: '' }
+            { id: 1, nombre: 'Cama Principal', file: null, preview: '', noBg: null },
+            { id: 2, nombre: 'Mueble Lateral', file: null, preview: '', noBg: null },
+            { id: 3, nombre: 'Accesorio', file: null, preview: '', noBg: null }
         ];
 
         function renderProducts() {
             const grid = document.getElementById('productsGrid');
             grid.innerHTML = '';
-
             products.forEach((p, idx) => {
                 const card = document.createElement('div');
                 card.className = 'product-card';
-                card.id = 'p-card-' + idx;
-
-                const removeBtn = document.createElement('button');
-                removeBtn.innerHTML = '<i class="fas fa-times"></i>';
-                removeBtn.style.cssText = 'position:absolute; top:5px; right:5px; border:none; background:none; color:#ef4444; cursor:pointer;';
-                removeBtn.onclick = () => removeProduct(idx);
-                card.appendChild(removeBtn);
-
-                const previewDiv = document.createElement('div');
-                previewDiv.className = 'preview-img';
-                previewDiv.id = 'prev-' + idx;
-
-                if (p.url) {
-                    const img = document.createElement('img');
-                    img.src = p.url;
-                    previewDiv.appendChild(img);
-                } else {
-                    const span = document.createElement('span');
-                    span.className = 'placeholder-text';
-                    span.textContent = 'Producto ' + (idx + 1);
-                    previewDiv.appendChild(span);
-                }
-                card.appendChild(previewDiv);
-
-                const nameGroup = createInputGroup('Nombre', (val) => updateProduct(idx, 'nombre', val), p.nombre);
-                card.appendChild(nameGroup);
-
-                const imageGroup = document.createElement('div');
-                imageGroup.className = 'input-group';
-                const imgLabel = document.createElement('label');
-                imgLabel.textContent = 'Imagen (URL o Archivo)';
-                imageGroup.appendChild(imgLabel);
-
-                const fileInput = document.createElement('input');
-                fileInput.type = 'file';
-                fileInput.className = 'p-file';
-                fileInput.style.cssText = 'font-size: 0.7rem; margin-bottom:5px';
-                fileInput.onchange = (e) => handleFile(idx, e.target);
-                imageGroup.appendChild(fileInput);
-
-                const urlInput = document.createElement('input');
-                urlInput.type = 'text';
-                urlInput.className = 'p-url';
-                urlInput.placeholder = 'URL de imagen';
-                urlInput.value = p.url.startsWith('data:') ? '' : p.url;
-                urlInput.oninput = (e) => updateProduct(idx, 'url', e.target.value);
-                imageGroup.appendChild(urlInput);
-                card.appendChild(imageGroup);
-
-                const posGroup = document.createElement('div');
-                posGroup.className = 'input-group';
-                const posLabel = document.createElement('label');
-                posLabel.textContent = 'Posición';
-                posGroup.appendChild(posLabel);
-
-                const select = document.createElement('select');
-                ['centro', 'izquierda', 'derecha', 'laterales', 'fondo'].forEach(opt => {
-                    const option = document.createElement('option');
-                    option.value = opt;
-                    option.textContent = opt.charAt(0).toUpperCase() + opt.slice(1);
-                    if (p.posicion === opt) option.selected = true;
-                    select.appendChild(option);
-                });
-                select.onchange = (e) => updateProduct(idx, 'posicion', e.target.value);
-                posGroup.appendChild(select);
-                card.appendChild(posGroup);
-
+                card.innerHTML = \`
+                    <button onclick="removeProduct(\${idx})" style="position:absolute; top:5px; right:5px; border:none; background:none; color:#ef4444; cursor:pointer;"><i class="fas fa-times"></i></button>
+                    <div class="preview-img" id="prev-\${idx}">
+                        \${p.preview ? \`<img src="\${p.preview}">\` : '<span style="color:#94a3b8; font-size:0.8rem;">Sin imagen</span>'}
+                    </div>
+                    <div class="input-group">
+                        <label>Nombre</label>
+                        <input type="text" value="\${p.nombre}" onchange="products[\${idx}].nombre = this.value">
+                    </div>
+                    <div class="input-group">
+                        <label>Foto del Producto</label>
+                        <input type="file" accept="image/*" onchange="handleProductFile(\${idx}, this)">
+                    </div>
+                \`;
                 grid.appendChild(card);
             });
         }
 
-        function createInputGroup(labelText, onChange, initialValue) {
-            const group = document.createElement('div');
-            group.className = 'input-group';
-            const label = document.createElement('label');
-            label.textContent = labelText;
-            group.appendChild(label);
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.value = initialValue;
-            input.onchange = (e) => onChange(e.target.value);
-            group.appendChild(input);
-            return group;
-        }
-
         function addProduct() {
-            products.push({ id: Date.now(), nombre: 'Nuevo Producto', posicion: 'derecha', url: '' });
+            products.push({ id: Date.now(), nombre: 'Nuevo Producto', file: null, preview: '', noBg: null });
             renderProducts();
         }
 
@@ -602,159 +476,159 @@ function getHTML() {
             renderProducts();
         }
 
-        function updateProduct(idx, field, value) {
-            products[idx][field] = value;
-            if (field === 'url') {
-                const prev = document.getElementById('prev-' + idx);
-                prev.innerHTML = '';
-                if (value) {
-                    const img = document.createElement('img');
-                    img.src = value;
-                    prev.appendChild(img);
-                } else {
-                    const span = document.createElement('span');
-                    span.className = 'placeholder-text';
-                    span.textContent = 'Producto ' + (idx + 1);
-                    prev.appendChild(span);
-                }
-            }
-        }
-
-        async function handleFile(idx, input) {
+        async function handleProductFile(idx, input) {
             const file = input.files[0];
             if (file) {
-                const base64 = await toBase64(file);
-                const dataUrl = 'data:image/jpeg;base64,' + base64;
-                products[idx].url = dataUrl;
-                const prev = document.getElementById('prev-' + idx);
-                prev.innerHTML = '';
-                const img = document.createElement('img');
-                img.src = dataUrl;
-                prev.appendChild(img);
+                products[idx].file = file;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    products[idx].preview = e.target.result;
+                    renderProducts();
+                };
+                reader.readAsDataURL(file);
             }
         }
 
-        const toBase64 = file => new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = () => resolve(reader.result.split(',')[1]);
-            reader.onerror = error => reject(error);
-        });
-
-        // Manejo de Fondo
-        document.getElementById('fondoFile').addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const base64 = await toBase64(file);
-                window.fondoBase64 = base64;
-                updateFondoPreview('data:image/jpeg;base64,' + base64);
-            }
-        });
-
-        function handleFondoUrl(url) {
-            if (url) {
-                window.fondoBase64 = null;
-                updateFondoPreview(url);
-            } else {
-                updateFondoPreview(null);
-            }
+        function showLoader(text, step) {
+            document.getElementById('loader').style.display = 'flex';
+            document.getElementById('loaderText').textContent = text;
+            document.getElementById('loaderStep').textContent = step;
         }
 
-        function updateFondoPreview(src) {
-            const preview = document.getElementById('fondoPreview');
-            preview.innerHTML = '';
-            if (src) {
-                const img = document.createElement('img');
-                img.src = src;
-                preview.appendChild(img);
-            } else {
-                const span = document.createElement('span');
-                span.className = 'placeholder-text';
-                span.textContent = 'Fondo no seleccionado';
-                preview.appendChild(span);
-            }
+        function hideLoader() {
+            document.getElementById('loader').style.display = 'none';
         }
 
-        async function generate() {
-            const btn = document.getElementById('generateBtn');
-            const spinner = document.getElementById('spinner');
-            const resultArea = document.getElementById('resultArea');
+        async function startCampaignFlow() {
+            const validProducts = products.filter(p => p.file);
+            if (validProducts.length === 0) return alert("Carga al menos un producto.");
 
             try {
-                btn.disabled = true;
-                spinner.style.display = 'inline-block';
-                resultArea.style.display = 'none';
+                showLoader("Procesando Imágenes", "Paso 1/4: Removiendo fondos de productos...");
 
-                const config = {
-                    fondoMaestro: window.fondoBase64 || document.getElementById('fondoUrl').value,
-                    productos: products.map(p => ({
-                        nombre: p.nombre,
-                        url: p.url,
-                        posicion: p.posicion
-                    })).filter(p => p.url),
+                // 1. Quitar fondos
+                for (let p of validProducts) {
+                    const formData = new FormData();
+                    formData.append('image', p.file);
+                    const res = await fetch('/remove-bg', { method: 'POST', body: formData });
+                    if (!res.ok) throw new Error("Error quitando fondo a " + p.nombre);
+                    const blob = await res.blob();
+                    p.noBg = await blobToImage(blob);
+                }
+
+                // 2. Analizar Escena con GPT-4o mini
+                showLoader("Diseñando Escena", "Paso 2/4: GPT-4o mini analizando distribución...");
+                const analyzeConfig = {
                     estilo: {
-                        tipo: document.getElementById('estiloTipo').value,
+                        habitacion: document.getElementById('estiloHabitacion').value,
                         iluminacion: document.getElementById('estiloLuz').value,
                         piso: document.getElementById('estiloPiso').value,
-                        paredes: document.getElementById('estiloParedes').value,
-                        decoracion: document.getElementById('estiloDeco').value,
-                        calidad: 'ultra realista'
-                    }
+                        deco: document.getElementById('estiloDeco').value
+                    },
+                    productos: validProducts.map(p => ({ nombre: p.nombre, url: p.preview }))
                 };
 
-                const response = await fetch('/generate', {
+                const analyzeRes = await fetch('/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ config, quality: document.getElementById('quality').value })
+                    body: JSON.stringify({ config: analyzeConfig })
                 });
+                const sceneData = JSON.parse(await analyzeRes.json());
 
-                const data = await response.json();
-                if (data.error) throw new Error(data.error);
+                // 3. Generar Fondo con DALL-E 3
+                showLoader("Generando Ambiente", "Paso 3/4: Creando fondo personalizado...");
+                const bgRes = await fetch('/generate-bg', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: sceneData.bg_prompt })
+                });
+                const bgData = await bgRes.json();
+                if (bgData.error) throw new Error(bgData.error);
+                const bgImage = await b64ToImage(bgData.b64);
 
-                document.getElementById('resultImage').src = data.imageUrl;
-                document.getElementById('downloadLink').href = data.imageUrl;
-                document.getElementById('promptDebug').textContent = data.promptUsed;
-                resultArea.style.display = 'block';
-                resultArea.scrollIntoView({ behavior: 'smooth' });
+                // 4. Ensamblado Final en Canvas
+                showLoader("Ensamblado Final", "Paso 4/4: Integrando productos en el ambiente...");
+                await assembleCanvas(bgImage, validProducts, sceneData.layout);
+
+                hideLoader();
+                document.getElementById('resultArea').style.display = 'block';
+                document.getElementById('resultArea').scrollIntoView({ behavior: 'smooth' });
 
             } catch (err) {
-                alert('Error: ' + err.message);
-            } finally {
-                btn.disabled = false;
-                spinner.style.display = 'none';
+                console.error(err);
+                alert("Error en el proceso: " + err.message);
+                hideLoader();
             }
         }
 
-        // Persistencia de Fondo
-        let isFondoLocked = localStorage.getItem('fondoLocked') === 'true';
-        if (isFondoLocked) {
-            window.fondoBase64 = localStorage.getItem('fondoBase64');
-            const url = localStorage.getItem('fondoUrl');
-            if (url) document.getElementById('fondoUrl').value = url;
-            if (window.fondoBase64) {
-                updateFondoPreview('data:image/jpeg;base64,' + window.fondoBase64);
-            } else if (url) {
-                updateFondoPreview(url);
-            }
-            updateLockButton();
+        function blobToImage(blob) {
+            return new Promise((resolve) => {
+                const url = URL.createObjectURL(blob);
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.src = url;
+            });
         }
 
-        function toggleLockFondo() {
-            isFondoLocked = !isFondoLocked;
-            if (isFondoLocked) {
-                localStorage.setItem('fondoLocked', 'true');
-                localStorage.setItem('fondoBase64', window.fondoBase64 || '');
-                localStorage.setItem('fondoUrl', document.getElementById('fondoUrl').value || '');
-            } else {
-                localStorage.setItem('fondoLocked', 'false');
-            }
-            updateLockButton();
+        function b64ToImage(b64) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.src = 'data:image/png;base64,' + b64;
+            });
         }
 
-        function updateLockButton() {
-            const btn = document.getElementById('lockFondoBtn');
-            btn.innerHTML = isFondoLocked ? '<i class="fas fa-lock"></i> Fondo Bloqueado' : '<i class="fas fa-unlock"></i> Bloquear Fondo';
-            btn.style.color = isFondoLocked ? '#16a34a' : '#475569';
+        async function assembleCanvas(bg, productsWithNoBg, layout) {
+            const canvas = document.getElementById('mainCanvas');
+            const ctx = canvas.getContext('2d');
+
+            // Dibujar Fondo
+            ctx.drawImage(bg, 0, 0, 1024, 1024);
+
+            // Ordenar productos por zIndex
+            const sortedLayout = layout.sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+            const shadowBlur = parseInt(document.getElementById('sombraCalidad').value);
+
+            for (let item of sortedLayout) {
+                const p = productsWithNoBg.find(prod => prod.nombre === item.id);
+                if (!p || !p.noBg) continue;
+
+                const img = p.noBg;
+                const aspect = img.width / img.height;
+                const displayHeight = 400 * (item.scale || 1); // Escala base
+                const displayWidth = displayHeight * aspect;
+
+                ctx.save();
+
+                // Aplicar Sombra si es necesario
+                if (shadowBlur > 0) {
+                    ctx.shadowColor = "rgba(0,0,0,0.4)";
+                    ctx.shadowBlur = shadowBlur;
+                    ctx.shadowOffsetY = shadowBlur / 2;
+                }
+
+                // Dibujar Imagen (Posición Y es la base del mueble)
+                const posX = item.x - (displayWidth / 2);
+                const posY = item.y - displayHeight;
+
+                if (item.flip) {
+                    ctx.translate(posX + displayWidth, posY);
+                    ctx.scale(-1, 1);
+                    ctx.drawImage(img, 0, 0, displayWidth, displayHeight);
+                } else {
+                    ctx.drawImage(img, posX, posY, displayWidth, displayHeight);
+                }
+
+                ctx.restore();
+            }
+        }
+
+        function downloadCanvas() {
+            const canvas = document.getElementById('mainCanvas');
+            const link = document.createElement('a');
+            link.download = 'campaña-muebles-ia.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
         }
 
         renderProducts();
