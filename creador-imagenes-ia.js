@@ -2,129 +2,80 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // Servir el Frontend
+    // =========================
+    // CORS
+    // =========================
+    if (request.method === "OPTIONS") {
+      return new Response(null, { headers: corsHeaders() });
+    }
+
+    // =========================
+    // FRONTEND
+    // =========================
     if (request.method === "GET") {
       return new Response(getHTML(), {
-        headers: { "Content-Type": "text/html;charset=UTF-8" },
+        headers: {
+          "Content-Type": "text/html;charset=UTF-8",
+          ...corsHeaders()
+        }
       });
     }
 
-    // Endpoint para remover fondo (ClearBackdrop API)
+    // =========================
+    // REMOVE BG
+    // =========================
     if (request.method === "POST" && url.pathname === "/remove-bg") {
       try {
         const formData = await request.formData();
-        const imageFile = formData.get("image");
+        const image = formData.get("image");
         const imageUrl = formData.get("image_url");
 
-        let imageToProcess;
-        if (imageFile) {
-          imageToProcess = imageFile;
+        let blobToProcess;
+        if (image) {
+          blobToProcess = image;
         } else if (imageUrl) {
           const imgRes = await fetch(imageUrl);
           if (!imgRes.ok) throw new Error("No se pudo obtener la imagen desde la URL.");
-          imageToProcess = await imgRes.blob();
+          blobToProcess = await imgRes.blob();
         } else {
-          throw new Error("No se proporcionó ninguna imagen.");
+          throw new Error("No se proporcionó imagen");
         }
 
-        const cbFormData = new FormData();
-        cbFormData.append("image", imageToProcess);
+        const fd = new FormData();
+        fd.append("image", blobToProcess);
 
-        const response = await fetch(
-          "https://clearbackdrop.com/api/v1/remove-background",
-          {
-            method: "POST",
-            body: cbFormData,
-          }
-        );
+        const response = await fetch("https://clearbackdrop.com/api/v1/remove-background", {
+          method: "POST",
+          body: fd
+        });
 
         if (!response.ok) {
-          const errText = await response.text();
-          throw new Error(`ClearBackdrop Error (${response.status}): ${errText.substring(0, 100)}`);
+          const txt = await response.text();
+          throw new Error(txt);
         }
 
         const blob = await response.blob();
         return new Response(blob, {
           headers: {
             "Content-Type": "image/png",
-            "Access-Control-Allow-Origin": "*"
-          },
-        });
-      } catch (error) {
-        console.error("Remove-BG Error:", error);
-        return new Response(JSON.stringify({ error: error.message }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-    }
-
-    // Endpoint para analizar escena (GPT-4o mini como Fotógrafo Profesional)
-    if (request.method === "POST" && url.pathname === "/analyze") {
-      try {
-        const { config } = await request.json();
-
-        const messages = [
-          {
-            role: "system",
-            content: `Eres un Fotógrafo y Director de Arte experto en catálogos de muebles premium.
-Tu misión es diseñar una escena 1024x1024 coherente.
-Debes devolver un JSON con:
-1. bg_prompt: Prompt en inglés para DALL-E describiendo un ambiente arquitectónico de lujo TOTALMENTE VACÍO. Usa términos como: "wide angle interior photography", "f/8", "natural daylight", "high-end textures".
-2. scene_config:
-   - light_direction: "left", "right" o "center".
-   - light_warmth: número de 0 a 1 (0 frío, 1 cálido).
-3. layout: Lista de objetos para posicionar los productos:
-   - id: nombre del producto.
-   - x: centro horizontal (0-1024).
-   - y: base del mueble en el suelo (600-950).
-   - scale: escala (0.5 a 1.2).
-   - zIndex: orden de capa.
-   - shadow_offset_x: desplazamiento de sombra basado en light_direction (ej: -15 si la luz viene de la derecha).
-
-REGLAS:
-- Los productos deben estar apoyados en el suelo.
-- Evita que los muebles se vean flotando sugiriendo posiciones y escalas realistas según el tipo de mueble.`
-          },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: `Estilo: ${JSON.stringify(config.estilo)}. Productos: ${config.productos.map(p => p.nombre).join(", ")}.` },
-              ...config.productos.map(p => ({
-                type: "image_url",
-                image_url: { url: p.url }
-              }))
-            ]
+            ...corsHeaders()
           }
-        ];
-
-        const response = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
-          },
-          body: JSON.stringify({
-            model: "gpt-4o-mini",
-            messages,
-            response_format: { type: "json_object" }
-          })
         });
-
-        const data = await response.json();
-        return new Response(JSON.stringify(data.choices[0].message.content), {
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-        });
-      } catch (error) {
-        return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+      } catch (e) {
+        return jsonError(e.message);
       }
     }
 
-    // Endpoint para generar fondo
+    // =========================
+    // GENERATE BG
+    // =========================
     if (request.method === "POST" && url.pathname === "/generate-bg") {
       try {
-        const { prompt } = await request.json();
-        const models = ["gpt-image", "gpt-image-1-mini", "chatgpt-image-latest", "dall-e-3"];
+        const body = await request.json();
+        const prompt = body.prompt || "Luxury modern interior";
+
+        // Intentamos con gpt-image-1 como principal (según snippet) y fallback a dall-e-3
+        const models = ["gpt-image-1", "dall-e-3"];
         let lastError = null;
 
         for (const model of models) {
@@ -133,14 +84,17 @@ REGLAS:
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+                "Authorization": `Bearer ${env.OPENAI_API_KEY}`
               },
               body: JSON.stringify({
                 model: model,
-                prompt: `Luxury architectural interior photography, NO FURNITURE, strictly empty room, clear polished floors, realistic textures, catalog style, ${prompt}`,
-                n: 1,
                 size: "1024x1024",
-                response_format: "b64_json"
+                response_format: "b64_json",
+                prompt:
+                  "Professional architectural interior photography, luxury catalog style, " +
+                  "completely empty room, NO furniture, clear floor, high realism, 8k, " +
+                  "warm cinematic lighting, minimalist elegant walls, " +
+                  prompt
               })
             });
 
@@ -149,22 +103,41 @@ REGLAS:
               lastError = data.error.message;
               continue;
             }
+
             return new Response(JSON.stringify({ b64: data.data[0].b64_json }), {
-              headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+              headers: { "Content-Type": "application/json", ...corsHeaders() }
             });
-          } catch (e) {
-            lastError = e.message;
+          } catch (err) {
+            lastError = err.message;
           }
         }
         throw new Error(lastError);
-      } catch (error) {
-        return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+      } catch (e) {
+        return jsonError(e.message);
       }
     }
 
-    return new Response("Not Found", { status: 404 });
+    return new Response("Not Found", { status: 404, headers: corsHeaders() });
   }
 };
+
+function corsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization"
+  };
+}
+
+function jsonError(message) {
+  return new Response(JSON.stringify({ error: message }), {
+    status: 500,
+    headers: {
+      "Content-Type": "application/json",
+      ...corsHeaders()
+    }
+  });
+}
 
 function getHTML() {
   return `
@@ -173,243 +146,229 @@ function getHTML() {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IA Campaign Master - Fidelidad Pro</title>
+    <title>AI Campaign Creator Pro</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        :root { --primary: #6366f1; --primary-dark: #4f46e5; --bg: #f8fafc; --card: #ffffff; --text: #1e293b; }
+        :root { --primary: #4f46e5; --primary-hover: #4338ca; --bg: #f3f4f6; --text: #111827; }
         body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
-        .container { max-width: 1100px; margin: 0 auto; background: white; padding: 30px; border-radius: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.04); }
-        .header { text-align: center; margin-bottom: 35px; }
-        .badge { background: #fee2e2; color: #b91c1c; padding: 4px 12px; border-radius: 20px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; }
-        .grid-main { display: grid; grid-template-columns: 350px 1fr; gap: 30px; }
-        @media (max-width: 900px) { .grid-main { grid-template-columns: 1fr; } }
-        .sidebar { background: #fcfcfc; border: 1px solid #f1f5f9; padding: 20px; border-radius: 20px; height: fit-content; }
-        .config-group { margin-bottom: 20px; }
-        .label { display: block; font-size: 0.75rem; font-weight: 700; margin-bottom: 8px; color: #64748b; text-transform: uppercase; }
-        input, select { width: 100%; padding: 12px; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 10px; font-family: inherit; }
-        .products-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
-        .p-item { background: white; border: 1px solid #e2e8f0; padding: 12px; border-radius: 15px; position: relative; }
-        .p-item img { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; }
-        .btn-main { background: var(--primary); color: white; border: none; padding: 18px; border-radius: 16px; width: 100%; font-weight: 700; font-size: 1rem; cursor: pointer; transition: 0.3s; box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.3); }
-        .btn-main:hover { background: var(--primary-dark); transform: translateY(-2px); }
-        .btn-main:disabled { opacity: 0.5; transform: none; }
-        #canvas-wrap { position: sticky; top: 20px; text-align: center; }
-        canvas { max-width: 100%; border-radius: 20px; background: #eee; box-shadow: 0 30px 60px -12px rgba(0,0,0,0.15); }
-        .refinement-panel { margin-top: 20px; display: none; background: #fffbeb; border: 1px solid #fef3c7; padding: 15px; border-radius: 15px; text-align: left; }
-        .slider-group { margin-bottom: 10px; }
-        .slider-group label { font-size: 0.7rem; font-weight: 600; display: flex; justify-content: space-between; }
-        .loading { position: fixed; inset: 0; background: rgba(255,255,255,0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; }
-        .spinner { width: 60px; height: 60px; border: 6px solid #f1f5f9; border-top: 6px solid var(--primary); border-radius: 50%; animation: spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+        .header { text-align: center; margin-bottom: 30px; }
+        .grid-config { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px; }
+        .card { border: 1px solid #e5e7eb; padding: 20px; border-radius: 15px; background: #fafafa; }
+        .products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .p-card { border: 1px solid #e5e7eb; padding: 15px; border-radius: 15px; background: white; position: relative; }
+        .p-preview { width: 100%; height: 160px; background: #f9fafb; border-radius: 10px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 12px; border: 1px dashed #d1d5db; }
+        .p-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .label { display: block; font-size: 0.8rem; font-weight: 700; margin-bottom: 6px; text-transform: uppercase; color: #4b5563; }
+        input, select { width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 10px; margin-bottom: 15px; box-sizing: border-box; font-family: inherit; }
+        .btn-main { background: var(--primary); color: white; border: none; padding: 18px; border-radius: 12px; width: 100%; font-weight: 700; font-size: 1.1rem; cursor: pointer; transition: 0.3s; }
+        .btn-main:hover { background: var(--primary-hover); }
+        canvas { max-width: 100%; border-radius: 15px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
+        .loading { position: fixed; inset: 0; background: rgba(255,255,255,0.9); display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 999; }
+        .spinner { width: 50px; height: 50px; border: 5px solid #eee; border-top: 5px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
+        .controls-panel { margin-top: 20px; display: none; background: #fefce8; border: 1px solid #fef3c7; padding: 15px; border-radius: 12px; }
+        .slider-group { margin-bottom: 10px; }
+        .slider-group label { font-size: 0.75rem; font-weight: 600; display: flex; justify-content: space-between; }
     </style>
 </head>
 <body>
     <div class="loading" id="loader">
         <div class="spinner"></div>
-        <p id="l-text" style="margin-top:25px; font-weight:800; color:var(--primary); font-size:1.1rem;"></p>
+        <p id="loader-text" style="margin-top:20px; font-weight:700;">Procesando...</p>
     </div>
 
     <div class="container">
         <div class="header">
-            <h1>🎨 IA Campaign Master <span class="badge">Ambientado Pro</span></h1>
-            <p>Composición fotográfica de alta fidelidad basada en productos reales.</p>
+            <h1>🎨 AI Campaign Creator Pro</h1>
+            <p>Integra tus productos reales en ambientes profesionales</p>
         </div>
 
-        <div class="grid-main">
-            <div class="sidebar">
-                <div class="config-group">
-                    <label class="label">Escenario Arquitectónico</label>
-                    <input type="text" id="env-room" value="Dormitorio moderno minimalista">
-                    <label class="label">Iluminación de Escena</label>
-                    <select id="env-light">
-                        <option value="Suave luz de tarde">Suave luz de tarde</option>
-                        <option value="Estudio profesional neutro">Estudio profesional neutro</option>
-                        <option value="Contraluz dramático">Contraluz dramático</option>
-                    </select>
+        <div class="grid-config">
+            <div class="card">
+                <label class="label">Ambiente Deseado</label>
+                <input type="text" id="env-type" value="Luxury modern bedroom">
+                <label class="label">Iluminación</label>
+                <select id="env-light">
+                    <option value="warm cinematic lighting">Cálida Cinematográfica</option>
+                    <option value="natural bright daylight">Luz Natural Brillante</option>
+                    <option value="soft studio lighting">Estudio Profesional</option>
+                </select>
+            </div>
+            <div class="card">
+                <label class="label">Ajustes Pro</label>
+                <div class="slider-group">
+                    <label>Brillo Productos <span id="val-bright">100%</span></label>
+                    <input type="range" id="adj-bright" min="70" max="130" value="100" oninput="updateAdj()">
                 </div>
-
-                <label class="label">Productos (Fotos Reales)</label>
-                <div class="products-list" id="p-list"></div>
-                <button onclick="addP()" style="width:100%; padding:10px; border-radius:12px; border:1px dashed #cbd5e1; background:none; cursor:pointer; font-weight:600; margin-bottom:25px;">+ Añadir Otro Mueble</button>
-
-                <button id="go" class="btn-main" onclick="run()">GENERAR COMPOSICIÓN PRO</button>
-
-                <div class="refinement-panel" id="refine">
-                    <label class="label" style="color:#92400e;">Ajuste de Composición</label>
-                    <div class="slider-group">
-                        <label>Brillo Productos <span id="v-bright">100%</span></label>
-                        <input type="range" min="50" max="150" value="100" oninput="updateRefine('bright', this.value)">
-                    </div>
-                    <div class="slider-group">
-                        <label>Calidez (Ambiente) <span id="v-warm">0%</span></label>
-                        <input type="range" min="-30" max="30" value="0" oninput="updateRefine('warm', this.value)">
-                    </div>
-                    <div class="slider-group">
-                        <label>Intensidad Sombra <span id="v-shad">40%</span></label>
-                        <input type="range" min="0" max="100" value="40" oninput="updateRefine('shad', this.value)">
-                    </div>
+                <div class="slider-group">
+                    <label>Intensidad Sombra <span id="val-shad">25%</span></label>
+                    <input type="range" id="adj-shad" min="0" max="100" value="25" oninput="updateAdj()">
                 </div>
             </div>
+        </div>
 
-            <div id="canvas-wrap">
-                <canvas id="c" width="1024" height="1024"></canvas>
-                <div id="res-btns" style="margin-top:20px; display:none; gap:10px; justify-content:center;">
-                    <button onclick="download()" style="background:#059669; color:white; padding:12px 25px; border:none; border-radius:12px; font-weight:700; cursor:pointer;">Descargar Campaña</button>
-                    <button onclick="location.reload()" style="background:#64748b; color:white; padding:12px 25px; border:none; border-radius:12px; font-weight:700; cursor:pointer;">Reiniciar</button>
-                </div>
+        <div class="products-grid" id="products-grid"></div>
+
+        <button onclick="addProduct()" style="margin-bottom:25px; padding:10px 20px; border-radius:10px; border:1px solid #ddd; cursor:pointer; font-weight:600; background:white;">
+            <i class="fas fa-plus"></i> Agregar Producto
+        </button>
+
+        <button class="btn-main" onclick="runGenerationFlow()">
+            <i class="fas fa-sparkles"></i> GENERAR CAMPAÑA
+        </button>
+
+        <div id="result-area" style="margin-top:40px; display:none; text-align:center;">
+            <canvas id="main-canvas" width="1024" height="1024"></canvas>
+            <div style="margin-top:20px;">
+                <button onclick="downloadImage()" style="background:#059669; color:white; padding:12px 30px; border:none; border-radius:12px; font-weight:700; cursor:pointer;">Descargar Imagen</button>
             </div>
         </div>
     </div>
 
     <script>
-        let ps = [{ id: 1, n: 'Producto Principal', f: null, pr: '', nb: null }];
-        let currentScene = null;
-        let bgImg = null;
-        let refine = { bright: 100, warm: 0, shad: 40 };
+        let products = [];
+        let lastBg = null;
 
-        function render() {
-            const l = document.getElementById('p-list');
-            l.innerHTML = '';
-            ps.forEach((p, i) => {
-                const d = document.createElement('div');
-                d.className = 'p-item';
-                d.innerHTML = \`
-                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
-                        \${p.pr ? \`<img src="\${p.pr}">\` : '<div style="width:40px;height:40px;background:#eee;border-radius:8px"></div>'}
-                        <input type="text" value="\${p.n}" onchange="ps[\${i}].n=this.value" placeholder="Nombre mueble" style="margin:0; padding:8px;">
-                    </div>
-                    <input type="file" accept="image/*" onchange="hF(\${i}, this)" style="font-size:0.7rem; padding:0; border:none;">
+        function addProduct() {
+            products.push({ id: Date.now(), name: "", file: null, url: "", preview: "", noBg: null });
+            renderProducts();
+        }
+
+        function renderProducts() {
+            const grid = document.getElementById("products-grid");
+            grid.innerHTML = "";
+            products.forEach((p, i) => {
+                const card = document.createElement("div");
+                card.className = "p-card";
+                card.innerHTML = \`
+                    <div class="p-preview">\${p.preview ? \`<img src="\${p.preview}">\` : '<i class="fas fa-image" style="color:#ccc; font-size:2rem;"></i>'}</div>
+                    <label class="label">Producto \${i+1}</label>
+                    <input type="text" value="\${p.name}" onchange="products[\${i}].name=this.value" placeholder="Nombre (ej: Cama)">
+                    <input type="file" accept="image/*" onchange="handleFile(\${i}, this)" style="font-size:0.75rem; margin-bottom:5px;">
+                    <input type="text" value="\${p.url}" onchange="handleUrl(\${i}, this.value)" placeholder="O pega URL de imagen">
                 \`;
-                l.appendChild(d);
+                grid.appendChild(card);
             });
         }
 
-        async function hF(i, input) {
-            const f = input.files[0];
-            if (!f) return;
-            ps[i].f = f;
-            const r = new FileReader();
-            r.onload = e => { ps[i].pr = e.target.result; render(); };
-            r.readAsDataURL(f);
+        async function handleFile(i, input) {
+            const file = input.files[0];
+            if (!file) return;
+            products[i].file = file;
+            products[i].url = "";
+            products[i].preview = await fileToBase64(file);
+            renderProducts();
         }
 
-        function addP() { ps.push({ id: Date.now(), n: 'Nuevo Producto', f: null, pr: '' }); render(); }
-
-        function updateRefine(type, val) {
-            refine[type] = parseInt(val);
-            document.getElementById('v-'+type).textContent = (type==='bright' ? val+'%' : (type==='shad' ? val+'%' : val));
-            if (bgImg) draw();
+        function handleUrl(i, url) {
+            products[i].url = url;
+            products[i].file = null;
+            products[i].preview = url;
+            renderProducts();
         }
 
-        async function run() {
-            const active = ps.filter(p => p.f || p.pr.startsWith('http'));
-            if (!active.length) return alert("Sube al menos una imagen de producto.");
-            const loader = document.getElementById('loader');
-            const lt = document.getElementById('l-text');
-            loader.style.display = 'flex';
+        function fileToBase64(file) {
+            return new Promise(resolve => {
+                const reader = new FileReader();
+                reader.onload = e => resolve(reader.result);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function updateAdj() {
+            document.getElementById('val-bright').textContent = document.getElementById('adj-bright').value + '%';
+            document.getElementById('val-shad').textContent = document.getElementById('adj-shad').value + '%';
+            if (lastBg) drawScene();
+        }
+
+        async function runGenerationFlow() {
+            const active = products.filter(p => p.file || p.url);
+            if (!active.length) return alert("Sube al menos un producto");
+
+            const loader = document.getElementById("loader");
+            const lt = document.getElementById("loader-text");
+            loader.style.display = "flex";
 
             try {
-                lt.textContent = "📸 Extrayendo productos reales...";
-                for (let p of active) {
+                lt.textContent = "Removiendo fondos...";
+                for (const p of active) {
                     const fd = new FormData();
-                    if (p.f) fd.append('image', p.f); else fd.append('image_url', p.pr);
-                    const res = await fetch('/remove-bg', { method: 'POST', body: fd });
-                    if (!res.ok) throw new Error("Error en recorte");
-                    p.nb = await bToI(await res.blob());
+                    if (p.file) fd.append("image", p.file); else fd.append("image_url", p.url);
+                    const res = await fetch("/remove-bg", { method: "POST", body: fd });
+                    if (!res.ok) throw new Error("Error quitando fondo");
+                    p.noBg = await blobToImage(await res.blob());
                 }
 
-                lt.textContent = "🧠 Diseñando iluminación y perspectiva...";
-                const aRes = await fetch('/analyze', {
-                    method: 'POST',
-                    body: JSON.stringify({ config: {
-                        estilo: { room: document.getElementById('env-room').value, light: document.getElementById('env-light').value },
-                        productos: active.map(p => ({ nombre: p.n, url: p.pr }))
-                    }})
+                lt.textContent = "Generando ambiente IA...";
+                const bgRes = await fetch("/generate-bg", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ prompt: document.getElementById("env-type").value + ", " + document.getElementById("env-light").value })
                 });
-                currentScene = JSON.parse(await aRes.json());
+                const bgData = await bgRes.json();
+                if (bgData.error) throw new Error(bgData.error);
 
-                lt.textContent = "🖼️ Generando escenario de lujo...";
-                const bRes = await fetch('/generate-bg', { method: 'POST', body: JSON.stringify({ prompt: currentScene.bg_prompt }) });
-                const bData = await bRes.json();
-                bgImg = await b64ToI(bData.b64);
+                lastBg = await b64ToImage(bgData.b64);
+                drawScene();
 
-                draw();
-                loader.style.display = 'none';
-                document.getElementById('refine').style.display = 'block';
-                document.getElementById('res-btns').style.display = 'flex';
+                loader.style.display = "none";
+                document.getElementById("result-area").style.display = "block";
+                document.getElementById("result-area").scrollIntoView({ behavior: 'smooth' });
 
-            } catch (e) { alert(e.message); loader.style.display = 'none'; }
+            } catch (e) {
+                alert(e.message);
+                loader.style.display = "none";
+            }
         }
 
-        function b64ToI(b) { return new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = "data:image/png;base64," + b; }); }
-        function bToI(b) { return new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = URL.createObjectURL(b); }); }
+        function drawScene() {
+            const canvas = document.getElementById("main-canvas");
+            const ctx = canvas.getContext("2d");
+            const active = products.filter(p => p.noBg);
+            const bright = document.getElementById('adj-bright').value / 100;
+            const shadOp = document.getElementById('adj-shad').value / 100;
 
-        function draw() {
-            const canvas = document.getElementById('c');
-            const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, 1024, 1024);
+            ctx.drawImage(lastBg, 0, 0, 1024, 1024);
 
-            // 1. Dibujar Fondo con Filtro de Temperatura
-            ctx.save();
-            if (refine.warm !== 0) {
-                ctx.filter = \`sepia(\${Math.abs(refine.warm)}%) hue-rotate(\${refine.warm > 0 ? 0 : 180}deg)\`;
-            }
-            ctx.drawImage(bgImg, 0, 0, 1024, 1024);
-            ctx.restore();
+            // Posiciones lógicas: Principal al centro, secundarios a los lados
+            const positions = [
+                { x: 512, y: 920, width: 720 }, // Principal
+                { x: 200, y: 880, width: 250 }, // Izquierda
+                { x: 824, y: 880, width: 250 }  // Derecha
+            ];
 
-            // 2. Dibujar Productos
-            const active = ps.filter(p => p.nb);
-            currentScene.layout.sort((a,b) => (a.zIndex||0) - (b.zIndex||0)).forEach(item => {
-                const product = active.find(x => x.n === item.id);
-                if (!product) return;
+            active.forEach((product, i) => {
+                const pos = positions[i] || positions[0];
+                const img = product.noBg;
+                const w = pos.width;
+                const h = img.height * (w / img.width);
+                const x = pos.x - w / 2;
+                const y = pos.y - h;
 
-                const img = product.nb;
-                const scale = item.scale || 1;
-                const h = 480 * scale;
-                const w = (img.width / img.height) * h;
-                const x = item.x - (w/2);
-                const y = item.y - h;
-
-                // Sombra de Capas (Contacto + Direccional)
+                // Sombra profesional
                 ctx.save();
-                const shadOp = refine.shad / 100;
-                // Sombra de contacto (oscura, cerrada)
+                ctx.globalAlpha = shadOp;
+                ctx.filter = "blur(15px)";
+                ctx.fillStyle = "black";
                 ctx.beginPath();
-                ctx.ellipse(item.x, item.y, w/2.2, h/25, 0, 0, Math.PI*2);
-                ctx.fillStyle = \`rgba(0,0,0,\${shadOp * 0.8})\`;
-                ctx.filter = 'blur(4px)';
-                ctx.fill();
-
-                // Sombra proyectada (suave, desplazada)
-                ctx.beginPath();
-                ctx.ellipse(item.x + (item.shadow_offset_x || 0), item.y + 5, w/2, h/15, 0, 0, Math.PI*2);
-                ctx.fillStyle = \`rgba(0,0,0,\${shadOp * 0.4})\`;
-                ctx.filter = 'blur(12px)';
+                ctx.ellipse(pos.x, pos.y + 5, w * 0.35, 20, 0, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.restore();
 
-                // Producto con Ajuste de Brillo
+                // Imagen con ajuste de brillo
                 ctx.save();
-                ctx.filter = \`brightness(\${refine.bright}%)\`;
+                ctx.filter = \`brightness(\${bright})\`;
                 ctx.drawImage(img, x, y, w, h);
-
-                // Mezcla Ambiental (Tintar ligeramente el producto con el color del cuarto)
-                ctx.globalCompositeOperation = 'soft-light';
-                ctx.fillStyle = refine.warm > 0 ? 'rgba(255,150,0,0.05)' : 'rgba(0,100,255,0.05)';
-                ctx.fillRect(x, y, w, h);
                 ctx.restore();
             });
         }
 
-        function download() {
-            const c = document.getElementById('c');
-            const a = document.createElement('a');
-            a.download = 'campaña-pro.png';
-            a.href = c.toDataURL('image/png', 1.0);
-            a.click();
-        }
+        function blobToImage(blob) { return new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = URL.createObjectURL(blob); }); }
+        function b64ToImage(b64) { return new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = "data:image/png;base64," + b64; }); }
+        function downloadImage() { const c = document.getElementById("main-canvas"); const l = document.createElement("a"); l.download = 'campaña.png'; l.href = c.toDataURL(); l.click(); }
 
-        render();
+        addProduct();
     </script>
 </body>
 </html>
