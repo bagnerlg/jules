@@ -74,44 +74,69 @@ export default {
         const body = await request.json();
         const prompt = body.prompt || "Luxury modern interior";
 
-        // Intentamos con gpt-image-1 como principal (según snippet) y fallback a dall-e-3
-        const models = ["gpt-image-1", "dall-e-3"];
+        // Modelos según memoria del usuario y fallbacks estándar
+        const models = ["gpt-image", "gpt-image-1-mini", "dall-e-3"];
         let lastError = null;
 
         for (const model of models) {
           try {
-            const response = await fetch("https://api.openai.com/v1/images/generations", {
+            const basePayload = {
+              model: model,
+              size: "1024x1024",
+              prompt:
+                "Professional architectural interior photography, luxury catalog style, " +
+                "completely empty room, NO furniture, clear floor, high realism, 8k, " +
+                "warm cinematic lighting, minimalist elegant walls, " +
+                prompt
+            };
+
+            // Primer intento: con b64_json
+            let payload = { ...basePayload, response_format: "b64_json" };
+            let response = await fetch("https://api.openai.com/v1/images/generations", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
                 "Authorization": `Bearer ${env.OPENAI_API_KEY}`
               },
-              body: JSON.stringify({
-                model: model,
-                size: "1024x1024",
-                response_format: "b64_json",
-                prompt:
-                  "Professional architectural interior photography, luxury catalog style, " +
-                  "completely empty room, NO furniture, clear floor, high realism, 8k, " +
-                  "warm cinematic lighting, minimalist elegant walls, " +
-                  prompt
-              })
+              body: JSON.stringify(payload)
             });
 
-            const data = await response.json();
+            let data = await response.json();
+
+            // Si falla por parámetro desconocido, intentamos sin response_format
+            if (data.error && data.error.message.includes("Unknown parameter: 'response_format'")) {
+              console.warn(`Fallback: reintentando ${model} sin response_format`);
+              response = await fetch("https://api.openai.com/v1/images/generations", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${env.OPENAI_API_KEY}`
+                },
+                body: JSON.stringify(basePayload)
+              });
+              data = await response.json();
+            }
+
             if (data.error) {
+              console.error(`Error con modelo ${model}:`, data.error);
               lastError = data.error.message;
               continue;
             }
 
-            return new Response(JSON.stringify({ b64: data.data[0].b64_json }), {
+            // Manejamos tanto b64 como URL
+            const result = data.data[0];
+            return new Response(JSON.stringify({
+              b64: result.b64_json || null,
+              url: result.url || null
+            }), {
               headers: { "Content-Type": "application/json", ...corsHeaders() }
             });
           } catch (err) {
+            console.error(`Excepción fatal con modelo ${model}:`, err);
             lastError = err.message;
           }
         }
-        throw new Error(lastError);
+        throw new Error(lastError || "No se pudo generar la imagen con ningún modelo.");
       } catch (e) {
         return jsonError(e.message);
       }
@@ -309,7 +334,14 @@ function getHTML() {
                 const bgData = await bgRes.json();
                 if (bgData.error) throw new Error(bgData.error);
 
-                lastBg = await b64ToImage(bgData.b64);
+                if (bgData.b64) {
+                    lastBg = await b64ToImage(bgData.b64);
+                } else if (bgData.url) {
+                    lastBg = await urlToImage(bgData.url);
+                } else {
+                    throw new Error("No se recibió imagen del servidor");
+                }
+
                 drawScene();
 
                 loader.style.display = "none";
@@ -366,6 +398,7 @@ function getHTML() {
 
         function blobToImage(blob) { return new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = URL.createObjectURL(blob); }); }
         function b64ToImage(b64) { return new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = "data:image/png;base64," + b64; }); }
+        function urlToImage(url) { return new Promise((r, e) => { const i = new Image(); i.crossOrigin = "Anonymous"; i.onload = () => r(i); i.onerror = e; i.src = url; }); }
         function downloadImage() { const c = document.getElementById("main-canvas"); const l = document.createElement("a"); l.download = 'campaña.png'; l.href = c.toDataURL(); l.click(); }
 
         addProduct();
