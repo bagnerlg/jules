@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8"><title>Cargador de Muebles IA</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; padding: 20px; background: #f8f9fa; }
+        .card { background: white; padding: 25px; border-radius: 12px; max-width: 900px; margin: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px; }
+        input, textarea, select { padding: 12px; border: 1px solid #ddd; border-radius: 8px; width: 100%; box-sizing: border-box; }
+        button { padding: 12px 24px; cursor: pointer; border: none; border-radius: 8px; font-weight: 600; transition: 0.3s; }
+        .btn-gen { background: #007bff; color: white; }
+        .btn-check { background: #6c757d; color: white; }
+        .btn-save { background: #28a745; color: white; margin-top: 20px; }
+        .hidden { display: none; }
+        .preview-box { margin-top: 30px; border-top: 2px solid #f1f1f1; padding-top: 20px; }
+        label { display: block; margin-bottom: 5px; font-size: 0.85rem; color: #666; font-weight: bold; }
+        .id-section { background: #f1f3f5; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #007bff; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>🚀 Cargador de Muebles con Visión IA</h2>
+        <div class="id-section">
+            <label>1️⃣ Verificar Existencia por ID:</label>
+            <div style="display: flex; gap: 10px;">
+                <input type="text" id="idm" placeholder="Ingresa el ID del mueble">
+                <button type="button" id="btn-check-id" class="btn-check">🔍 Buscar ID</button>
+            </div>
+        </div>
+        <form id="main-form">
+            <label>2️⃣ Datos del Mueble:</label>
+            <div class="grid" style="margin-top: 10px;">
+                <input type="text" id="nombre" placeholder="Nombre del mueble" required>
+                <input type="number" id="precio" placeholder="Precio (Q)" required>
+                <input type="text" id="cat" placeholder="Categoría (ej: Sala)" required>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label>📸 Imagen del mueble (Archivo o URL):</label>
+                <input type="file" id="foto" accept="image/*" style="margin-bottom:10px">
+                <input type="url" id="foto-url" placeholder="Pega el link de la imagen pública">
+            </div>
+            <label><input type="checkbox" id="is-combo"> ¿Es un Combo?</label>
+            <textarea id="comp" placeholder="IDs de los componentes..." class="hidden" style="margin-top:10px"></textarea>
+            <br>
+            <button type="submit" class="btn-gen">Generar Ficha con IA ✨</button>
+        </form>
+        <div id="editor-area" class="preview-box hidden">
+            <h3>📋 Edición de Ficha Técnica (17 Campos):</h3>
+            <div id="fields-grid" class="grid"></div>
+            <button id="save-to-cloud" class="btn-save">Confirmar y Sincronizar Listado ☁️</button>
+        </div>
+        <p id="status-msg" style="margin-top:15px; font-weight: 600;"></p>
+    </div>
+    <script src="js/main.js"></script>
+</body>
+</html>
