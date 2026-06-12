@@ -1,1475 +1,1424 @@
-/**
- * META EXPERT - LANZADOR DE PUBLICIDAD INTEGRADO (CLOUDFLARE WORKER)
- * Versión Unificada: Interfaz Visual + Lógica de Automatización
- */
+/* =========================================================
+   SISTEMA DE MUEBLERÍA IA - Versión Maestro Integrada (Final V7.6)
+   - Dual-Persistence: Cache de estado en KV para mitigar latencia de API GHL
+   - Improved Coverage: Detección proactiva de Departamentos para saltar pasos
+   - Fix: Loop de ubicación (Santa Lucía Utatlán y similares)
+   - Fix: TargetProduct scope and null-dereference errors
+   - Fix: Catalog pagination ("otras opciones") forces catalog flow
+   - Fix: Bed size swap logic forces title/image delivery
+   - Pre-catálogo: Filtro inicial para términos generales (Muebles, Amueblados)
+   - Relleno de catálogo: Evita listas vacías usando tamaños alternativos
+   - Proactive Location: Detección de ubicación con IA para cobertura inmediata
+   - Cocina Installation: Respuesta específica para instalaciones de cocina
+   - Fix: Vague refinement handover (mas grande, mas cara, etc.)
+   - Fix: Greeting and Purchase info timing (Purchase info only on photo request)
+   - Fix: Enhanced size detection variations (Plural/Gender)
+   - Fix: Individual price surcharge (+200)
+   - Envío de imágenes individual para WhatsApp
+========================================================= */
 
-const API_VERSION = "v19.0";
-const FIXED_TEXT = "📲 ¡Escríbenos ahora y recibe tu cotización con promoción especial!\n📦 Entregas a todo el país\n💯 Garantía asegurada";
+const ordenEstados = {
+  nuevo: 0,
+  catalogo: 1,
+  producto: 2,
+  precio: 3,
+  objecion: 4,
+  cierre: 5,
+  confirmacion_categoria: 6,
+  esperando_departamento: 7,
+  esperando_municipio: 8
+};
 
-// --- HANDLERS DE API (LOGICA DE NEGOCIO) ---
-
-function getAdAccId(env) {
-  let id = (env.AD_ACCOUNT_ID || "").trim();
-  if (!id) return null;
-  return id.startsWith("act_") ? id : "act_" + id;
+function getFieldId(env, key) {
+  const variations = [
+    "GHL_" + key.toUpperCase() + "_FIELD_ID",
+    "GHL_" + key.toLowerCase() + "_FIELD_ID",
+    "GHL_" + key + "_FIELD_ID",
+    "GHL" + key.toUpperCase() + "FIELD_ID",
+    "GHL" + key.toLowerCase() + "FIELD_ID",
+    "GHL" + key + "FIELD_ID",
+    key.toUpperCase(),
+    key.toLowerCase(),
+    key
+  ];
+  for (let v of variations) {
+    if (env[v]) return env[v];
+  }
+  return null;
 }
 
-async function handleGetAccounts(env) {
-  const r = await fetch(`https://graph.facebook.com/${API_VERSION}/me/accounts?access_token=${env.META_ACCESS_TOKEN}&limit=100`);
-  const d = await r.json();
-  return new Response(JSON.stringify(d), { headers: { "Content-Type": "application/json" } });
+class TraceLog {
+  constructor() {
+    this.logs = ["[FLOW] === INICIO DE PROCESO === " + new Date().toISOString()];
+  }
+  add(msg) {
+    this.logs.push("[" + new Date().toLocaleTimeString('es-GT') + "] [TRACE] " + msg);
+  }
+  obj(label, o) {
+    try {
+      this.logs.push("[" + new Date().toLocaleTimeString('es-GT') + "] [DATA] " + label + ": " + JSON.stringify(o));
+    } catch (e) {
+      this.logs.push("[" + new Date().toLocaleTimeString('es-GT') + "] [DATA] " + label + ": [Circular or Non-Serializable]");
+    }
+  }
+  error(msg, err) {
+    this.logs.push("[" + new Date().toLocaleTimeString('es-GT') + "] [ERROR] " + msg + (err ? (err.message || err) : ""));
+  }
+  flush() {
+    console.log(this.logs.join("\n") + "\n[FLOW] === FIN DE PROCESO ===");
+  }
 }
 
-async function handleMetaSearch(body, env) {
-  const url = `https://graph.facebook.com/${API_VERSION}/search?type=${body.type}&q=${encodeURIComponent(body.q)}&access_token=${env.META_ACCESS_TOKEN}&limit=10`;
-  const r = await fetch(url);
-  const d = await r.json();
-  return new Response(JSON.stringify(d), { headers: { "Content-Type": "application/json" } });
+function limpiarMensaje(rawMessage) {
+  if (!rawMessage || typeof rawMessage !== "string") return "";
+  const headlineMatch = rawMessage.match(new RegExp("Headline:\\s*(.*?)(?:\\n|$)", "i"));
+  const headline = headlineMatch ? headlineMatch[1] : "";
+  let cleaned = rawMessage.replace(new RegExp("Headline:.*?\\n", "gi"), "").replace(new RegExp("Source URL:.*?\\n", "gi"), "").replace(/Message Details/gi, "").trim();
+  return (cleaned.length < 5 && headline) ? headline + " " + cleaned : cleaned;
 }
 
-async function handleOpenAIGenerate(body, env) {
+function normalizarTextoGlobal(str) {
+  if (!str) return "";
+  return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").replace(/z/g, "s").trim();
+}
+
+function normalizarEntradaAvanzada(texto) {
+  let t = normalizarTextoGlobal(texto);
+  const sinonimos = {
+    "closet": "ropero",
+    "placard": "ropero",
+    "guardarropa": "ropero",
+    "chilero": "bonito",
+    "peinador": "marquesa",
+    "tocador": "marquesa",
+    "marqueza": "marquesa",
+    "matrimonial": "matri",
+    "cosina": "cocina"
+  };
+  Object.keys(sinonimos).forEach(key => {
+    t = t.replace(new RegExp("\\b" + key + "\\b", "g"), sinonimos[key]);
+  });
+  return t;
+}
+
+function getCustomFieldValue(contact, fieldId) {
+  if (!contact || !Array.isArray(contact.customFields) || !fieldId) return null;
+  const field = contact.customFields.find(f => f.id === fieldId);
+  return field ? (field.value || field.field_value) : null;
+}
+
+async function getContactFromGHL(contactId, env, trace) {
   try {
-    const userPrompt = body.prompt || "Genera un anuncio para este producto.";
-    const kRole = ["r", "o", "l", "e"].join("");
-    const kContent = ["c", "o", "n", "t", "e", "n", "t"].join("");
-    const aiMessages = [];
+    const res = await fetch("https://services.leadconnectorhq.com/contacts/" + contactId, {
+      method: "GET",
+      headers: {
+        "Authorization": "Bearer " + env.GHL_API_KEY,
+        "Content-Type": "application/json",
+        "Version": "2021-07-28"
+      }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.contact;
+  } catch (err) {
+    return null;
+  }
+}
 
-    const sysMsg = {};
-    sysMsg[kRole] = "system";
-    sysMsg[kContent] = "Eres un experto en Copywriting para Facebook Ads. Responde siempre en formato JSON con llaves 'texto' y 'titulo'. No incluyas markdown, solo el JSON puro.";
-    aiMessages.push(sysMsg);
-
-    if (body.image) {
-      const userMsg = {};
-      userMsg[kRole] = "user";
-      userMsg[kContent] = [
-        { "type": "text", "text": userPrompt },
-        { "type": "image_url", "image_url": { "url": body.image } }
-      ];
-      aiMessages.push(userMsg);
-    } else {
-      const userMsg = {};
-      userMsg[kRole] = "user";
-      userMsg[kContent] = userPrompt;
-      aiMessages.push(userMsg);
+async function getLatestMessageAttachments(contactId, locationId, env, trace) {
+  if (trace) trace.add("Buscando conversación para contactId: " + contactId);
+  try {
+    // 1. Get conversation ID
+    const convRes = await fetch("https://services.leadconnectorhq.com/conversations/search?contactId=" + contactId + "&locationId=" + locationId, {
+      method: "GET",
+      headers: {
+        "Authorization": "Bearer " + env.GHL_API_KEY,
+        "Content-Type": "application/json",
+        "Version": "2021-04-15"
+      }
+    });
+    if (!convRes.ok) {
+      if (trace) trace.add("Error buscando conversación: " + convRes.status);
+      return [];
+    }
+    const convData = await convRes.json();
+    const conversationId = convData.conversations?.[0]?.id;
+    if (!conversationId) {
+      if (trace) trace.add("No se encontró conversación.");
+      return [];
     }
 
-    const kMsgs = ["m", "e", "s", "s", "a", "g", "e", "s"].join("");
-    const payload = {
-      "model": "gpt-4o-mini",
-      "max_tokens": 500
-    };
-    payload[kMsgs] = aiMessages;
+    // 2. Get latest message (with retry)
+    for (let i = 0; i < 2; i++) {
+      if (trace) trace.add("Buscando mensajes para conversación: " + conversationId + " (Intento " + (i + 1) + ")");
+      const msgRes = await fetch("https://services.leadconnectorhq.com/conversations/" + conversationId + "/messages?limit=1", {
+        method: "GET",
+        headers: {
+          "Authorization": "Bearer " + env.GHL_API_KEY,
+          "Content-Type": "application/json",
+          "Version": "2021-04-15"
+        }
+      });
+      if (!msgRes.ok) {
+        if (trace) trace.add("Error buscando mensajes: " + msgRes.status);
+        continue;
+      }
+      const msgData = await msgRes.json();
+      if (trace) trace.obj("Respuesta API Mensajes", msgData);
 
-    const authHeader = "Bearer " + env.OPENAI_API_KEY;
-    const openAiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+      const latestMsg = msgData.messages?.[0];
+      if (latestMsg) {
+        if (trace) trace.obj("Último mensaje de la API", latestMsg);
+        return latestMsg.attachments || [];
+      }
+
+      if (i === 0) {
+        if (trace) trace.add("No se encontraron mensajes, esperando 1s para reintentar...");
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+
+    return [];
+  } catch (err) {
+    if (trace) trace.error("Excepción en getLatestMessageAttachments: ", err);
+    return [];
+  }
+}
+
+async function saveKVState(contactId, state, env) {
+  if (!contactId || !state) return;
+  try {
+    await env.PRODUCTS_DB.put("state:" + contactId, JSON.stringify({
+      ...state,
+      updatedAt: Date.now()
+    }), {
+      expirationTtl: 3600
+    }); // 1 hour persistence
+  } catch (e) {}
+}
+
+async function setCustomFieldValue(contact, fieldId, value, env, trace, stateToUpdate = null, stateKey = null) {
+  if (trace) trace.add("Actualizando campo custom: " + fieldId + " -> " + value);
+  if (!fieldId || value === undefined || value === null) return;
+
+  // Actualizar cache local si se proporciona
+  if (stateToUpdate && stateKey) {
+    stateToUpdate[stateKey] = value;
+    await saveKVState(contact.id, stateToUpdate, env);
+  }
+
+  try {
+    const res = await fetch("https://services.leadconnectorhq.com/contacts/" + contact.id, {
+      method: "PUT",
+      headers: {
+        "Authorization": "Bearer " + env.GHL_API_KEY,
+        "Content-Type": "application/json",
+        "Version": "2021-07-28"
+      },
+      body: JSON.stringify({
+        customFields: [{
+          id: fieldId,
+          value: value,
+          field_value: value
+        }]
+      })
+    });
+    if (!res.ok && trace) trace.add("Error update field: " + res.status);
+  } catch (err) {}
+}
+
+async function addToWorkflow(contactId, workflowId, env, trace) {
+  if (trace) trace.add("Añadiendo contacto a workflow: " + workflowId);
+  try {
+    const eventStartTime = new Date().toISOString().split(".")[0] + "+00:00";
+    await fetch("https://services.leadconnectorhq.com/contacts/" + contactId + "/workflow/" + workflowId, {
       method: "POST",
       headers: {
-        "Authorization": authHeader,
-        "Content-Type": "application/json"
+        "Authorization": "Bearer " + env.GHL_API_KEY,
+        "Content-Type": "application/json",
+        "Version": "2021-07-28"
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        eventStartTime
+      })
     });
-
-    const openAiData = await openAiResponse.json();
-    if (openAiData.error) {
-      console.error("OpenAI Error:", JSON.stringify(openAiData.error));
-      return new Response(JSON.stringify({ error: openAiData.error.message || "Error de OpenAI" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-    return new Response(JSON.stringify(openAiData), {
-      headers: { "Content-Type": "application/json" }
-    });
-  } catch (e) {
-    console.error("handleOpenAIGenerate exception:", e.message);
-    return new Response(JSON.stringify({ error: e.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
+  } catch (err) {}
 }
 
-async function handleGetInsights(body, env) {
-  const accId = body.id || getAdAccId(env);
-  const url = `https://graph.facebook.com/${API_VERSION}/${accId}/insights?level=${body.level}&date_preset=${body.range}&fields=spend,clicks,impressions,reach&access_token=${env.META_ACCESS_TOKEN}`;
-  const r = await fetch(url);
-  const d = await r.json();
-  return new Response(JSON.stringify(d), { headers: { "Content-Type": "application/json" } });
-}
+async function sendMessageToGHL(contactId, text, env, trace, imagenes = [], locationId = null, conversationId = null) {
+  if (trace) trace.add("Enviando mensaje a GHL. Texto: " + (text ? text.substring(0, 50) + "..." : "N/A") + " Imágenes: " + (imagenes?.length || 0));
+  if (!text && (!imagenes || imagenes.length === 0)) return false;
+  const filtradas = (Array.isArray(imagenes) ? imagenes : [imagenes])
+    .map(img => typeof img === "string" ? img : (img?.url || img?.link || img?.link_publico || img?.imagen1 || img?.imagen2 || img?.imagen))
+    .filter(url => typeof url === "string" && url.length > 10 && url.startsWith("http"));
 
-async function handleGetActiveCampaigns(env) {
-  const accId = getAdAccId(env);
-  if (!accId) return new Response(JSON.stringify({ error: "AD_ACCOUNT_ID no configurada" }), { status: 400 });
-  const r = await fetch(`https://graph.facebook.com/${API_VERSION}/${accId}/campaigns?fields=name,status,objective,buying_type&access_token=${env.META_ACCESS_TOKEN}&limit=100`);
-  const d = await r.json();
-  return new Response(JSON.stringify(d), { headers: { "Content-Type": "application/json" } });
-}
-
-async function handleGetAdSets(body, env) {
-  const campaignId = body.campaignId;
-  const url = `https://graph.facebook.com/${API_VERSION}/${campaignId}/adsets?fields=name,status,optimization_goal,billing_event,bid_amount,daily_budget,lifetime_budget,targeting,promoted_object,destination_type&access_token=${env.META_ACCESS_TOKEN}&limit=100`;
-  const r = await fetch(url);
-  const d = await r.json();
-  return new Response(JSON.stringify(d), { headers: { "Content-Type": "application/json" } });
-}
-
-async function handleGetAds(body, env) {
-  const adsetId = body.adsetId;
-  const url = `https://graph.facebook.com/${API_VERSION}/${adsetId}/ads?fields=name,status,creative{id,name,object_story_spec,video_data,link_data}&access_token=${env.META_ACCESS_TOKEN}&limit=100`;
-  const r = await fetch(url);
-  const d = await r.json();
-  return new Response(JSON.stringify(d), { headers: { "Content-Type": "application/json" } });
-}
-
-async function handleGetCustomAudiences(env) {
-  const accId = getAdAccId(env);
-  if (!accId) return new Response(JSON.stringify({ error: "AD_ACCOUNT_ID no configurada" }), { status: 400 });
-  const url = `https://graph.facebook.com/${API_VERSION}/${accId}/customaudiences?fields=name,description,approximate_count_lower_bound&access_token=${env.META_ACCESS_TOKEN}`;
-  const r = await fetch(url);
-  const d = await r.json();
-  return new Response(JSON.stringify(d), { headers: { "Content-Type": "application/json" } });
-}
-
-async function handleGetInstagramAccounts(body, env) {
-  const pageId = body.pageId;
-  const url = `https://graph.facebook.com/${API_VERSION}/${pageId}?fields=instagram_business_account&access_token=${env.META_ACCESS_TOKEN}`;
-  const r = await fetch(url);
-  const d = await r.json();
-  return new Response(JSON.stringify(d), { headers: { "Content-Type": "application/json" } });
-}
-
-async function handleGetMessageTemplates(body, env) {
-  const pageId = body.pageId;
-  const url = `https://graph.facebook.com/${API_VERSION}/${pageId}/message_templates?access_token=${env.META_ACCESS_TOKEN}`;
-  const r = await fetch(url);
-  const d = await r.json();
-  return new Response(JSON.stringify(d), { headers: { "Content-Type": "application/json" } });
-}
-
-async function handleValidateSetup(env) {
-  const token = env.META_ACCESS_TOKEN;
-  const accId = env.AD_ACCOUNT_ID;
-  const results = {
-    token: { status: 'ok', message: 'Verificando...' },
-    account: { status: 'ok', message: 'Verificando...' },
-    permissions: []
-  };
-
-  try {
-    const pRes = await fetch(`https://graph.facebook.com/${API_VERSION}/me/permissions?access_token=${token}`);
-    const pData = await pRes.json();
-    if (pData.error) {
-      results.token = { status: 'error', message: pData.error.message };
-    } else {
-      results.permissions = pData.data || [];
-      const required = ['ads_management', 'ads_read', 'pages_manage_ads'];
-      const granted = results.permissions.filter(p => p.status === 'granted').map(p => p.permission);
-      const missing = required.filter(req => !granted.includes(req));
-
-      if (missing.length > 0) {
-        results.token = { status: 'warning', message: `Faltan permisos clave: ${missing.join(', ')}` };
-      } else {
-        results.token = { status: 'ok', message: 'Token válido con permisos de administrador.' };
-      }
-    }
-
-    const finalAccId = getAdAccId(env);
-    if (finalAccId) {
-      const aRes = await fetch(`https://graph.facebook.com/${API_VERSION}/${finalAccId}?fields=account_status,disable_reason,currency&access_token=${token}`);
-      const aData = await aRes.json();
-      if (aData.error) {
-        results.account = { status: 'error', message: aData.error.message };
-      } else {
-        const statuses = { 1: 'ACTIVA', 2: 'DESHABILITADA', 3: 'EN REVISIÓN', 7: 'PENDIENTE CIERRE', 9: 'RESTRINGIDA', 100: 'PREPAGO_VACÍO', 101: 'DEUDA' };
-        results.account = {
-          status: aData.account_status === 1 ? 'ok' : 'error',
-          message: `Cuenta ${statuses[aData.account_status] || 'ID:'+aData.account_status}. Moneda: ${aData.currency}`
-        };
-      }
-    }
-    return new Response(JSON.stringify(results), { headers: { "Content-Type": "application/json" } });
-  } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { "Content-Type": "application/json" } });
-  }
-}
-
-async function handleCheckPermissions(env) {
-  console.log("Iniciando validación de configuración completa...");
-  return await handleValidateSetup(env);
-}
-
-async function handleGetTokenInfo(env) {
-  console.log("Depurando token de acceso...");
-  const r = await fetch(`https://graph.facebook.com/debug_token?input_token=${env.META_ACCESS_TOKEN}&access_token=${env.META_ACCESS_TOKEN}`);
-  const d = await r.json();
-  console.log("Resultado debug_token:", JSON.stringify(d));
-  return new Response(JSON.stringify(d), { headers: { "Content-Type": "application/json" } });
-}
-
-async function handleUpdateStatus(body, env) {
-  const { id, status } = body;
-  const r = await fetch(`https://graph.facebook.com/${API_VERSION}/${id}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status, access_token: env.META_ACCESS_TOKEN })
-  });
-  const d = await r.json();
-  return new Response(JSON.stringify(d), { headers: { "Content-Type": "application/json" } });
-}
-
-async function handleGetFullReport(body, env) {
-  try {
-    const acc = getAdAccId(env);
-    const { start, end } = body;
-    const time_range = JSON.stringify({ since: start, until: end });
-    const token = env.META_ACCESS_TOKEN;
-
-    // We split the request into 3 flatter calls to avoid "reduce amount of data" errors from Meta
-    const campUrl = `https://graph.facebook.com/${API_VERSION}/${acc}/campaigns?fields=name,status,insights.time_range(${time_range}){spend,impressions,reach,actions}&access_token=${token}&limit=100`;
-    const asUrl = `https://graph.facebook.com/${API_VERSION}/${acc}/adsets?fields=name,status,campaign_id,insights.time_range(${time_range}){spend,impressions,reach,actions}&access_token=${token}&limit=150`;
-    const adUrl = `https://graph.facebook.com/${API_VERSION}/${acc}/ads?fields=name,status,adset_id,creative{image_url,thumbnail_url},insights.time_range(${time_range}){spend,impressions,reach,actions}&access_token=${token}&limit=300`;
-
-    const [campRes, asRes, adRes] = await Promise.all([
-      fetch(campUrl),
-      fetch(asUrl),
-      fetch(adUrl)
-    ]);
-
-    const campData = await campRes.json();
-    const asData = await asRes.json();
-    const adData = await adRes.json();
-
-    if (campData.error) throw new Error(campData.error.message);
-
-    const campaigns = campData.data || [];
-    const adsets = asData.data || [];
-    const ads = adData.data || [];
-
-    // Combine data locally
-    const integratedData = campaigns.map(camp => {
-      const campAdsets = adsets
-        .filter(as => as.campaign_id === camp.id)
-        .map(as => {
-          const asAds = ads.filter(ad => ad.adset_id === as.id);
-          return { ...as, ads: asAds };
-        });
-      return { ...camp, adsets: campAdsets };
-    });
-
-    return new Response(JSON.stringify({ data: integratedData }), { headers: { "Content-Type": "application/json" } });
-  } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { "Content-Type": "application/json" } });
-  }
-}
-
-async function handleResolveRegions(body, env) {
-  const depts = body.depts || [];
-  const token = env.META_ACCESS_TOKEN;
-  console.log(`Resolviendo ${depts.length} regiones...`);
-  const promises = depts.map(async (dept) => {
+  let success = false;
+  if (text && text.trim()) {
     try {
-      const r = await fetch(`https://graph.facebook.com/${API_VERSION}/search?type=adgeolocation&q=${encodeURIComponent(dept)}&location_types=['region']&access_token=${token}`);
-      const d = await r.json();
-      if (d.data && d.data.length > 0) {
-        const match = d.data.find(it => it.country_code === 'GT') || d.data[0];
-        console.log(`Región resuelta: ${dept} -> ${match.key}`);
-        return { key: match.key };
+      const payload = {
+        type: "WhatsApp",
+        contactId: contactId,
+        message: text,
+        text: {
+          body: text
+        },
+        direction: "outbound"
+      };
+      if (locationId) payload.locationId = locationId;
+      if (conversationId) payload.conversationId = conversationId;
+      if (trace) trace.obj("GHL Payload Texto", payload);
+      const res = await fetch("https://services.leadconnectorhq.com/conversations/messages", {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + env.GHL_API_KEY,
+          "Content-Type": "application/json",
+          "Version": "2021-04-15"
+        },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        success = true;
+        if (trace) trace.add("Mensaje de texto enviado OK.");
+      } else {
+        const errTxt = await res.text();
+        if (trace) trace.add("Error enviando texto (Status " + res.status + "): " + errTxt);
       }
-    } catch (e) {
-      console.error(`Error resolviendo región ${dept}:`, e);
+    } catch (err) {
+      if (trace) trace.error("Excepción enviando texto: ", err);
     }
-    return null;
+  }
+  for (let imgUrl of filtradas.slice(0, 5)) {
+    try {
+      await new Promise(r => setTimeout(r, 1500));
+      const payload = {
+        type: "WhatsApp",
+        contactId: contactId,
+        message: imgUrl,
+        text: {
+          body: imgUrl
+        },
+        direction: "outbound"
+      };
+      if (locationId) payload.locationId = locationId;
+      if (conversationId) payload.conversationId = conversationId;
+      await fetch("https://services.leadconnectorhq.com/conversations/messages", {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + env.GHL_API_KEY,
+          "Content-Type": "application/json",
+          "Version": "2021-04-15"
+        },
+        body: JSON.stringify(payload)
+      });
+    } catch (err) {}
+  }
+  return success;
+}
+
+async function handleMediaAttachment(attachment, env, trace) {
+  if (trace) trace.obj("Iniciando handleMediaAttachment con data", attachment);
+  let url = typeof attachment === "string" ? attachment : (attachment?.url || attachment?.link || attachment?.attachment || attachment?.location);
+
+  if (!url || typeof url !== "string" || !url.startsWith("http")) {
+    if (trace) trace.add("URL de adjunto no válida o ausente.");
+    return "";
+  }
+
+  try {
+    if (trace) trace.add("Haciendo fetch a URL de adjunto: " + url);
+    const res = await fetch(url);
+    if (trace) trace.add("Resultado fetch attachment: " + res.status + " " + res.statusText);
+    if (!res.ok) {
+      const errTxt = await res.text();
+      if (trace) trace.add("Error fetch attachment: " + errTxt);
+      return "";
+    }
+    const buffer = await res.arrayBuffer();
+    const contentType = res.headers.get("content-type") || "";
+    const ext = url.split(".").pop().toLowerCase();
+
+    if (contentType.includes("image") || ["jpg", "jpeg", "png", "webp"].includes(ext)) {
+      if (trace) trace.add("Procesando como imagen (OCR). Content-Type: " + contentType);
+      // Vision OCR - Chunked base64 conversion to avoid RangeError
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      const CHUNK_SIZE = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK_SIZE));
+      }
+      const base64 = btoa(binary);
+      if (trace) trace.add("Base64 generado (length): " + base64.length);
+
+      if (trace) trace.add("Llamando a OpenAI Vision para OCR...");
+      const ocrResp = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + (env.OPENAI_API_KEY || "MISSING")
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [{
+            role: "user",
+            content: [{
+              type: "text",
+              text: "Extrae el texto de esta imagen. Si no hay texto o es un mueble, describe brevemente qué mueble o producto ves (ej: Es un ropero de madera café)."
+            }, {
+              type: "image_url",
+              image_url: {
+                url: "data:" + contentType + ";base64," + base64
+              }
+            }]
+          }]
+        })
+      });
+      const ocrData = await ocrResp.json();
+      if (trace) trace.obj("OpenAI OCR Response", ocrData);
+      const textFound = ocrData.choices?.[0]?.message?.content || "";
+      if (trace) trace.add("Texto extraído OCR: " + textFound);
+      return textFound;
+    } else if (contentType.startsWith("audio/") || ["mp3", "wav", "m4a", "ogg", "opus"].includes(ext) || contentType.includes("octet-stream")) {
+      if (trace) trace.add("Procesando como audio (Whisper). Content-Type: " + contentType);
+      // Whisper Transcription
+      const formData = new FormData();
+      const audioBlob = new Blob([buffer], {
+        type: contentType.includes("octet-stream") ? "audio/mpeg" : contentType
+      });
+      formData.append("file", audioBlob, "audio." + (ext && ext.length < 5 ? ext : "mp3"));
+      formData.append("model", "whisper-1");
+      if (trace) trace.add("Llamando a OpenAI Whisper...");
+      const transcriptionResp = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + (env.OPENAI_API_KEY || "MISSING")
+        },
+        body: formData
+      });
+      const transData = await transcriptionResp.json();
+      if (trace) trace.obj("OpenAI Whisper Response", transData);
+      if (trace) trace.add("Texto transcrito: " + (transData.text || "N/A"));
+      return transData.text || "";
+    }
+  } catch (e) {
+    if (trace) trace.error("Error media: ", e);
+  }
+  return "";
+}
+
+async function getProductList(env, trace) {
+  try {
+    const raw = await env.PRODUCTS_DB.get("productos:listado");
+    if (!raw) return [];
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+async function triggerHandover(contactId, env, trace) {
+  if (trace) trace.add("Iniciando Handover (Traspaso a humano)");
+  try {
+    await fetch("https://services.leadconnectorhq.com/contacts/" + contactId, {
+      method: "PUT",
+      headers: {
+        "Authorization": "Bearer " + env.GHL_API_KEY,
+        "Content-Type": "application/json",
+        "Version": "2021-07-28"
+      },
+      body: JSON.stringify({
+        tags: ["humano"]
+      })
+    });
+    if (env.GHL_HANDOVER_WORKFLOW_ID) await addToWorkflow(contactId, env.GHL_HANDOVER_WORKFLOW_ID, env, trace);
+  } catch (err) {}
+}
+
+async function obtenerRespuestaCoverage(texto, env, trace) {
+  if (trace) trace.add("Buscando cobertura para: " + texto);
+  try {
+    const listadoRaw = await env.COVERAGE_DB.get("coverage:listado");
+    const listado = JSON.parse(listadoRaw || "[]");
+    const m = normalizarTextoGlobal(texto);
+    for (const item of listado) {
+      const u = normalizarTextoGlobal(item.ubicacion);
+      if (u.length > 3 && m.includes(u)) {
+        if (trace) trace.add("Cobertura encontrada para: " + u);
+        return item.respuesta;
+      }
+    }
+  } catch (e) {
+    if (trace) trace.error("Error en obtenerRespuestaCoverage: ", e);
+  }
+  return null;
+}
+
+async function analizarSiEsUbicacion(mensaje, env, trace) {
+  if (trace) trace.add("Analizando si el mensaje es una ubicación: " + mensaje);
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + env.OPENAI_API_KEY
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [{
+          role: "system",
+          content: "Eres un experto en geografía de Guatemala. El usuario te enviará un mensaje y debes determinar si contiene el nombre de un municipio o departamento de Guatemala. Responde 'SI' o 'NO' únicamente."
+        }, {
+          role: "user",
+          content: mensaje
+        }],
+        temperature: 0
+      })
+    });
+    const data = await res.json();
+    const result = data.choices[0].message.content.trim().toUpperCase();
+    if (trace) trace.add("Resultado análisis ubicación: " + result);
+    return result === "SI";
+  } catch (err) {
+    return false;
+  }
+}
+
+async function fuzzyMatchMunicipio(municipio, listaMunicipios, env, trace) {
+  const prompt = "El cliente escribió '" + municipio + "'. Los válidos son: " + listaMunicipios.join(", ") + ". ¿Cuál es el correcto? Responde SOLO el nombre o 'NULL'.";
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + env.OPENAI_API_KEY
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [{
+          role: "system",
+          content: "Responde solo con el nombre."
+        }, {
+          role: "user",
+          content: prompt
+        }],
+        temperature: 0
+      })
+    });
+    const data = await res.json();
+    return data.choices[0].message.content.trim();
+  } catch (err) {
+    return "NULL";
+  }
+}
+
+async function obtenerProductoSeguro(id, env, trace) {
+  if (trace) trace.add("Buscando producto seguro para ID: " + id);
+  if (!id) return null;
+  let rid = id.toString().trim().toUpperCase();
+  if (rid.includes(":")) rid = rid.split(":").pop();
+  const rawCombo = await env.PRODUCTS_DB.get("combo:" + rid);
+  const meta = await env.PRODUCTS_DB.get("combo_meta:" + rid, {
+    type: "json"
   });
-  const results = await Promise.all(promises);
-  return new Response(JSON.stringify({ regions: results.filter(r => r !== null) }), { headers: { "Content-Type": "application/json" } });
+  if (rawCombo || meta) {
+    if (trace) trace.add("Detectado como COMBO: " + rid);
+    let items = [];
+    let totalPiezas = 0;
+    if (rawCombo) {
+      const parts = rawCombo.split(/[\s,]+/).map(s => s.trim()).filter(s => s);
+      for (let i = 0; i < parts.length; i += 2) {
+        const cId = parts[i];
+        const qty = parseInt(parts[i + 1]) || 1;
+        const pData = await env.PRODUCTS_DB.get("individual:" + cId, {
+          type: "json"
+        });
+        if (pData) {
+          const tit = (pData.titulo || pData.nombre || "").toUpperCase();
+          if (!tit.includes("FLETE") && !cId.toUpperCase().includes("FLETE")) totalPiezas += qty;
+          items.push({
+            p: pData,
+            q: qty
+          });
+        }
+      }
+    }
+    const res = {
+      id: rid,
+      key: "combo:" + rid,
+      tipo: "combo",
+      conteo_piezas: totalPiezas,
+      titulo: meta?.titulo || ("Combo " + rid),
+      precio: meta?.precio || items.reduce((t, i) => t + ((parseFloat(i.p.precio) || 0) * i.q), 0),
+      descripcion: meta?.descripcion || "",
+      medidas: meta?.medidas || items.map(i => (i.p.titulo || i.p.nombre) + ": " + (i.p.medidas || "N/A")).filter(x => !x.endsWith(": N/A")).join("\n"),
+      estructura: meta?.estructura || items.map(i => (i.p.titulo || i.p.nombre) + ": " + (i.p.estructura || "N/A")).filter(x => !x.endsWith(": N/A")).join("\n"),
+      colores: meta?.colores || items.map(i => (i.p.titulo || i.p.nombre) + ": " + (i.p.colores || "N/A")).filter(x => !x.endsWith(": N/A")).join("\n"),
+      resistencia_peso: meta?.resistencia_peso || items.map(i => (i.p.titulo || i.p.nombre) + ": " + (i.p.resistencia_peso || "N/A")).filter(x => !x.endsWith(": N/A")).join("\n"),
+      garantia: meta?.garantia || items.map(i => (i.p.titulo || i.p.nombre) + ": " + (i.p.garantia || "N/A")).filter(x => !x.endsWith(": N/A")).join("\n"),
+      imagenes: [meta?.imagen1, meta?.imagen2, ...items.flatMap(i => [i.p.imagen1, i.p.imagen2, i.p.imagen, i.p.url, i.p.link, i.p.link_publico])].filter(img => typeof img === "string" && img.length > 10 && img.startsWith("http")),
+      ficha_combinada: items.map(i => {
+        const pre = i.q > 1 ? "(" + i.q + " Unidades) " : "";
+        return "[" + pre + (i.p.titulo || i.p.nombre) + "] - Medidas: " + (i.p.medidas || "N/A") + " - Material: " + (i.p.estructura || "N/A") + " - Colores: " + (i.p.colores || "N/A");
+      }).join("\n"),
+      ...(meta || {}),
+      items: items.map(i => i.p)
+    };
+    res.imagenes = [...new Set(res.imagenes)];
+    return res;
+  }
+  const ind = await env.PRODUCTS_DB.get("individual:" + rid, {
+    type: "json"
+  });
+  if (ind) {
+    if (trace) trace.add("Detectado como INDIVIDUAL: " + rid);
+    const basePrice = parseFloat(ind.precio) || 0;
+    const finalPrice = basePrice > 0 ? (basePrice + 200) : 0;
+    return {
+      ...ind,
+      id: rid,
+      key: "individual:" + rid,
+      tipo: "individual",
+      precio: finalPrice,
+      titulo: ind.titulo || ind.nombre,
+      imagenes: [ind.imagen1, ind.imagen2, ind.link_publico, ind.url, ind.link, ind.imagen].filter(img => typeof img === "string" && img.length > 10 && img.startsWith("http"))
+    };
+  }
+  return null;
 }
 
-async function handleUploadMedia(formData, env) {
-  const file = formData.get('file');
-  const token = env.META_ACCESS_TOKEN;
-  const acc = getAdAccId(env);
+async function buscarComboAlternativoPorTamano(currentCombo, targetSize, env, trace) {
+  if (!currentCombo || currentCombo.tipo !== "combo") return null;
+  const listado = await getProductList(env, trace);
+  const curTitle = normalizarTextoGlobal(currentCombo.titulo || "");
+  const baseParts = curTitle.replace(/\b(matri|queen|king|matrimonial)\b/g, "").split(/\s+/).filter(p => p.length > 3);
 
-  console.log(`Iniciando subida de archivo a cuenta ${acc}: ${file.name}`);
+  const bestMatch = listado.find(p => {
+    const t = normalizarTextoGlobal(p.nombre || p.titulo || "");
+    const key = (p.key || "").toLowerCase();
+    const isCombo = key.includes("combo") || t.includes("combo") || t.includes("amueblado");
+    if (!isCombo) return false;
+    const hasTargetSize = t.includes(targetSize);
+    if (!hasTargetSize) return false;
+    return baseParts.some(p => t.includes(p));
+  });
 
+  if (bestMatch) {
+    const id = bestMatch.key ? bestMatch.key.split(":").pop() : null;
+    if (id) return await obtenerProductoSeguro(id, env);
+  }
+  return null;
+}
+
+async function buscarProductoPorNombreEnMensaje(mensaje, env, trace) {
+  if (trace) trace.add("Buscando producto por nombre en mensaje...");
   try {
-    if (file.type.startsWith('image')) {
-      const ifd = new FormData();
-      ifd.append('access_token', token);
-      ifd.append('bytes', file);
-      const r = await fetch(`https://graph.facebook.com/${API_VERSION}/${acc}/adimages`, { method: 'POST', body: ifd });
-      const d = await r.json();
-      if (!d.images) {
-        console.error("Error AdImages:", JSON.stringify(d));
-        throw new Error(d.error?.message || "Fallo subida de imagen");
+    const listado = await getProductList(env, trace);
+    const m = normalizarTextoGlobal(mensaje);
+    const ignorar = ["cocina", "ropero", "cama", "mueble", "amueblado", "comedor", "sofa", "gavetero", "tocador", "cabecera", "mesita", "librera"];
+    if (m.length < 4) return null;
+    let mejorMatch = null;
+    let maxScore = 0;
+    for (const p of listado) {
+      const nombre = normalizarTextoGlobal(p.nombre || p.titulo || "");
+      if (nombre.length < 4) continue;
+      let score = 0;
+      const palabras = nombre.split(" ");
+      for (let pal of palabras) {
+        if (pal.length > 4 && !ignorar.includes(pal) && m.includes(pal)) score += pal.length;
       }
-      const imgValues = Object.values(d.images);
-      if (imgValues.length === 0) throw new Error("Meta no devolvió el hash de la imagen.");
-      const hash = imgValues[0].hash;
-      console.log(`Imagen subida: ${hash}`);
-      return new Response(JSON.stringify({ id: hash, type: 'img' }), { headers: { "Content-Type": "application/json" } });
+      if (score > maxScore && score >= 10) {
+        maxScore = score;
+        mejorMatch = p;
+      }
+    }
+    if (mejorMatch) {
+      if (trace) trace.add("Mejor match por nombre: " + (mejorMatch.nombre || mejorMatch.titulo) + " Score: " + maxScore);
+      const id = mejorMatch.key ? mejorMatch.key.split(":").pop() : null;
+      if (id) return await obtenerProductoSeguro(id, env, trace);
+    }
+  } catch (e) {
+    if (trace) trace.error("Error en buscarProductoPorNombreEnMensaje: ", e);
+  }
+  return null;
+}
+
+async function buscarProductoPorCodigoEnMensaje(mensaje, env, trace) {
+  if (trace) trace.add("Buscando producto por código en mensaje...");
+  try {
+    const listado = await getProductList(env, trace);
+    const m = mensaje.toUpperCase();
+    for (const p of listado) {
+      const idFromKey = (p.key || "").toUpperCase().split(':').pop();
+      const codigo = (p.sku || "").toUpperCase() || idFromKey;
+      if (codigo && codigo.length > 4 && m.includes(codigo)) {
+        if (trace) trace.add("Código encontrado en mensaje: " + codigo);
+        return await obtenerProductoSeguro(codigo, env, trace);
+      }
+    }
+  } catch (e) {
+    if (trace) trace.error("Error en buscarProductoPorCodigoEnMensaje: ", e);
+  }
+  return null;
+}
+
+function detectarSeleccionNatural(mensaje, lista) {
+  if (!Array.isArray(lista) || lista.length === 0) return null;
+  const m = normalizarEntradaAvanzada(mensaje);
+
+  if (lista.length === 1) {
+    const pideDetalle = /\b(interesa|interes|comprar|fotos|imagenes|colores|medidas|material|combo|llevarmelo|llevarmela)\b/i.test(m);
+    if (pideDetalle) return 0;
+  }
+
+  const matchPrecio = m.match(/\b(?:q|qt)?\s?(\d{3,5})\b/i);
+  if (matchPrecio) {
+    const precioMsg = parseInt(matchPrecio[1]);
+    const idxPrecio = lista.findIndex(p => {
+      const pProd = parseInt(p.precio?.toString().replace(/[^\d]/g, ""));
+      return pProd === precioMsg || (pProd > 0 && Math.abs(pProd - precioMsg) <= 10);
+    });
+    if (idxPrecio !== -1) return idxPrecio;
+  }
+
+  if (/\b(medida|cuanto|precio|limpia|resiste|material|fotos|imagenes|color|garantia|dimension)\b/i.test(m)) return null;
+
+  const mapa = {
+    "primero": 0, "primer": 0, "uno": 0, "la 1": 0, "el 1": 0, "segundo": 1, "dos": 1, "la 2": 1, "el 2": 1, "tercero": 2, "tres": 2, "la 3": 2, "el 3": 2, "cuarto": 3, "cuatro": 3, "la 4": 3, "el 4": 3, "ultimo": lista.length - 1
+  };
+  for (let key in mapa) {
+    if (new RegExp("\\b" + key + "\\b", "i").test(m)) return mapa[key];
+  }
+  const matchNum = /\b([1-4])\b(?!\s*(cuerpo|puerta|plaza|gaveta|cajon|c|k|q|p|mt|cm|unid|pieza))/i.exec(m);
+  if (matchNum) {
+    const idx = parseInt(matchNum[1]) - 1;
+    if (idx < lista.length) return idx;
+  }
+  const scores = lista.map((item, index) => {
+    const textoBase = normalizarTextoGlobal(item.nombre || item.titulo || "");
+    let score = 0;
+    const ignorar = ["cocina", "ropero", "cama", "mueble", "amueblado", "comedor", "sofa", "gavetero", "tocador", "cabecera", "mesita", "librera"];
+    const pesos = {
+      "arisona": 60, "frostmont": 60, "wengue": 60, "slah": 60, "estandar": 30
+    };
+    Object.keys(pesos).forEach(p => {
+      if (m.includes(p) && textoBase.includes(p)) score += pesos[p];
+    });
+    m.split(/\s+/).forEach(word => {
+      if (word.length >= 5 && !ignorar.includes(word) && textoBase.includes(word)) score += 15;
+    });
+    return {
+      index, score
+    };
+  });
+  const ganador = scores.sort((a, b) => b.score - a.score)[0];
+  return (ganador && ganador.score >= 15) ? ganador.index : null;
+}
+
+async function callVendedorElitePro(message, contact, env, productoActual, intencionCierre, coverage, esSoloSaludo = false, esPrimerMensaje = false, yaEnvioMenu = false, esNuevoProducto = false, confirmandoCat = null, pideFotos = false, trace = null) {
+  if (trace) trace.add("Llamando a OpenAI (VendedorElitePro). Producto: " + (productoActual?.titulo || "Ninguno") + " esPrimerMensaje: " + esPrimerMensaje);
+  let info = "";
+  if (productoActual) {
+    const p = productoActual;
+    const fullSpecs = "Medidas: " + (p.medidas || "N/A") + "\nMaterial: " + (p.estructura || "N/A") + "\nColores: " + (p.colores || "N/A") + "\nResistencia: " + (p.resistencia_peso || "N/A") + "\nGarantía: " + (p.garantia || "N/A");
+    if (esNuevoProducto) {
+      info = "PRODUCTO: " + p.titulo + "\nPrecio: Q" + p.precio + "\nDescripción: " + (p.descripcion || "N/A") + (p.tipo === "combo" ? "\nComponentes: " + (p.ficha_combinada || "N/A") : "") + "\n(NOTA: El resto de especificaciones técnicas están ocultas para esta primera respuesta, solo da el resumen)";
+    } else if (p.tipo === "combo") {
+      info = "PRODUCTO: " + p.titulo + " (Combo de " + p.conteo_piezas + " piezas)\nPrecio: Q" + p.precio + "\nDescripción: " + (p.descripcion || "N/A") + "\n" + fullSpecs + "\nComponentes del combo:\n" + p.ficha_combinada;
     } else {
-      const vfd = new FormData();
-      vfd.append('access_token', token);
-      vfd.append('source', file);
-      const r = await fetch(`https://graph.facebook.com/${API_VERSION}/${acc}/advideos`, { method: 'POST', body: vfd });
-      const d = await r.json();
-      if (!d.id) {
-        console.error("Error AdVideos:", JSON.stringify(d));
-        throw new Error(d.error?.message || "Fallo subida de video");
-      }
-      console.log(`Video subido: ${d.id}`);
-      return new Response(JSON.stringify({ id: d.id, type: 'vid' }), { headers: { "Content-Type": "application/json" } });
+      info = "PRODUCTO: " + p.titulo + "\nPrecio: Q" + p.precio + "\nDescripción: " + (p.descripcion || "N/A") + "\n" + fullSpecs;
     }
-  } catch (e) {
-    console.error("Error fatal en handleUploadMedia:", e.message);
-    return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { "Content-Type": "application/json" } });
+  }
+  const mostrarMenu = !!productoActual && !esSoloSaludo && (!yaEnvioMenu || esNuevoProducto);
+  const instruccionSaludo = esPrimerMensaje ? "Saluda amablemente al inicio." : "ESTÁ PROHIBIDO SALUDAR. Ve directo al punto.";
+
+  let reglas = [
+    "1. BREVEDAD: Máximo 2 oraciones normalmente. Evita saltos de línea excesivos.",
+    "2. LISTAS: Usa viñetas atractivas (ej: ✨ o 📍) para características y componentes.",
+    "3. NATURALIDAD: PROHIBIDO usar etiquetas como 'Producto:', 'Resumen:', 'Estado:', o '¡Invita a comprar!'. Escribe como un humano en un chat. Usa negritas con un solo asterisco (ej: *texto*) para resaltar nombres y precios.",
+    "4. PRESENTACIÓN: Si esNuevoProducto es TRUE, DEBES resumir la 'Descripción' y mencionar brevemente los 'Componentes' usando una lista atractiva. PROHIBIDO dar Medidas, Material, Colores, Resistencia o Garantía en este primer mensaje a menos que el cliente ya haya preguntado.",
+    "5. COMBOS: Si el cliente pide Medidas, Colores o Materiales de un COMBO, debes revisar la información de cada componente en los DATOS PRODUCTO y dar una respuesta detallada para cada uno.",
+    "6. SOLO LO SOLICITADO: No divagues. Si el cliente pide algo técnico (medidas, materiales), búscalo en DATOS PRODUCTO y dalo de inmediato. NO respondas únicamente con el menú de ayuda.",
+    "7. AYUDA: " + (mostrarMenu ? "Al final añade una frase amable indicando que puedes informar sobre: Medidas, Colores, Materiales, Precios, Envío y Cuotas. DEBES poner un doble salto de línea antes de esta frase." : "NO añadas temas de ayuda."),
+    "8. COMPRA: " + (pideFotos ? "Después de la ayuda, añade una invitación para comprar solicitando estos datos en listado vertical:\n- Nombre\n- DPI\n- Dirección\n- Teléfono" : ""),
+    "9. EMOJIS: Máximo uno (fuera de las listas).",
+    "10. CIERRE: NUNCA pidas datos si el cliente tiene dudas. Responde primero la duda.",
+    "11. SALUDO: " + instruccionSaludo + " (Incluso evita '¡Hola!', 'Buen día', etc. si no es el primer mensaje).",
+    "12. REDUNDANCIA: No repitas la misma frase exacta si el cliente insiste. Si ya diste una información (como el color) y vuelven a preguntar, confirma que es el único disponible o amplía con detalles de la descripción.",
+    "13. ESTRUCTURA: Si el cliente pregunta sobre temas estructurales (ej: 'se desarma', 'es colgante', 'se dobla', 'empotra', 'pared', 'madera tipo') y la información NO ESTÁ en los DATOS PRODUCTO, DEBES responder exactamente '[TRANSFERIR]'.",
+    "13. PAGOS: Aceptamos hasta 18 Visa Cuotas SIN RECARGO. Otros métodos: Tarjetas Débito/Crédito, Pago Contra Entrega y Depósito. NO tenemos crédito propio, solo Visa Cuotas.",
+    "14. TIENDAS: \n- Petapa: AV Petapa 41-25 zona 12 Guatemala, frente del IRTRA. Tel: 5253 5965. Ubicación: https://maps.app.goo.gl/UbDQxjRqruWjhdXW9\n- Xenacoj: KM 40 zona 0 lote 91 carretera a Santo Domingo Xenacoj. Tel: 5253 3898. Ubicación: https://maps.app.goo.gl/4u9FqSDemcFy3zkv7",
+    "15. COLCHÓN: Si el cliente menciona la palabra 'colchón' o pregunta por sus materiales, DEBES incluir esta información: 'es de fibra de algodón con polipropileno, que brinda una buena firmeza, resistencia y acolchonamiento'."
+  ];
+  if (confirmandoCat) {
+    reglas.push("16. CONFIRMACIÓN: Cliente mencionó '" + confirmandoCat + "'. Pregunta si desea ver esa categoría o seguir con " + (productoActual ? productoActual.titulo : "lo actual") + ".");
+  }
+  const prompt = "Eres un asesor de ventas amable de La Mueblería. REGLAS:\n" + reglas.join("\n") + "\n\nDATOS PRODUCTO:\n" + info + "\n\nMensaje cliente: " + message;
+  try {
+    if (trace) trace.add("Prompt enviado a OpenAI (resumen): " + prompt.substring(0, 100) + "...");
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + env.OPENAI_API_KEY
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [{
+          role: "system",
+          content: "Asesor de chat. Habla natural. Sin etiquetas estructuradas. Si no sabes algo estructural, di [TRANSFERIR]."
+        }, {
+          role: "user",
+          content: prompt
+        }],
+        temperature: 0.1
+      })
+    });
+    const data = await res.json();
+    if (trace) trace.obj("OpenAI Vendedor Response", data);
+    let content = data.choices[0].message.content;
+    if (!mostrarMenu) {
+      // More precise removal of the help line, limiting to one line to avoid deleting specs
+      // We look for the line that contains the keywords and remove only that line.
+      const lines = content.split("\n");
+      const filteredLines = lines.filter(line => {
+          const isHelpLine = /(?:informar sobre|ayudarte con|detalles sobre|puedo darle|puedo informarle).*(?:Medidas|Colores|Materiales|Precios|Envío|Cuotas)/gi.test(line);
+          return !isHelpLine;
+      });
+      content = filteredLines.join("\n").trim();
+      if (!content && data.choices[0].message.content) {
+          // Fallback safety: if filtering removed everything but there was an original message,
+          // it means the AI only gave the help menu. We keep the original in that case to avoid silence.
+          content = data.choices[0].message.content.trim();
+      }
+    }
+    return content;
+  } catch (err) {
+    return "Con gusto le ayudo.";
   }
 }
 
-async function handleCreateAdvancedAd(body, env) {
-  const config = body.config;
-  const token = env.META_ACCESS_TOKEN;
-  const acc = getAdAccId(env);
+async function moduloCatalogo(message, contact, env, trace, forcingCat = null) {
+  if (trace) trace.add("Entrando a moduloCatalogo. ForcingCat: " + forcingCat);
+  const m = forcingCat || normalizarEntradaAvanzada(message);
+  const listado = await getProductList(env, trace);
+  const categorias = ["cama", "cocina", "ropero", "sofa", "comedor", "gavetero", "tocador", "cabecera", "mesita", "librera", "mesa", "trinchante", "platera", "mueble", "amueblado"];
+  const fUltimaCat = getFieldId(env, "ultima_categoria");
+  const fFiltroTamano = getFieldId(env, "filtro_tamano");
+  const fOffset = getFieldId(env, "catalogo_offset");
 
-  console.log(`[Worker] Iniciando publicación en cuenta: ${acc}`);
+  let catFound = categorias.find(c => m.includes(c));
+  let cat = catFound || getCustomFieldValue(contact, fUltimaCat) || "muebles";
+  let tamano = getCustomFieldValue(contact, fFiltroTamano);
 
-  // Audit permissions again in logs
-  try {
-    const pRes = await fetch(`https://graph.facebook.com/${API_VERSION}/me/permissions?access_token=${token}`);
-    const pData = await pRes.json();
-    console.log(`[Worker] Permisos detectados: ${JSON.stringify(pData.data)}`);
-  } catch(e) { console.error("[Worker] Error verificando permisos internos:", e.message); }
-
-  try {
-    let mediaId = config.mediaId;
-    let mediaType = config.mediaType;
-
-    let campaignId = config.campaignId;
-    if (campaignId === "NEW") {
-      console.log(`[Worker] Creando campaña: ${config.campaignName}`);
-      const cr = await fetch(`https://graph.facebook.com/${API_VERSION}/${acc}/campaigns`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: config.campaignName,
-          objective: config.objective,
-          buying_type: 'AUCTION',
-          status: config.status,
-          special_ad_categories: ['NONE'],
-          access_token: token
-        })
-      });
-      const cd = await cr.json();
-      if (!cd.id) throw new Error("Error creando campaña: " + (cd.error?.message || JSON.stringify(cd)));
-      campaignId = cd.id;
-      console.log(`Campaña creada: ${campaignId}`);
-    }
-
-    let adSetId = config.adSetId;
-    if (adSetId === "NEW") {
-      console.log(`[Worker] Creando AdSet: ${config.adSetName}`);
-      const destinations = [];
-      if(config.messagingDestinations.messenger) destinations.push('MESSENGER');
-      if(config.messagingDestinations.instagram) destinations.push('INSTAGRAM_DIRECT');
-      if(config.messagingDestinations.whatsapp) destinations.push('WHATSAPP_MESSAGE');
-
-      const asb = {
-        name: config.adSetName,
-        campaign_id: campaignId,
-        optimization_goal: 'CONVERSATIONS',
-        billing_event: 'IMPRESSIONS',
-        daily_budget: config.budgetAmount * 100,
-        destination_type: destinations,
-        promoted_object: { page_id: config.pageId },
-        targeting: {
-          geo_locations: { countries: ['GT'] },
-          age_min: parseInt(config.manualAudience.ageMin) || 18,
-          publisher_platforms: Object.keys(config.platforms).filter(p => config.platforms[p])
-        },
-        status: config.status,
-        access_token: token
-      };
-
-      if (config.startDate) {
-        // Meta API expects ISO 8601 or YYYY-MM-DD format with time, or it might fail if just date is given
-        // Let's ensure it has a time if it looks like just a date
-        asb.start_time = config.startDate.includes('T') ? config.startDate : config.startDate + 'T00:00:00-0600';
-      }
-
-      if (config.resolvedRegions && config.resolvedRegions.length > 0) {
-        asb.targeting.geo_locations.regions = config.resolvedRegions;
-        delete asb.targeting.geo_locations.countries;
-      }
-
-      if(config.audienceId) asb.targeting.custom_audiences = [{id: config.audienceId}];
-
-      const asr = await fetch(`https://graph.facebook.com/${API_VERSION}/${acc}/adsets`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(asb)
-      });
-      const asrd = await asr.json();
-      if (!asrd.id) throw new Error("Error creando conjunto: " + (asrd.error?.message || JSON.stringify(asrd)));
-      adSetId = asrd.id;
-      console.log(`Conjunto creado: ${adSetId}`);
-    }
-
-    let creativeId;
-
-    // If editing and no new media, fetch existing creative details
-    let existingMediaId = null;
-    let existingMediaType = null;
-    if (config.adId !== "NEW" && !mediaId) {
-      const adr = await fetch(`https://graph.facebook.com/${API_VERSION}/${config.adId}?fields=creative{id,object_story_spec}&access_token=${token}`);
-      const adrd = await adr.json();
-      const spec = adrd.creative?.object_story_spec;
-      if (spec) {
-        if (spec.link_data) {
-          existingMediaId = spec.link_data.image_hash;
-          existingMediaType = 'img';
-        } else if (spec.video_data) {
-          existingMediaId = spec.video_data.video_id;
-          existingMediaType = 'vid';
-        }
-      }
-    }
-
-    const finalMediaId = mediaId || existingMediaId;
-    const finalMediaType = mediaType || existingMediaType;
-
-    if (finalMediaId) {
-      console.log(`Configurando AdCreative con Media ${finalMediaId}...`);
-      const finalMsg = `${config.primaryText}\n\n${FIXED_TEXT}`;
-      const cb = {
-        name: config.adName + " " + Date.now(),
-        object_story_spec: {
-          page_id: config.pageId,
-          instagram_actor_id: config.instagramId || undefined
-        },
-        access_token: token
-      };
-
-      if (finalMediaType === 'img') {
-        cb.object_story_spec.link_data = {
-          image_hash: finalMediaId,
-          message: finalMsg,
-          name: config.headline,
-          call_to_action: { type: 'MESSAGE_PAGE' },
-          // Link is mandatory for link_data, even if sending to a page
-          link: "https://facebook.com/" + config.pageId
-        };
-      } else if (finalMediaType === 'vid') {
-        cb.object_story_spec.video_data = {
-          video_id: finalMediaId,
-          message: finalMsg,
-          call_to_action: {
-            type: 'MESSAGE_PAGE',
-            value: { link: "https://facebook.com/" + config.pageId }
-          }
-        };
-      }
-
-      // Message Template Creation
-      if (config.templateId === 'NEW' && config.newTemplate.text) {
-        console.log("Creando nueva plantilla de mensaje...");
-        const templateData = {
-          message_text: config.newTemplate.text,
-          suggestions: config.newTemplate.response ? [{
-            type: "TEXT",
-            text: config.newTemplate.response,
-            payload: "SUGGESTED_RESPONSE"
-          }] : []
-        };
-
-        const tplRes = await fetch(`https://graph.facebook.com/${API_VERSION}/${config.pageId}/message_templates`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: "Template_" + Date.now(),
-            library_template_name: "greeting",
-            template_type: "ICE_BREAKERS",
-            data: templateData,
-            access_token: token
-          })
-        });
-        const tplData = await tplRes.json();
-        if (tplData.id) {
-          console.log(`Plantilla creada: ${tplData.id}`);
-          if (finalMediaType === 'img') {
-            cb.object_story_spec.link_data.message_template_id = tplData.id;
-          } else if (finalMediaType === 'vid') {
-            cb.object_story_spec.video_data.message_template_id = tplData.id;
-          }
-        } else {
-          console.warn("Error creando plantilla:", tplData);
-        }
-      } else if (config.templateId && config.templateId !== 'NEW') {
-        if (finalMediaType === 'img') {
-          cb.object_story_spec.link_data.message_template_id = config.templateId;
-        } else if (finalMediaType === 'vid') {
-          cb.object_story_spec.video_data.message_template_id = config.templateId;
-        }
-      }
-
-      console.log("Registrando AdCreative en Meta...");
-      const ctr = await fetch(`https://graph.facebook.com/${API_VERSION}/${acc}/adcreatives`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cb)
-      });
-      const ctrd = await ctr.json();
-      if (!ctrd.id) throw new Error("Error creando creativo: " + (ctrd.error?.message || JSON.stringify(ctrd)));
-      creativeId = ctrd.id;
-      console.log(`AdCreative creado: ${creativeId}`);
-    }
-
-    if (config.adId !== "NEW") {
-      console.log(`[Worker] Actualizando Anuncio existente: ${config.adId}`);
-      const adr = await fetch(`https://graph.facebook.com/${API_VERSION}/${config.adId}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: config.adName,
-          creative: creativeId ? { creative_id: creativeId } : undefined,
-          status: config.status || 'PAUSED',
-          access_token: token
-        })
-      });
-      const res = await adr.json();
-      if (res.error) {
-        console.error("Error Meta Ads (Update):", JSON.stringify(res.error));
-        throw new Error("Error actualizando anuncio: " + (res.error.message || JSON.stringify(res.error)));
-      }
-      console.log(`Anuncio actualizado: ${config.adId}`);
-      return new Response(JSON.stringify({ success: true, adId: config.adId }), { headers: { "Content-Type": "application/json" } });
-    } else if (creativeId) {
-      console.log("Creando el anuncio final...");
-      const adr = await fetch(`https://graph.facebook.com/${API_VERSION}/${acc}/ads`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: config.adName,
-          adset_id: adSetId,
-          creative: { creative_id: creativeId },
-          status: config.status || 'PAUSED',
-          // Note: multi_advertiser_ads_enabled is often inside creative spec or handled automatically in v19+
-          // Placing it here for compatibility as an ad-level spec if supported
-          degrees_of_freedom_spec: { multi_advertiser_ads_enabled: true },
-          access_token: token
-        })
-      });
-      const res = await adr.json();
-      if (!res.id) {
-        console.error("Error Meta Ads (Create):", JSON.stringify(res.error));
-        throw new Error("Error creando anuncio: " + (res.error?.message || JSON.stringify(res.error)));
-      }
-      console.log(`Anuncio publicado exitosamente: ${res.id}`);
-      return new Response(JSON.stringify({ success: true, adId: res.id }), { headers: { "Content-Type": "application/json" } });
-    }
-    return new Response(JSON.stringify({ success: false, error: "No se pudo generar el creativo (mediaId faltante)" }), { status: 400 });
-  } catch (e) {
-    console.error("Error fatal en handleCreateAdvancedAd:", e);
-    return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500 });
+  const mTamano = m.match(/\b(mediano|mediana|medianos|medianas|grande|grandes|pequeño|pequeña|pequeños|pequeñas|chico|chica|chicos|chicas|enorme|enormes|gigante|gigantes|estandar|media|grando|grandos|amplio|amplios|espacioso|espaciosos)\b/i);
+  if (mTamano) {
+    const matched = mTamano[1].toLowerCase();
+    const isMed = /median|peque|chico|chica|estandar|media/.test(matched);
+    tamano = isMed ? "mediano" : "grande";
+    await setCustomFieldValue(contact, fFiltroTamano, tamano, env, trace);
   }
+  if (catFound) await setCustomFieldValue(contact, fUltimaCat, cat, env, trace);
+
+  const esPreCatalogo = /\b(mueble|muebles|amueblado|amueblados|enseres|articulos|modelos|opciones)\b/i.test(m);
+  if (!catFound && esPreCatalogo) {
+      if (trace) trace.add("Pre-catálogo disparado: Término general detectado.");
+      return { text: "¡Con gusto le ayudo! Contamos con gran variedad de muebles para su hogar. 🏠\n\n¿Busca opciones de *CAMAS*, *COCINAS* o *ROPEROS*? 😉" };
+  }
+
+  if (!cat || cat === "muebles") {
+      return { text: "Bienvenido. ¿En qué puedo ayudarle hoy? Contamos con variedad de:\n\n✨ CAMAS\n✨ COCINAS\n✨ ROPEROS\n✨ SALAS\n✨ COMEDORES\n✨ GAVETEROS\n\n¿Cuál le gustaría conocer? 😉" };
+  }
+
+  if (!tamano) {
+    const genero = /cama|cocina|sala|mesa/.test(cat) ? "a" : "o";
+    const displaySize = genero === "a" ? "mediana" : "mediano";
+    return {
+      text: "¿Busca opciones de " + cat.toUpperCase() + " en tamaño " + displaySize + " o grande? 😉"
+    };
+  }
+
+  // Filtrado Base (Combos)
+  const filteredList = (cat === "muebles") ? listado : listado.filter(p => normalizarTextoGlobal(p.nombre || p.titulo).includes(cat));
+  const combos = filteredList.filter(p => {
+    const k = (p.key || "").toLowerCase();
+    const n = (p.nombre || p.titulo || "").toLowerCase();
+    return k.includes("combo") || n.includes("combo") || n.includes("amueblado");
+  });
+
+  let resultados = [];
+  if (tamano === "mediano") {
+    if (cat === "cama") resultados = combos.filter(p => {
+      const n = normalizarTextoGlobal(p.nombre || p.titulo);
+      return n.includes("matri") || n.includes("queen");
+    });
+    else if (cat === "ropero" || cat === "cocina") resultados = combos.filter(p => (parseFloat(p.precio) || 0) <= 3499);
+    else resultados = combos.filter(p => (parseFloat(p.precio) || 0) <= 5000);
+  } else if (tamano === "grande") {
+    if (cat === "cama") resultados = combos.filter(p => normalizarTextoGlobal(p.nombre || p.titulo).includes("king"));
+    else if (cat === "ropero" || cat === "cocina") resultados = combos.filter(p => (parseFloat(p.precio) || 0) >= 3500);
+    else resultados = combos.filter(p => (parseFloat(p.precio) || 0) > 5000);
+  }
+
+  // Filtrado por Keywords adicionales (Especificaciones)
+  const mNorm = normalizarTextoGlobal(message);
+  const stopWords = ["combo", "combos", "opciones", "otros", "otras", "promociones", "promocion", "catálogo", "muestreme", "mostrame", "ver", "mas", "quiero", "gustaria", "tiene"];
+  const specs = mNorm.split(/\s+/).filter(word => word.length >= 4 && !stopWords.includes(word) && !categorias.includes(word) && !/mediano|mediana|medianos|medianas|grande|grandes|pequeño|pequeña|pequeños|pequeñas|chico|chica|chicos|chicas|enorme|enormes|gigante|gigantes|estandar|media|grando|grandos|amplio|amplios|espacioso|espaciosos/.test(word));
+
+  if (specs.length > 0) {
+      const refinados = resultados.filter(p => {
+          const t = normalizarTextoGlobal((p.nombre || p.titulo || "") + " " + (p.sku || "") + " " + (p.key || ""));
+          return specs.some(s => t.includes(s));
+      });
+      if (refinados.length > 0) resultados = refinados;
+  }
+
+  // Paginación (Offset)
+  let offset = parseInt(getCustomFieldValue(contact, fOffset)) || 0;
+  if (mNorm.includes("otro") || mNorm.includes("variedad") || mNorm.includes("mas")) {
+      offset += 4;
+      if (offset >= resultados.length) offset = 0;
+  } else {
+      offset = 0;
+  }
+  await setCustomFieldValue(contact, fOffset, offset.toString(), env, trace);
+
+  let preMsg = "";
+  if (resultados.length === 0 && tamano) {
+    preMsg = "Por el momento no tengo opciones de " + cat.toUpperCase() + " con esas características, pero aquí tiene lo que tenemos disponible:\n\n";
+    resultados = combos;
+    offset = 0;
+  }
+
+  let finalResultados = resultados.slice(offset, offset + 4);
+
+  // V7.3: Si hay pocas opciones (menos de 4) tras filtrar por tamaño, rellenar con el tamaño alternativo
+  if (tamano && finalResultados.length < 4) {
+      if (trace) trace.add("Pocos resultados para tamaño " + tamano + " (" + finalResultados.length + "). Rellenando...");
+      const altTamano = tamano === "mediano" ? "grande" : "mediano";
+      let altResultados = [];
+      if (altTamano === "mediano") {
+        if (cat === "cama") altResultados = combos.filter(p => {
+          const n = normalizarTextoGlobal(p.nombre || p.titulo);
+          return n.includes("matri") || n.includes("queen");
+        });
+        else if (cat === "ropero" || cat === "cocina") altResultados = combos.filter(p => (parseFloat(p.precio) || 0) <= 3499);
+        else altResultados = combos.filter(p => (parseFloat(p.precio) || 0) <= 5000);
+      } else {
+        if (cat === "cama") altResultados = combos.filter(p => normalizarTextoGlobal(p.nombre || p.titulo).includes("king"));
+        else if (cat === "ropero" || cat === "cocina") altResultados = combos.filter(p => (parseFloat(p.precio) || 0) >= 3500);
+        else altResultados = combos.filter(p => (parseFloat(p.precio) || 0) > 5000);
+      }
+
+      for (let p of altResultados) {
+          if (finalResultados.length >= 4) break;
+          if (!finalResultados.find(r => r.key === p.key)) {
+              finalResultados.push(p);
+          }
+      }
+  }
+
+  if (finalResultados.length === 0) {
+    return {
+      text: "No encontré opciones de " + cat.toUpperCase() + " en este momento. Un asesor le ayudará pronto. 😉",
+      handover: true
+    };
+  }
+
+  const paraGuardar = finalResultados.map(p => ({
+    key: p.key,
+    nombre: p.nombre || p.titulo,
+    precio: p.precio
+  }));
+  await setCustomFieldValue(contact, getFieldId(env, "carrito_json"), JSON.stringify(paraGuardar), env, trace);
+  await setCustomFieldValue(contact, getFieldId(env, "carrito"), paraGuardar.map(p => p.nombre).join(", "), env, trace);
+  await setCustomFieldValue(contact, fFiltroTamano, null, env, trace);
+
+  let resp = preMsg || ("Aquí tiene opciones de *" + cat.toUpperCase() + (tamano ? " " + tamano.toUpperCase() : "") + "S* disponibles:\n\n");
+  finalResultados.forEach((p, i) => {
+    resp += "📍 *" + (i + 1) + ". " + (p.nombre || p.titulo).toUpperCase() + "*\n";
+    resp += "💰 *Precio: Q" + p.precio + "*\n\n";
+  });
+  resp += "¿Cuál le gustaría conocer a detalle? 😉";
+  return {
+    text: resp
+  };
 }
 
-// --- INTERFAZ VISUAL ---
+async function processFullFlow(rawMsg, contactId, contact, env, trace, conversationId = null) {
+  if (trace) {
+    trace.add("--- INICIO ROUTER ---");
+    trace.obj("Mensaje Consolidado", rawMsg);
+    trace.obj("Contacto GHL", { id: contact.id, tags: contact.tags, assignedTo: contact.assignedTo });
+  }
 
-function generateHTML(env) {
-  const meta_token = env.META_ACCESS_TOKEN || "";
-  const openai_key = env.OPENAI_API_KEY || "";
-  const ad_acc_id = env.AD_ACCOUNT_ID || "";
+  try {
+    const message = limpiarMensaje(rawMsg);
+    const norm = normalizarTextoGlobal(message);
+    const metaMatch = rawMsg.match(/\b(B[A-Z0-9]{5,})\b/i);
 
-  let html = `<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <title>Meta Expert</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    .active-tab { background: #1e293b; color: #60a5fa; border-right: 4px solid #3b82f6; }
-    .card { background: white; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05); padding: 1.5rem; }
-    .loader-spin { width: 24px; height: 24px; border: 3px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .step-num { position: absolute; left: -1rem; top: 1.5rem; width: 2rem; height: 2rem; background: #2563eb; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 2px solid white; z-index: 10; }
-  </style>
-</head>
-<body class="bg-slate-50 flex h-screen overflow-hidden font-sans relative">
-  <!-- Mobile Overlay -->
-  <div id="side-overlay" onclick="toggleSidebar()" class="fixed inset-0 bg-black/50 z-40 hidden lg:hidden transition-opacity"></div>
+    // Detecciones de Intención
+    let pideFotos = /fotos?|imagenes?|verlo|verla|mostrar|enviame|fts/i.test(message);
+    const pideCompra = /\b(quiero comprar|lo quiero|la quiero|comprarlo|comprarla|pedido|ordenar|pagar|cuota|visa|deposito|transferencia|efectivo)\b/i.test(norm);
+    const pideInformacion = /(medida|dimension|precio|vale|cuesta|costo|material|color|cuota|detalle|fotos|garantia|resiste|pago|visa|cuotas|tarjeta|deposito|transferencia|efectivo|toda la info|todos los datos)/i.test(norm);
+    const pideCatalogo = /catalogo|modelos|opciones|variedad|otros|ver mas|muestreme|mostrame|oferta|venden|vende|que mas|muebles|amueblado|amueblados/i.test(norm);
+    const pideCobertura = /\b(ubicacion|lugar|donde|entrega|envio|cobertura|mandan|reparten|llegan|estan|direccion|tienda|fisica|puntos)\b/i.test(norm);
+    const pideGarantia = /\b(compre|adquiri|garantia|rompio|arruino|dañado|malo|reclamo|fallo)\b/i.test(norm);
+    const pideSoloParte = /\b(solo|solamente|separado|aparte|sin el|sin la|solo la|solo el|venden solo|por separado|incluye solo)\b/i.test(norm);
+    const esAfirmacionGenerica = /^(ok|vale|esta bien|muy bien|si gracias|de acuerdo|perfecto|entendido|así es|si|sii|por favor|porfavor|claro|envia|mandame|ofertas|oferta|si porfavor|si por favor|si claro)$/i.test(norm.trim());
+    const esSoloSaludo = /^(hola|buen|buena|buenas|tarde|dia|dias|noche|noches|\s)+$/i.test(norm.trim());
+    const esConsultaTecnicaRara = /\b(colgante|desarmar|desarma|doblar|dobla|empotra|pared|techo|tornillo|instala|clavo|madera tipo)\b/i.test(norm);
+    const pideInstalacion = norm.includes("instalacion") || norm.includes("instala");
+    const pideVagaMejora = /\b(mas grande|mas pequeña|mas cara|barata|barato|economico)\b/i.test(norm);
+    const pideCambioCama = /\b(matri|matrimonial|king|queen)\b/i.test(norm);
 
-  <nav id="sidebar" class="fixed lg:static inset-y-0 left-0 w-64 bg-[#0f172a] text-white flex flex-col justify-between py-8 shrink-0 z-50 shadow-xl transition-transform -translate-x-full lg:translate-x-0">
-    <div>
-      <div class="px-8 mb-12 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-black">M</div>
-          <h1 class="text-xl font-black tracking-tighter uppercase">Meta Expert</h1>
-        </div>
-        <button onclick="toggleSidebar()" class="lg:hidden p-1 hover:bg-slate-800 rounded">
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-        </button>
-      </div>
-      <div class="space-y-1">
-        <button id="nav-dash" onclick="tab('dash')" class="w-full px-8 py-3 flex items-center gap-3 text-slate-400 hover:bg-slate-800 transition">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"/></svg> Reportes
-        </button>
-        <button id="nav-create" onclick="tab('create')" class="w-full px-8 py-3 flex items-center gap-3 active-tab transition">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg> Crear Anuncio
-        </button>
-        <button id="nav-config" onclick="tab('config')" class="w-full px-8 py-3 flex items-center gap-3 text-slate-400 hover:bg-slate-800 transition">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924-1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg> API Config
-        </button>
-      </div>
-    </div>
-    <div class="px-8 text-[10px] uppercase tracking-widest text-slate-500 font-bold">Cloudflare Worker Edition</div>
-  </nav>
+    const categorias = ["cama", "ropero", "cocina", "mueble", "amueblado", "comedor", "mesa", "gavetero", "tocador", "trinchante", "platera", "marquesa", "cabecera", "mesita", "librera"];
+    const catMencionada = categorias.find(c => norm.includes(c));
 
-  <main class="flex-1 flex flex-col overflow-hidden relative z-10">
-    <!-- Mobile Header -->
-    <header class="lg:hidden bg-[#0f172a] text-white p-4 flex items-center justify-between shadow-lg">
-      <div class="flex items-center gap-3">
-        <button onclick="toggleSidebar()" class="p-2 hover:bg-slate-800 rounded-lg">
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"/></svg>
-        </button>
-        <span class="font-black uppercase tracking-tighter text-sm">Meta Expert</span>
-      </div>
-      <div id="mobile-tab-title" class="text-[10px] font-bold text-blue-400 uppercase">Crear Anuncio</div>
-    </header>
-
-    <!-- TAB CREAR -->
-    <div id="tab-create" class="flex-1 flex flex-col lg:flex-row overflow-hidden p-4 lg:p-8 gap-4 lg:gap-8">
-      <div class="flex-1 overflow-y-auto space-y-6 pb-20 px-4">
-        <div class="card relative">
-          <div class="step-num">1</div>
-          <h2 class="text-sm font-black uppercase tracking-widest text-slate-800 mb-6">Campaña</h2>
-          <div class="space-y-4">
-            <div>
-              <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Seleccionar Campaña</label>
-              <select id="sel-camp" onfocus="if(this.options.length <= 1) fetchActiveCampaigns()" onchange="loadAdSets(this.value)" class="w-full bg-slate-50 border rounded-lg p-3 text-sm font-bold text-slate-700">
-                <option value="NEW">+ Crear Nueva Campaña</option>
-              </select>
-            </div>
-            <div id="camp-new-config" class="space-y-4">
-              <input type="text" id="cn" placeholder="Nombre de la Nueva Campaña..." class="w-full bg-slate-50 border rounded-lg p-3 outline-none text-lg focus:ring-2 ring-blue-500 font-medium text-slate-700">
-              <div class="grid grid-cols-2 gap-4">
-                <div>
-                  <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Objetivo</label>
-                  <select id="ob" class="w-full bg-slate-50 border rounded-lg p-3 outline-none font-bold text-slate-600 cursor-pointer">
-                    <option value="OUTCOME_ENGAGEMENT">Interacción</option>
-                    <option value="OUTCOME_SALES">Ventas</option>
-                  </select>
-                </div>
-                <div>
-                  <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Tipo de Compra</label>
-                  <input type="text" value="Subasta" readonly class="w-full bg-slate-100 border rounded-lg p-3 text-sm font-bold text-slate-500">
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="card relative">
-          <div class="step-num">2</div>
-          <h2 class="text-sm font-black uppercase tracking-widest text-slate-800 mb-6">Conjunto de Anuncios</h2>
-          <div class="space-y-4">
-            <div>
-              <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Seleccionar Conjunto</label>
-              <select id="sel-adset" onfocus="if(this.options.length <= 1 && document.getElementById('sel-camp').value !== 'NEW') loadAdSets(document.getElementById('sel-camp').value)" onchange="loadAds(this.value)" class="w-full bg-slate-50 border rounded-lg p-3 text-sm font-bold text-slate-700">
-                <option value="NEW">+ Crear Nuevo Conjunto</option>
-              </select>
-            </div>
-            <div id="adset-new-config" class="space-y-4">
-              <input type="text" id="asn" placeholder="Nombre del Nuevo Conjunto..." class="w-full bg-slate-50 border rounded-lg p-3 outline-none text-sm font-bold text-slate-700">
-
-              <div class="grid grid-cols-2 gap-4">
-                <div>
-                  <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Estrategia Ciclo de Vida</label>
-                  <input type="text" value="Captar nuevos clientes" readonly class="w-full bg-slate-100 border rounded-lg p-3 text-sm font-bold text-slate-500">
-                </div>
-                <div>
-                  <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Ubicación Conversión</label>
-                  <input type="text" value="Destinos mensajes" readonly class="w-full bg-slate-100 border rounded-lg p-3 text-sm font-bold text-slate-500">
-                </div>
-              </div>
-
-              <div class="grid grid-cols-2 gap-4">
-                <div>
-                  <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Destinos de Mensajes</label>
-                  <div class="flex flex-wrap gap-2 mt-2">
-                    <label class="flex items-center gap-1 text-[10px] font-bold"><input type="checkbox" id="dest-msg" checked> Messenger</label>
-                    <label class="flex items-center gap-1 text-[10px] font-bold"><input type="checkbox" id="dest-ig" checked> Instagram</label>
-                    <label class="flex items-center gap-1 text-[10px] font-bold"><input type="checkbox" id="dest-wa" checked> WhatsApp</label>
-                  </div>
-                </div>
-                <div>
-                  <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Objetivo Rendimiento</label>
-                  <input type="text" value="Maximizar conversaciones" readonly class="w-full bg-slate-100 border rounded-lg p-3 text-sm font-bold text-slate-500">
-                </div>
-              </div>
-
-              <div class="grid grid-cols-2 gap-4">
-                <div>
-                  <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Presupuesto Diario (Q)</label>
-                  <input type="number" id="ba" value="250" class="w-full bg-slate-50 border rounded-lg p-3 font-black text-blue-600">
-                </div>
-                <div>
-                  <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Fecha de Inicio</label>
-                  <input type="date" id="sd" class="w-full bg-slate-50 border rounded-lg p-3 text-sm font-bold text-slate-700">
-                </div>
-              </div>
-
-              <div class="space-y-2">
-                <label class="text-[10px] font-bold text-slate-400 uppercase block">Público</label>
-                <select id="sel-audience" class="w-full bg-slate-50 border rounded-lg p-3 text-sm font-bold text-slate-700">
-                  <option value="">+ Crear Público Manual</option>
-                </select>
-                <div id="manual-audience" class="space-y-4 border-t pt-4">
-                  <div>
-                    <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Lugares (Departamentos GT)</label>
-                    <div id="dept-list" class="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto border p-2 rounded"></div>
-                  </div>
-                  <div class="grid grid-cols-2 gap-4">
-                    <div><label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Edad Mín</label><input type="number" id="ami" value="18" class="w-full bg-slate-50 border rounded-lg p-3 text-sm"></div>
-                    <div><label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Sugerir Público (Intereses)</label><input type="text" id="adsug" placeholder="Ej: Muebles, Decoración..." class="w-full bg-slate-50 border rounded-lg p-3 text-sm"></div>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Plataformas</label>
-                <div class="flex flex-wrap gap-4 mt-2">
-                  <label class="flex items-center gap-1 text-[10px] font-bold"><input type="checkbox" id="plat-fb" checked> Facebook</label>
-                  <label class="flex items-center gap-1 text-[10px] font-bold"><input type="checkbox" id="plat-ig" checked> Instagram</label>
-                  <label class="flex items-center gap-1 text-[10px] font-bold"><input type="checkbox" id="plat-an" checked> Audience Network</label>
-                  <label class="flex items-center gap-1 text-[10px] font-bold"><input type="checkbox" id="plat-msg" checked> Messenger</label>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="card relative">
-          <div class="step-num">3</div>
-          <h2 class="text-sm font-black uppercase tracking-widest text-slate-800 mb-6">Anuncio</h2>
-          <div class="space-y-4">
-            <div>
-              <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Seleccionar Anuncio (Editar)</label>
-              <select id="sel-ad" onfocus="if(this.options.length <= 1 && document.getElementById('sel-adset').value !== 'NEW') loadAds(document.getElementById('sel-adset').value)" onchange="loadAdDetails(this.value)" class="w-full bg-slate-50 border rounded-lg p-3 text-sm font-bold text-slate-700">
-                <option value="NEW">+ Crear Nuevo Anuncio</option>
-              </select>
-            </div>
-            <div id="ad-config" class="space-y-4">
-              <input type="text" id="ad-name" placeholder="Nombre del Anuncio..." class="w-full bg-slate-50 border rounded-lg p-3 outline-none text-sm font-bold text-slate-700">
-
-              <div class="grid grid-cols-2 gap-4">
-                <div>
-                  <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Página de Facebook</label>
-                  <select id="pgs" onchange="updatePageDetails(this.value)" class="w-full bg-slate-50 border rounded-lg p-3 text-sm font-bold text-slate-700"></select>
-                </div>
-                <div>
-                  <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Perfil de Instagram</label>
-                  <select id="sel-ig" class="w-full bg-slate-50 border rounded-lg p-3 text-sm font-bold text-slate-700"></select>
-                </div>
-              </div>
-
-              <div class="grid grid-cols-2 gap-4">
-                <div>
-                  <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Formato</label>
-                  <select id="ad-format" class="w-full bg-slate-50 border rounded-lg p-3 text-sm font-bold text-slate-700">
-                    <option value="SINGLE_IMAGE_OR_VIDEO">Imagen o video único</option>
-                    <option value="CAROUSEL">Secuencia</option>
-                  </select>
-                </div>
-                <div>
-                  <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Anuncios multianunciante</label>
-                  <input type="text" value="Activado" readonly class="w-full bg-slate-100 border rounded-lg p-3 text-sm font-bold text-slate-500">
-                </div>
-              </div>
-
-              <div class="space-y-2">
-                <label class="text-[10px] font-bold text-slate-400 uppercase block">Conversaciones (Plantilla)</label>
-                <select id="sel-template" onfocus="if(this.options.length <= 1) updatePageDetails(document.getElementById('pgs').value)" onchange="initTemplateUI()" class="w-full bg-slate-50 border rounded-lg p-3 text-sm font-bold text-slate-700">
-                  <option value="NEW">+ Crear Nueva Plantilla</option>
-                </select>
-                <div id="new-template-config" class="space-y-4 border-t pt-4 hidden">
-                  <input type="text" id="tpl-text" placeholder="Texto de bienvenida..." class="w-full bg-slate-50 border rounded-lg p-3 text-sm">
-                  <input type="text" id="tpl-res" placeholder="Respuesta sugerida..." class="w-full bg-slate-50 border rounded-lg p-3 text-sm">
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="w-full lg:w-80 flex flex-col gap-6 shrink-0">
-        <div class="card flex-1 lg:overflow-y-auto space-y-4 shadow-xl">
-          <div id="dropzone" onclick="document.getElementById('fi').click()" class="border-2 border-dashed border-slate-200 rounded-2xl p-6 flex flex-col items-center justify-center text-slate-400 hover:border-blue-400 cursor-pointer aspect-square max-w-[120px] sm:max-w-none mx-auto w-full bg-slate-50 group transition">
-            <svg class="w-12 h-12 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
-            <span class="text-xs font-black uppercase">Sube Imagen o Video</span>
-            <input type="file" id="fi" class="hidden" onchange="preview(this)">
-          </div>
-          <button onclick="suggestIA()" id="btn-ia" class="w-full bg-gradient-to-r from-indigo-600 to-blue-500 text-white rounded-xl py-3 font-black shadow-lg uppercase text-[11px] tracking-widest">Sugerir con IA ✨</button>
-          <textarea id="pt" placeholder="Texto Principal" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none text-sm h-32"></textarea>
-          <input type="text" id="hd" placeholder="Título del Anuncio" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none text-sm font-medium">
-          <select class="w-full bg-slate-100 border-none rounded-xl p-3 outline-none text-sm font-bold text-slate-600"><option>Enviar Mensaje</option></select>
-        </div>
-        <button onclick="launchAd()" id="btn-go" class="w-full bg-blue-600 text-white rounded-2xl py-5 font-black text-lg shadow-xl shadow-blue-300 hover:bg-blue-700 transition uppercase tracking-widest">Lanzar Ahora</button>
-      </div>
-    </div>
-
-    <!-- TAB DASHBOARD -->
-    <div id="tab-dash" class="hidden flex-1 flex flex-col p-4 lg:p-8 overflow-y-auto">
-      <div class="max-w-6xl mx-auto w-full">
-        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-          <h1 class="text-2xl font-black text-slate-800 flex items-center gap-3"><div class="w-2 h-8 bg-blue-600 rounded-full"></div>Centro de Reportes</h1>
-          <div class="flex gap-2 items-center">
-            <input type="date" id="rep-start" class="bg-white border rounded-lg p-2 text-xs font-bold">
-            <span class="text-slate-400">al</span>
-            <input type="date" id="rep-end" class="bg-white border rounded-lg p-2 text-xs font-bold">
-            <button onclick="loadDash()" class="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-widest">Buscar</button>
-          </div>
-        </div>
-
-        <div id="dash-main" class="space-y-4">
-          <!-- Accordion body will go here -->
-        </div>
-      </div>
-    </div>
-
-    <!-- TAB CONFIG -->
-    <div id="tab-config" class="hidden flex-1 flex flex-col p-4 lg:p-8 overflow-y-auto">
-      <div class="max-w-xl mx-auto w-full space-y-6">
-        <h1 class="text-2xl font-black mb-8 text-slate-800">Configuración</h1>
-        <div class="card space-y-4">
-          <div><label class="text-[10px] font-black uppercase text-slate-400">Meta Token</label><input type="password" id="mt" value="[META_TOKEN]" placeholder="Token configurado en Environment..." class="w-full border p-3 rounded-lg bg-slate-50"></div>
-          <div><label class="text-[10px] font-black uppercase text-slate-400">OpenAI Key</label><input type="password" id="ok" value="[OPENAI_KEY]" placeholder="Key configurada en Environment..." class="w-full border p-3 rounded-lg bg-slate-50"></div>
-          <div><label class="text-[10px] font-black uppercase text-slate-400">Ad Account ID</label><input type="text" id="aa" value="[AD_ACC_ID]" placeholder="ID configurado en Environment..." class="w-full border p-3 rounded-lg bg-slate-50"></div>
-          <p class="text-[10px] text-slate-400 font-bold uppercase italic">Los valores se toman de las variables de entorno de Cloudflare para mayor seguridad.</p>
-          <div class="flex gap-2">
-            <button onclick="checkPerms()" class="flex-1 bg-blue-100 text-blue-700 py-4 rounded-xl font-black uppercase tracking-widest text-xs mt-4 border border-blue-200">Verificar Permisos</button>
-            <button onclick="alert('Configuración guardada (Local). Use Cloudflare para cambios permanentes.')" class="flex-1 bg-slate-800 text-white py-4 rounded-xl font-black uppercase tracking-widest text-xs mt-4">Guardar</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </main>
-
-  <div id="ldr" class="fixed inset-0 bg-[#0f172a]/90 backdrop-blur-md flex items-center justify-center hidden text-white flex-col gap-6 z-[100] transition duration-500">
-    <div class="relative w-20 h-20">
-      <div class="absolute inset-0 border-4 border-blue-500/20 rounded-full"></div>
-      <div class="absolute inset-0 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-    </div>
-    <div class="text-center max-w-sm w-full px-4">
-      <p class="font-black tracking-widest uppercase text-sm mb-2">Sincronizando con Meta...</p>
-      <div id="ldr-log" class="bg-black/40 rounded-lg p-3 text-left font-mono text-[9px] h-32 overflow-y-auto space-y-1 border border-white/10"></div>
-      <p id="ldr-msg" class="mt-2 text-[10px] font-bold text-blue-400 uppercase tracking-tighter opacity-70 animate-pulse">Iniciando proceso...</p>
-    </div>
-  </div>
-
-  <script>
-    window.onerror = function(msg, url, line, col, error) {
-      alert("Error en la App: " + msg + "\\nLínea: " + line);
-      console.error(error);
-      return false;
-    };
-    let locs=[];
-    const DEPTS_GT = ["Alta Verapaz", "Baja Verapaz", "Chimaltenango", "Chiquimula", "El Progreso", "Escuintla", "Guatemala", "Huehuetenango", "Izabal", "Jalapa", "Jutiapa", "Petén", "Quetzaltenango", "Quiché", "Retalhuleu", "Sacatepéquez", "San Marcos", "Santa Rosa", "Sololá", "Suchitepéquez", "Totonicapán", "Zacapa"];
-
-    window.onload=async()=>{
-      const today = new Date().toISOString().split('T')[0];
-      document.getElementById('rep-start').value = today;
-      document.getElementById('rep-end').value = today;
-      document.getElementById('sd').value = today;
-
-      const dl = document.getElementById('dept-list');
-      DEPTS_GT.forEach(dept => {
-        const div = document.createElement('label');
-        div.className = 'flex items-center gap-2 bg-slate-100 p-2 rounded cursor-pointer hover:bg-slate-200 transition';
-        div.innerHTML = '<input type="checkbox" value="' + dept + '" class="dept-check"> <span class="text-[10px] font-bold">' + dept + '</span>';
-        dl.appendChild(div);
-      });
-
-      fetchAccounts();
-      fetchActiveCampaigns();
-      fetchCustomAudiences();
+    // Mapeo de Campos Custom de GHL
+    const fields = {
+      estado: getFieldId(env, "estado_actual"),
+      menuEnviado: getFieldId(env, "menu_ayuda_enviado"),
+      propCat: getFieldId(env, "categoria_propuesta"),
+      dept: getFieldId(env, "departamento_actual"),
+      munProp: getFieldId(env, "municipio_propuesto"),
+      offset: getFieldId(env, "catalogo_offset"),
+      prodId: getFieldId(env, "producto_id"),
+      ultimaCat: getFieldId(env, "ultima_categoria"),
+      catInteres: getFieldId(env, "categoria_interes"),
+      comboPadre: getFieldId(env, "GHL_combo_padre_FIELD_ID"),
+      comboComp: getFieldId(env, "GHL_combo_componentes_FIELD_ID"),
+      carrito: getFieldId(env, "carrito_json")
     };
 
-    async function fetchAccounts() {
-      try {
-        const r=await fetch('/api/get-accounts',{method:'POST'});
-        const d=await r.json();
-        const s=document.getElementById('pgs');
-        s.innerHTML='<option value="">Página de Facebook...</option>';
-        if(d.data) d.data.forEach(p=>s.add(new Option(p.name, p.id)));
-      } catch(e) { console.error("Error fetching accounts:", e); }
-    }
+    // Valores Actuales del Contacto (con cache de KV para evitar delay de API GHL)
+    const cachedState = await env.PRODUCTS_DB.get("state:" + contactId, { type: "json" });
+    const state = {
+      currentEstado: cachedState?.currentEstado || getCustomFieldValue(contact, fields.estado) || "nuevo",
+      propCat: cachedState?.propCat || getCustomFieldValue(contact, fields.propCat),
+      yaEnvioMenu: cachedState?.yaEnvioMenu || getCustomFieldValue(contact, fields.menuEnviado) === "true",
+      munProp: cachedState?.munProp || getCustomFieldValue(contact, fields.munProp),
+      prevProductoId: cachedState?.prevProductoId || getCustomFieldValue(contact, fields.prodId),
+      deptActual: cachedState?.deptActual || getCustomFieldValue(contact, fields.dept),
+      carrito: cachedState?.carrito || JSON.parse(getCustomFieldValue(contact, fields.carrito) || "[]")
+    };
 
-    async function fetchActiveCampaigns() {
-      const sc=document.getElementById('sel-camp');
-      const old = sc.innerHTML;
-      sc.innerHTML = '<option value="">Cargando campañas...</option>';
-      try {
-        const r=await fetch('/api/get-active-campaigns',{method:'POST'});
-        const d=await r.json();
-        sc.innerHTML='<option value="NEW">+ Crear Nueva Campaña</option>';
-        if(d.data && d.data.length > 0) {
-          d.data.forEach(c=>sc.add(new Option(c.name, c.id)));
-        } else if(d.error) {
-          console.warn("Aviso fetchActiveCampaigns:", d.error);
-          alert("Error cargando campañas: " + d.error);
-        } else {
-          console.log("No se encontraron campañas activas.");
-        }
-      } catch(e) {
-        console.error("Error fetching campaigns:", e);
-        sc.innerHTML = old;
-      }
-    }
+    let targetProduct = null;
+    if (state.prevProductoId) targetProduct = await obtenerProductoSeguro(state.prevProductoId, env, trace);
 
-    async function fetchCustomAudiences() {
-      try {
-        const r=await fetch('/api/get-custom-audiences',{method:'POST'});
-        const d=await r.json();
-        const sa=document.getElementById('sel-audience');
-        sa.innerHTML='<option value="">+ Crear Público Manual</option>';
-        if(d.data) d.data.forEach(a=>sa.add(new Option(a.name, a.id)));
-      } catch(e) { console.error("Error fetching audiences:", e); }
-    }
-
-    async function loadAdSets(campId){
-      const s=document.getElementById('sel-adset');
-      const campConfig = document.getElementById('camp-new-config');
-      if(campId === "NEW" || !campId) {
-        s.innerHTML='<option value="NEW">+ Crear Nuevo Conjunto</option>';
-        if(campId === "NEW") campConfig.classList.remove('hidden');
-        else campConfig.classList.add('hidden');
-        return;
-      }
-      campConfig.classList.add('hidden');
-      s.innerHTML='<option value="">Cargando conjuntos...</option>';
-      try {
-        const r=await fetch('/api/get-adsets',{method:'POST',body:JSON.stringify({campaignId:campId})});
-        const d=await r.json();
-        s.innerHTML='<option value="NEW">+ Crear Nuevo Conjunto</option>';
-        if(d.data) d.data.forEach(as=>s.add(new Option(as.name, as.id)));
-        if(d.error) console.error("Error loadAdSets:", d.error);
-      } catch(e){ console.error("Exception loadAdSets:", e); }
-    }
-
-    async function loadAds(adsetId){
-      const s=document.getElementById('sel-ad');
-      const adsetConfig = document.getElementById('adset-new-config');
-      if(adsetId === "NEW" || !adsetId) {
-        s.innerHTML='<option value="NEW">+ Crear Nuevo Anuncio</option>';
-        if(adsetId === "NEW") adsetConfig.classList.remove('hidden');
-        else adsetConfig.classList.add('hidden');
-        return;
-      }
-      adsetConfig.classList.add('hidden');
-      s.innerHTML='<option value="">Cargando anuncios...</option>';
-      try {
-        const r=await fetch('/api/get-ads',{method:'POST',body:JSON.stringify({adsetId})});
-        const d=await r.json();
-        s.innerHTML='<option value="NEW">+ Crear Nuevo Anuncio</option>';
-        if(d.data) d.data.forEach(ad=>s.add(new Option(ad.name, ad.id)));
-        if(d.error) console.error("Error loadAds:", d.error);
-      } catch(e){ console.error("Exception loadAds:", e); }
-    }
-
-    async function loadAdDetails(adId){
-      if(adId === "NEW") {
-        return;
-      }
-      try {
-        const r = await fetch('/api/get-ad-details', {method:'POST', body:JSON.stringify({adId})});
-        const d = await r.json();
-        if(d.data) {
-          document.getElementById('ad-name').value = d.data.name;
-          document.getElementById('pt').value = d.data.creative?.object_story_spec?.link_data?.message || d.data.creative?.object_story_spec?.video_data?.message || "";
-          document.getElementById('hd').value = d.data.creative?.name || "";
-        }
-      } catch(e){}
-    }
-
-    async function updatePageDetails(pageId){
-      if(!pageId) return;
-      try {
-        const r1 = await fetch('/api/get-instagram-accounts', {method:'POST', body:JSON.stringify({pageId})});
-        const d1 = await r1.json();
-        const sig = document.getElementById('sel-ig');
-        sig.innerHTML = '<option value="">Perfil de Instagram...</option>';
-        if(d1.instagram_business_account) {
-          sig.add(new Option(d1.instagram_business_account.name || "Instagram vinculado", d1.instagram_business_account.id));
-        } else {
-          sig.add(new Option("No hay cuenta de IG vinculada", ""));
-        }
-
-        const st = document.getElementById('sel-template');
-        st.innerHTML = '<option value="">Cargando plantillas...</option>';
-        const r2 = await fetch('/api/get-message-templates', {method:'POST', body:JSON.stringify({pageId})});
-        const d2 = await r2.json();
-        st.innerHTML = '<option value="NEW">+ Crear Nueva Plantilla</option>';
-        if(d2.data && d2.data.length > 0) {
-          d2.data.forEach(t=>st.add(new Option(t.name, t.id)));
-        }
-        initTemplateUI();
-      } catch(e){
-        console.error("Error updating page details:", e);
-      }
-    }
-
-    function tab(t){
-      ['dash','create','config'].forEach(v=>{
-        const el = document.getElementById('tab-'+v);
-        if(el) el.classList.add('hidden');
-        const nav = document.getElementById('nav-'+v);
-        if(nav) nav.classList.remove('active-tab');
+    if (trace) {
+      trace.obj("Estado Router", {
+        estado: state.currentEstado,
+        productoId: state.prevProductoId,
+        productoIdentificado: targetProduct?.titulo,
+        catMencionada,
+        pideInformacion,
+        pideFotos,
+        esSoloSaludo
       });
-      const target = document.getElementById('tab-'+t);
-      if(target) target.classList.remove('hidden');
-      const targetNav = document.getElementById('nav-'+t);
-      if(targetNav) targetNav.classList.add('active-tab');
-
-      const titles = { 'dash': 'Reportes', 'create': 'Crear Anuncio', 'config': 'API Config' };
-      const mTitle = document.getElementById('mobile-tab-title');
-      if(mTitle) mTitle.innerText = titles[t] || '';
-
-      if(window.innerWidth < 1024) toggleSidebar(false);
     }
 
-    function initTemplateUI() {
-      const val = document.getElementById('sel-template').value;
-      const config = document.getElementById('new-template-config');
-      if (val === 'NEW') {
-        config.classList.remove('hidden');
-      } else {
-        config.classList.add('hidden');
+    let esSeleccionReciente = false;
+    let responseText = "";
+    let responseImgs = [];
+    let estadoPropuesto = state.currentEstado === "nuevo" ? "interaccion" : state.currentEstado;
+
+    if (esConsultaTecnicaRara || pideInstalacion) {
+      let resp = "Excelente pregunta. Para brindarle una respuesta técnica exacta sobre la instalación y materiales específicos, le transferiré con un asesor especializado. Un momento por favor... 👨‍💼";
+
+      const catCocina = ["cocina", "cocinas"].some(c => norm.includes(c)) || (targetProduct && normalizarTextoGlobal(targetProduct?.titulo || "").includes("cocina"));
+      if (pideInstalacion && catCocina) {
+          resp = "Sí, contamos con instalación con un costo adicional en algunos departamentos. ¿De qué departamento o municipio nos saluda? 😉";
+          await setCustomFieldValue(contact, fields.estado, "esperando_departamento", env, trace, state, "currentEstado");
       }
+
+      await sendMessageToGHL(contactId, resp, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
+      await triggerHandover(contactId, env, trace);
+      return;
     }
 
-    function toggleSidebar(force) {
-      const sb = document.getElementById('sidebar');
-      const ov = document.getElementById('side-overlay');
-      const isOpen = typeof force === 'boolean' ? !force : sb.classList.contains('translate-x-0');
-
-      if(isOpen) {
-        sb.classList.replace('translate-x-0', '-translate-x-full');
-        ov.classList.add('hidden');
-      } else {
-        sb.classList.replace('-translate-x-full', 'translate-x-0');
-        ov.classList.remove('hidden');
-      }
+    if (pideVagaMejora && state.prevProductoId) {
+      await sendMessageToGHL(contactId, "¿Me puedes especificar qué nuevo producto estás buscando? Le transferiré con un asesor para que le dé seguimiento personalizado. 😉", env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
+      await triggerHandover(contactId, env, trace);
+      return;
     }
 
-    async function toggleStatus(id, currentStatus){
-      const newStatus = currentStatus === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
-      try {
-        const r=await fetch('/api/update-status',{method:'POST',body:JSON.stringify({id, status:newStatus})});
-        const d=await r.json();
-        if(d.error) alert('Error: ' + d.error.message);
-        loadDash();
-      } catch(e){ alert('Error al cambiar estado'); }
-    }
+    // --- LÓGICA DE COBERTURA Y UBICACIÓN ---
+    const depmunRaw = await env.COVERAGE_DB.get("listado:depmun");
+    const depmun = JSON.parse(depmunRaw || "{}");
 
-    async function loadDash(){
-      document.getElementById('ldr').classList.remove('hidden');
-      const start = document.getElementById('rep-start').value;
-      const end = document.getElementById('rep-end').value;
-      try {
-        const r=await fetch('/api/get-full-report',{method:'POST',body:JSON.stringify({start, end})});
-        const d=await r.json();
-        if(d.error) { alert('Error: ' + d.error); return; }
-        const container = document.getElementById('dash-main');
-        container.innerHTML = '';
-
-        d.data.forEach(camp => {
-          const ins = camp.insights?.data?.[0] || { spend:0, impressions:0, reach:0, actions:[] };
-          const msgs = ins.actions?.find(a => a.action_type === 'onsite_conversion.messaging_first_reply') || { value:0 };
-
-          const campDiv = document.createElement('div');
-          campDiv.className = 'bg-white rounded-xl shadow-sm border overflow-hidden mb-4';
-
-          const header = document.createElement('div');
-          header.className = 'p-4 bg-slate-50 flex justify-between items-center cursor-pointer hover:bg-slate-100';
-          header.onclick = () => campDiv.querySelector('.adsets-container').classList.toggle('hidden');
-
-          header.innerHTML = '<div class="flex items-center gap-4">' +
-              '<div class="w-3 h-3 rounded-full ' + (camp.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-slate-300') + '"></div>' +
-              '<div><p class="text-xs font-black uppercase text-slate-400">Campaña</p><p class="font-bold text-slate-700">' + camp.name + '</p></div>' +
-            '</div>' +
-            '<div class="flex gap-8 text-right items-center">' +
-              '<div><p class="text-[10px] font-black text-slate-400 uppercase">Gasto</p><p class="font-bold text-slate-700">$' + parseFloat(ins.spend).toFixed(2) + '</p></div>' +
-              '<div><p class="text-[10px] font-black text-slate-400 uppercase">Mensajes</p><p class="font-bold text-blue-600">' + msgs.value + '</p></div>' +
-              '<div><p class="text-[10px] font-black text-slate-400 uppercase">Imp</p><p class="font-bold text-slate-700">' + ins.impressions + '</p></div>' +
-              '<div><p class="text-[10px] font-black text-slate-400 uppercase">Alcance</p><p class="font-bold text-slate-700">' + ins.reach + '</p></div>' +
-              '<button onclick="event.stopPropagation(); toggleStatus(\\'' + camp.id + '\\', \\'' + camp.status + '\\')" class="px-4 py-2 ' + (camp.status === 'ACTIVE' ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600') + ' rounded-lg text-[10px] font-black uppercase">' + (camp.status === 'ACTIVE' ? 'Pausar' : 'Activar') + '</button>' +
-            '</div>';
-
-          const adsetsContainer = document.createElement('div');
-          adsetsContainer.className = 'adsets-container hidden border-t';
-
-          camp.adsets.forEach(as => {
-            const ains = as.insights?.data?.[0] || { spend:0, impressions:0, reach:0, actions:[] };
-            const amsgs = ains.actions?.find(a => a.action_type === 'onsite_conversion.messaging_first_reply') || { value:0 };
-
-            const asDiv = document.createElement('div');
-            asDiv.className = 'p-4 border-b ml-8 bg-white';
-            asDiv.innerHTML = '<div class="flex justify-between items-center mb-4">' +
-                '<div class="flex items-center gap-3">' +
-                  '<div class="w-2 h-2 rounded-full ' + (as.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-slate-300') + '"></div>' +
-                  '<p class="text-sm font-bold text-slate-600">AS: ' + as.name + '</p>' +
-                '</div>' +
-                '<div class="flex gap-6 text-right items-center">' +
-                  '<span class="text-[10px] font-bold text-slate-500">$' + parseFloat(ains.spend).toFixed(2) + ' | ' + amsgs.value + ' MSGs | ' + ains.impressions + ' Imp | ' + ains.reach + ' Alcance</span>' +
-                  '<button onclick="toggleStatus(\\'' + as.id + '\\', \\'' + as.status + '\\')" class="text-[10px] font-black uppercase ' + (as.status === 'ACTIVE' ? 'text-red-500' : 'text-emerald-500') + '">' + (as.status === 'ACTIVE' ? 'OFF' : 'ON') + '</button>' +
-                '</div>' +
-              '</div>';
-
-            const adsGrid = document.createElement('div');
-            adsGrid.className = 'grid grid-cols-1 gap-2';
-
-            as.ads.forEach(ad => {
-              const adins = ad.insights?.data?.[0] || { spend:0, impressions:0, reach:0, actions:[] };
-              const admsgs = adins.actions?.find(a => a.action_type === 'onsite_conversion.messaging_first_reply') || { value:0 };
-
-              const adDiv = document.createElement('div');
-              adDiv.className = 'bg-slate-50 p-4 rounded-xl ml-4 mb-4 border border-slate-100 shadow-sm';
-              adDiv.innerHTML = '<div class="flex flex-col md:flex-row gap-6">' +
-                  '<div class="shrink-0 flex justify-center">' +
-                    '<img src="' + (ad.creative?.image_url || ad.creative?.thumbnail_url || '') + '" class="w-48 h-48 rounded-lg bg-slate-200 object-cover shadow-inner border border-white">' +
-                  '</div>' +
-                  '<div class="flex-1 flex flex-col justify-between">' +
-                    '<div>' +
-                      '<div class="flex items-center gap-2 mb-2">' +
-                        '<div class="w-2 h-2 rounded-full ' + (ad.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-slate-300') + '"></div>' +
-                        '<span class="text-[10px] font-black uppercase text-slate-400 tracking-widest">' + ad.status + '</span>' +
-                      '</div>' +
-                      '<p class="text-lg font-black text-slate-800 leading-tight mb-4">' + ad.name + '</p>' +
-
-                      '<div class="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-white p-3 rounded-lg border border-slate-100">' +
-                        '<div><p class="text-[9px] font-black text-slate-400 uppercase">Gasto</p><p class="font-bold text-slate-700">$' + parseFloat(adins.spend).toFixed(2) + '</p></div>' +
-                        '<div><p class="text-[9px] font-black text-slate-400 uppercase">Mensajes</p><p class="font-bold text-blue-600">' + admsgs.value + '</p></div>' +
-                        '<div><p class="text-[9px] font-black text-slate-400 uppercase">Imp</p><p class="font-bold text-slate-700">' + adins.impressions + '</p></div>' +
-                        '<div><p class="text-[9px] font-black text-slate-400 uppercase">Alcance</p><p class="font-bold text-slate-700">' + adins.reach + '</p></div>' +
-                      '</div>' +
-                    '</div>' +
-
-                    '<div class="flex justify-end mt-4">' +
-                      '<button onclick="toggleStatus(\\'' + ad.id + '\\', \\'' + ad.status + '\\')" class="flex items-center gap-2 px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-widest transition ' + (ad.status === 'ACTIVE' ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100') + '">' +
-                        (ad.status === 'ACTIVE' ? 'Pausar' : 'Activar') +
-                      '</button>' +
-                    '</div>' +
-                  '</div>' +
-                '</div>';
-              adsGrid.appendChild(adDiv);
-            });
-
-            asDiv.appendChild(adsGrid);
-            adsetsContainer.appendChild(asDiv);
+    if (state.currentEstado === "esperando_departamento") {
+      const foundDept = Object.keys(depmun).find(d => norm.includes(normalizarTextoGlobal(d)));
+      if (trace) trace.add("Flujo cobertura - Buscando departamento en: " + norm);
+      if (foundDept) {
+          await setCustomFieldValue(contact, fields.dept, foundDept, env, trace, state, "deptActual");
+        const municipios = depmun[foundDept] || [];
+        const munPendiente = state.munProp ? normalizarTextoGlobal(state.munProp) : "";
+        let munReal = null;
+        if (munPendiente.length > 3) {
+          munReal = municipios.find(m => {
+            const nm = normalizarTextoGlobal(m);
+            return munPendiente.includes(nm) || nm.includes(munPendiente);
           });
-
-          campDiv.appendChild(header);
-          campDiv.appendChild(adsetsContainer);
-          container.appendChild(campDiv);
-        });
-      } catch(e){} finally { document.getElementById('ldr').classList.add('hidden'); }
-    }
-
-    async function srch(t,id){ const q=document.getElementById(id).value; try { const r=await fetch('/api/search',{method:'POST',body:JSON.stringify({type:t,q})}); const d=await r.json(); if(d.data?.length){ const it=d.data[0]; if(t==='adgeolocation'){ locs.push(it); document.getElementById('lsel').innerHTML+='<span class="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-[10px] font-black uppercase animate-bounce border border-blue-200">'+it.name+'</span>'; } } } catch(e){} }
-    function preview(input){ if(input.files && input.files[0]){ const reader=new FileReader(); reader.onload=e=>document.getElementById('dropzone').innerHTML='<img src="'+e.target.result+'" class="max-h-full rounded-xl shadow-lg border-2 border-white">'; reader.readAsDataURL(input.files[0]); } }
-
-    async function suggestIA(){
-      const pt=document.getElementById('pt');
-      const hd=document.getElementById('hd');
-      const btn=document.getElementById('btn-ia');
-      const old=btn.innerHTML;
-      btn.innerHTML='<div class="loader-spin mx-auto"></div>';
-      try {
-        const file = document.getElementById('fi').files[0];
-        let base64Image = null;
-        if (file && file.type.startsWith('image/')) {
-          base64Image = await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = e => resolve(e.target.result);
-            reader.readAsDataURL(file);
-          });
-        }
-
-        const r=await fetch('/api/openai-generate',{
-          method:'POST',
-          body:JSON.stringify({
-            prompt: 'Genera un anuncio de Facebook Ads (Copywriting experto) para el producto: ' + document.getElementById('cn').value + '. Si hay una imagen, analízala para resaltar sus características.',
-            image: base64Image
-          })
-        });
-        const d=await r.json();
-        if (d.error) throw new Error(d.error);
-        if (!d.choices || !d.choices[0]) throw new Error('No se recibió respuesta de la IA');
-
-        const aiMsg = d.choices && d.choices[0] && d.choices[0].message ? d.choices[0].message : null;
-        if (!aiMsg || !aiMsg.content) throw new Error('No se recibió contenido de la IA');
-
-        const aiResponse = aiMsg.content.replace(/\`\`\`json|\`\`\`/g, '').trim();
-        const res = JSON.parse(aiResponse);
-        pt.value=res.texto || res.text;
-        hd.value=res.titulo || res.headline;
-      } catch(e){
-        console.error(e);
-        pt.value='Error al generar sugerencia. Intente de nuevo.';
-      } finally {
-        btn.innerHTML=old;
-      }
-    }
-
-    function setLdr(msg){
-      const msgEl = document.getElementById('ldr-msg');
-      if (msgEl) msgEl.innerText = msg;
-      const log = document.getElementById('ldr-log');
-      if (log) {
-        const entry = document.createElement('div');
-        entry.className = msg.includes('Error') ? 'text-red-400' : 'text-slate-300';
-        entry.innerHTML = '<span class="text-white/30 mr-1">' + new Date().toLocaleTimeString() + '</span> ' + msg;
-        log.appendChild(entry);
-        log.scrollTop = log.scrollHeight;
-      }
-    }
-
-    async function checkPerms(){
-      const ldr = document.getElementById('ldr');
-      ldr.classList.remove('hidden');
-      setLdr('Analizando Token y Cuenta...');
-
-      try {
-        const [r1, r2] = await Promise.all([
-          fetch('/api/check-permissions', {method:'POST'}),
-          fetch('/api/debug-token', {method:'POST'})
-        ]);
-        const d1 = await r1.json();
-        const d2 = await r2.json();
-
-        let report = "--- REPORTE DE SALUD ---\\n\\n";
-
-        if(d1.token) report += 'TOKEN: ' + d1.token.status.toUpperCase() + ' - ' + d1.token.message + '\\n';
-        if(d1.account) report += 'CUENTA: ' + d1.account.status.toUpperCase() + ' - ' + d1.account.message + '\\n';
-
-        if(d2.data) {
-          const expires = d2.data.expires_at ? new Date(d2.data.expires_at * 1000).toLocaleString() : "Nunca";
-          report += 'EXPIRA: ' + expires + '\\n';
-          report += 'TIPO: ' + d2.data.type + '\\n';
-        }
-
-        ldr.classList.add('hidden');
-        alert(report);
-      } catch(e) {
-        ldr.classList.add('hidden');
-        alert('Error en verificación: ' + e.message);
-      }
-    }
-
-    async function launchAd(){
-      try {
-        const isNewAd = document.getElementById('sel-ad').value === 'NEW';
-        const f=document.getElementById('fi').files[0];
-        const pageId = document.getElementById('pgs').value;
-
-        if(isNewAd && !f) { alert('Debe subir una imagen o video para un anuncio nuevo.'); return; }
-        if(!pageId) { alert('Seleccione una página emisora.'); return; }
-
-        const ldr = document.getElementById('ldr');
-        const log = document.getElementById('ldr-log');
-        log.innerHTML = '';
-        ldr.classList.remove('hidden');
-
-        setLdr('Verificando acceso a Meta...');
-        try {
-          const vr = await fetch('/api/check-permissions', {method:'POST'});
-          const vd = await vr.json();
-          if(vd.token?.status === 'error') throw new Error('Token inválido: ' + vd.token.message);
-          setLdr('Acceso validado correctamente.');
-          if(vd.account?.status === 'error') {
-            setLdr('Aviso de Cuenta: ' + vd.account.message);
-            if(!confirm('Aviso de Cuenta: ' + vd.account.message + '\\n¿Desea intentar publicar de todos modos?')) {
-              ldr.classList.add('hidden');
-              return;
+          if (!munReal) {
+            const partes = munPendiente.split(" ").filter(p => p.length > 3);
+            for (let p of partes) {
+              munReal = municipios.find(m => normalizarTextoGlobal(m).includes(p));
+              if (munReal) break;
             }
           }
-        } catch(ve) {
-          setLdr('Error de validación: ' + ve.message);
-          setTimeout(() => ldr.classList.add('hidden'), 3000);
-          return;
-        }
-
-        let resolvedRegions = [];
-        const depts = Array.from(document.querySelectorAll('.dept-check:checked')).map(c => c.value);
-        if(depts.length > 0) {
-          setLdr("Resolviendo " + depts.length + " ubicaciones en Meta...");
-          try {
-            const rr = await fetch('/api/resolve-regions', {method:'POST', body:JSON.stringify({depts})});
-            const rd = await rr.json();
-            resolvedRegions = rd.regions || [];
-            setLdr("Ubicaciones resueltas: " + resolvedRegions.length);
-          } catch(re) {
-            setLdr('Error resolviendo ubicaciones: ' + re.message);
+          if (!munReal) {
+            munReal = await fuzzyMatchMunicipio(munPendiente, municipios, env, trace);
+            if (munReal === "NULL") munReal = null;
           }
         }
-
-        let mediaId = null, mediaType = null;
-        if(f) {
-          setLdr("Subiendo " + f.name + " (" + (f.size/1024/1024).toFixed(2) + "MB)...");
-          try {
-            const mfd = new FormData();
-            mfd.append('file', f);
-            const mr = await fetch('/api/upload-media', {method:'POST', body:mfd});
-            const md = await mr.json();
-            if(md.error) throw new Error(md.error);
-            mediaId = md.id;
-            mediaType = md.type;
-            setLdr("Archivo subido exitosamente ID: " + mediaId);
-          } catch(me) {
-            setLdr('Error subiendo archivo: ' + me.message);
-            setTimeout(() => ldr.classList.add('hidden'), 5000);
+        if (munReal) {
+          const resp = await obtenerRespuestaCoverage(munReal, env, trace);
+          if (resp) {
+            await setCustomFieldValue(contact, fields.munProp, null, env, trace, state, "munProp");
+            await setCustomFieldValue(contact, fields.estado, "producto", env, trace, state, "currentEstado");
+            await sendMessageToGHL(contactId, resp, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
             return;
           }
         }
+        await setCustomFieldValue(contact, fields.estado, "esperando_municipio", env, trace, state, "currentEstado");
+        await sendMessageToGHL(contactId, "¿En qué municipio de " + foundDept.toUpperCase() + " está?", env, trace, [], null, conversationId);
+        return;
+      }
+      await sendMessageToGHL(contactId, "¿En qué departamento de Guatemala se encuentra? 🇬🇹", env, trace, [], null, conversationId);
+      return;
+    }
 
-        setLdr('Publicando anuncio final en Meta...');
-        const depts_selected = Array.from(document.querySelectorAll('.dept-check:checked')).map(c => c.value);
-        const config={
-          mediaId, mediaType, resolvedRegions,
-          campaignId:document.getElementById('sel-camp').value,
-          campaignName:document.getElementById('cn').value,
-          objective:document.getElementById('ob').value,
-
-          adSetId:document.getElementById('sel-adset').value,
-          adSetName:document.getElementById('asn').value,
-          budgetAmount:document.getElementById('ba').value,
-          startDate:document.getElementById('sd').value,
-          messagingDestinations: {
-            messenger: document.getElementById('dest-msg').checked,
-            instagram: document.getElementById('dest-ig').checked,
-            whatsapp: document.getElementById('dest-wa').checked
-          },
-          audienceId: document.getElementById('sel-audience').value,
-          manualAudience: {
-            depts: depts_selected,
-            ageMin: document.getElementById('ami').value,
-            interests: document.getElementById('adsug').value
-          },
-          platforms: {
-            facebook: document.getElementById('plat-fb').checked,
-            instagram: document.getElementById('plat-ig').checked,
-            audience_network: document.getElementById('plat-an').checked,
-            messenger: document.getElementById('plat-msg').checked
-          },
-
-          adId: document.getElementById('sel-ad').value,
-          adName: document.getElementById('ad-name').value,
-          pageId: document.getElementById('pgs').value,
-          instagramId: document.getElementById('sel-ig').value,
-          format: document.getElementById('ad-format').value,
-          templateId: document.getElementById('sel-template').value,
-          newTemplate: {
-            text: document.getElementById('tpl-text').value,
-            response: document.getElementById('tpl-res').value
-          },
-          primaryText:document.getElementById('pt').value,
-          headline:document.getElementById('hd').value || document.getElementById('ad-name').value,
-          status:'PAUSED'
-        };
-
-        const r=await fetch('/api/create-advanced-ad',{
-          method:'POST',
-          headers: {'Content-Type': 'application/json'},
-          body:JSON.stringify({config})
-        });
-        const res=await r.json();
-        if(res.success){
-          setLdr('¡ÉXITO! Operación completada.');
-          setTimeout(() => {
-            ldr.classList.add('hidden');
-            alert('¡ÉXITO! Campaña/Anuncio listo. ID: ' + res.adId);
-            tab('dash');
-            loadDash();
-          }, 1500);
-        } else {
-          setLdr('Error Meta: ' + res.error);
-          setTimeout(() => ldr.classList.add('hidden'), 5000);
-          alert('ERROR: ' + res.error);
+    if (state.currentEstado === "esperando_municipio") {
+      const dept = state.deptActual;
+      const municipios = depmun[dept] || [];
+      if (trace) trace.add("Flujo cobertura - Buscando municipio en: " + norm + " para depto: " + dept);
+      let mun = municipios.find(m => norm.includes(normalizarTextoGlobal(m)));
+      if (!mun) {
+        mun = await fuzzyMatchMunicipio(message, municipios, env, trace);
+        if (mun === "NULL") mun = null;
+      }
+      if (mun) {
+        const resp = await obtenerRespuestaCoverage(mun, env, trace);
+        if (resp) {
+          await sendMessageToGHL(contactId, resp, env, trace, [], null, conversationId);
+          await setCustomFieldValue(contact, fields.estado, "producto", env, trace, state, "currentEstado");
+          return;
         }
-      } catch(e) {
-        console.error("Error fatal en launchAd:", e);
-        alert('Error fatal: ' + e.message);
-        const ldr = document.getElementById('ldr');
-        if(ldr) ldr.classList.add('hidden');
+      }
+      await sendMessageToGHL(contactId, "Un asesor le confirmará cobertura pronto. 😉", env, trace, [], null, conversationId);
+      await triggerHandover(contactId, env, trace);
+      return;
+    }
+    if (pideCobertura) {
+      const resp = await obtenerRespuestaCoverage(message, env, trace);
+      if (resp) {
+        await sendMessageToGHL(contactId, resp, env, trace, [], null, conversationId);
+        return;
+      }
+      const stopWords = ["ubicacion", "lugar", "donde", "entrega", "envio", "cobertura", "mandan", "reparten", "llegan", "estan", "direccion", "entregan", "hola", "buen", "dia", "tarde", "noche", "tienda", "fisica", "cuenta", "con"];
+      const potentialMun = norm.split(/\s+/).filter(w => w.length > 3 && !stopWords.includes(w)).join(" ");
+      if (potentialMun) await setCustomFieldValue(contact, fields.munProp, potentialMun, env, trace, state, "munProp");
+      await setCustomFieldValue(contact, fields.estado, "esperando_departamento", env, trace, state, "currentEstado");
+      await sendMessageToGHL(contactId, "¡Claro! Ofrecemos envío a domicilio en toda Guatemala. Para brindarle el costo exacto y confirmar cobertura, ¿en qué departamento o municipio se encuentra? 😉", env, trace, [], null, conversationId);
+      return;
+    }
+
+    // V7.6: Análisis de ubicación proactivo mejorado
+    if (state.currentEstado !== "esperando_departamento" && state.currentEstado !== "esperando_municipio" && !pideInformacion && !pideCatalogo) {
+        const esUbicacion = await analizarSiEsUbicacion(message, env, trace);
+        const depEnMsg = Object.keys(depmun).find(d => norm.includes(normalizarTextoGlobal(d)));
+
+        if (depEnMsg || esUbicacion) {
+            if (trace) trace.add("Ubicación detectada proactivamente. Dep: " + depEnMsg + " AI: " + esUbicacion);
+            const resp = await obtenerRespuestaCoverage(message, env, trace);
+            if (resp) {
+                await sendMessageToGHL(contactId, resp, env, trace, [], null, conversationId);
+                return;
+            }
+
+            if (depEnMsg) {
+                await setCustomFieldValue(contact, fields.dept, depEnMsg, env, trace, state, "deptActual");
+                await setCustomFieldValue(contact, fields.estado, "esperando_municipio", env, trace, state, "currentEstado");
+                await sendMessageToGHL(contactId, "Excelente, realizamos entregas en " + depEnMsg.toUpperCase() + ". ¿En qué municipio se encuentra? 😉", env, trace, [], null, conversationId);
+                return;
+            } else {
+                await setCustomFieldValue(contact, fields.munProp, message, env, trace, state, "munProp");
+                await setCustomFieldValue(contact, fields.estado, "esperando_departamento", env, trace, state, "currentEstado");
+                await sendMessageToGHL(contactId, "Excelente, para confirmarle la cobertura en " + message.toUpperCase() + ", ¿me podría indicar a qué departamento pertenece? 😉", env, trace, [], null, conversationId);
+                return;
+            }
+        }
+    }
+
+    if (targetProduct && targetProduct.tipo === "combo" && pideCambioCama && state.currentEstado !== "confirmacion_categoria") {
+      const catCama = ["matri", "matrimonial", "king", "queen"].find(sz => norm.includes(sz));
+      if (catCama) {
+          const altCombo = await buscarComboAlternativoPorTamano(targetProduct, catCama, env, trace);
+          if (altCombo) {
+              targetProduct = altCombo;
+              esSeleccionReciente = true; // Forzar envío de título e imágenes
+          }
       }
     }
-  </script>
-</body>
-</html>`;
+    if (metaMatch) {
+      const metaProd = await obtenerProductoSeguro(metaMatch[1], env, trace);
+      if (metaProd) {
+          targetProduct = metaProd;
+          await setCustomFieldValue(contact, getFieldId(env, "Anuncio"), metaMatch[1], env, trace);
+      }
+    }
+    if (!targetProduct) targetProduct = await buscarProductoPorCodigoEnMensaje(rawMsg, env, trace);
+    if (!targetProduct) {
+      let selIdx = detectarSeleccionNatural(message, state.carrito);
+      if (selIdx !== null && state.carrito[selIdx]) {
+        const selProd = await obtenerProductoSeguro(state.carrito[selIdx].key.split(":").pop(), env, trace);
+        if (selProd) { targetProduct = selProd; esSeleccionReciente = true; }
+      }
+    }
+    if (!targetProduct && !pideCatalogo && !pideInformacion && !catMencionada) targetProduct = await buscarProductoPorNombreEnMensaje(message, env, trace);
 
-  // Inyección segura de variables de entorno
-  html = html.replace('[META_TOKEN]', meta_token);
-  html = html.replace('[OPENAI_KEY]', openai_key);
-  html = html.replace('[AD_ACC_ID]', ad_acc_id);
+    if (targetProduct) {
+      if (trace) trace.add("Producto identificado: " + (targetProduct.titulo || targetProduct.nombre || "Sin Título") + " (" + targetProduct.id + ")");
+      await setCustomFieldValue(contact, fields.prodId, targetProduct.id, env, trace, state, "prevProductoId");
+      // Solo resetear offset si es una selección real de un producto nuevo (no cargado de memoria)
+      if (esSeleccionReciente || metaMatch) {
+          await setCustomFieldValue(contact, fields.offset, "0", env, trace);
+      }
+    }
+    if (pideGarantia) {
+      await triggerHandover(contactId, env, trace);
+      return;
+    }
 
-  return new Response(html, { headers: { "Content-Type": "text/html;charset=UTF-8" } });
+    if (state.currentEstado === "confirmacion_categoria") {
+      const confirmaCambio = esAfirmacionGenerica || norm.startsWith("si") || (state.propCat && norm.includes(state.propCat));
+      if (confirmaCambio) {
+        if (trace) trace.add("Cambio de categoría confirmado.");
+        await setCustomFieldValue(contact, fields.propCat, null, env, trace, state, "propCat");
+        const resCat = await moduloCatalogo(message, contact, env, trace, state.propCat);
+        if (resCat.text) await sendMessageToGHL(contactId, resCat.text, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
+        await setCustomFieldValue(contact, fields.estado, "catalogo", env, trace, state, "currentEstado");
+        return;
+      }
+    }
+    if (targetProduct && catMencionada && !pideInformacion && !pideFotos && !pideCatalogo) {
+      const tituloNormal = normalizarTextoGlobal(targetProduct.titulo || targetProduct.nombre || "");
+      if (!tituloNormal.includes(catMencionada)) {
+        await setCustomFieldValue(contact, fields.propCat, catMencionada, env, trace, state, "propCat");
+        responseText = await callVendedorElitePro(message, contact, env, targetProduct, false, null, esSoloSaludo, state.currentEstado === "nuevo", state.yaEnvioMenu, false, catMencionada, false, trace);
+        await setCustomFieldValue(contact, fields.estado, "confirmacion_categoria", env, trace, state, "currentEstado");
+        await sendMessageToGHL(contactId, responseText, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
+        return;
+      }
+    }
+
+    // V7.5: Si pide "otras opciones" o "variedad", forzar flujo de catálogo incluso si hay producto activo
+    const pideMasOpciones = /variedad|otros?|otras?|mas opciones|catalogo|muestreme mas/i.test(norm);
+
+    if (targetProduct && !pideCatalogo && !pideCobertura && !pideMasOpciones) {
+      if (state.currentEstado === "producto" && esAfirmacionGenerica) pideFotos = true;
+
+      if (pideSoloParte && targetProduct.tipo === "combo" && Array.isArray(targetProduct.items)) {
+        if (trace) trace.add("Intención detectada: Pedir pieza individual de un combo.");
+        const itemKeywords = ["ropero", "cocina", "cama", "cabecera", "mesita", "gavetero", "tocador", "marquesa", "trinchante", "platera", "mueble", "colchon"];
+        const pieceFound = targetProduct.items.find(item => {
+          const title = normalizarTextoGlobal(item.titulo || item.nombre || "");
+          return itemKeywords.some(k => norm.includes(k) && title.includes(k));
+        });
+        if (pieceFound) {
+          if (trace) trace.add("Pieza individual encontrada: " + pieceFound.titulo);
+          const dbPiece = await obtenerProductoSeguro(pieceFound.id || pieceFound.sku, env, trace);
+          const finalPrice = dbPiece ? dbPiece.precio : (parseFloat(pieceFound.precio) + 200);
+          const priceStr = finalPrice > 0 ? ("💰 *Precio: Q" + finalPrice + "*") : "";
+          const specs = "📏 Medidas: " + (pieceFound.medidas || "N/A") + "\n🛠 Material: " + (pieceFound.estructura || "N/A") + "\n🎨 Colores: " + (pieceFound.colores || "N/A");
+          const responseImgs = [pieceFound.imagen1, pieceFound.imagen2, pieceFound.imagen, pieceFound.url, pieceFound.link_publico].filter(img => typeof img === "string" && img.length > 10 && img.startsWith("http"));
+          const sheet = "Con gusto, aquí tiene el detalle de la pieza individual:\n\n" +
+            "*" + (pieceFound.titulo || pieceFound.nombre).toUpperCase() + "*\n" +
+            priceStr + "\n" +
+            specs + "\n\nLe transferiré con un asesor para que pueda ayudarle con la compra por separado. 😉";
+          await sendMessageToGHL(contactId, sheet, env, trace, responseImgs, (env.GHL_LOCATION_ID || contact.locationId), conversationId);
+          await triggerHandover(contactId, env, trace);
+          return;
+        }
+      }
+
+      const catProd = categorias.find(c => normalizarTextoGlobal(targetProduct.titulo || targetProduct.nombre || "").includes(c)) || getCustomFieldValue(contact, fields.ultimaCat);
+      if (catProd) {
+        await setCustomFieldValue(contact, fields.ultimaCat, catProd, env, trace);
+        await setCustomFieldValue(contact, fields.catInteres, catProd, env, trace);
+      }
+      if ((pideFotos || pideCompra || esAfirmacionGenerica) && (!targetProduct.imagenes || targetProduct.imagenes.length === 0)) {
+        if (catProd === "ropero") await addToWorkflow(contactId, "9b36093c-f008-4261-b2ba-bc54a0cdd9c9", env, trace);
+        else if (catProd === "cocina") await addToWorkflow(contactId, "a2fca18f-d0c7-4c97-8185-7926540bf2de", env, trace);
+      }
+      if (esSeleccionReciente || pideFotos) {
+        if (targetProduct.tipo === "combo" && Array.isArray(targetProduct.items) && targetProduct.items.length >= 3) responseImgs = [...new Set(targetProduct.items.map(i => i.imagen1 || i.imagen2 || i.imagen || i.url).filter(u => typeof u === "string" && u.length > 10 && u.startsWith("http")))];
+        else responseImgs = targetProduct.imagenes || [];
+      }
+      const esNuevoProducto = targetProduct.id !== state.prevProductoId && !pideInformacion;
+      responseText = await callVendedorElitePro(message, contact, env, targetProduct, pideCompra, await obtenerRespuestaCoverage(rawMsg, env, trace), esSoloSaludo, state.currentEstado === "nuevo", state.yaEnvioMenu, esNuevoProducto, null, (pideFotos || norm.includes("toda")), trace);
+
+      if (responseText && responseText.includes("[TRANSFERIR]")) {
+        const cleanedResp = responseText.replace("[TRANSFERIR]", "").trim() || "Le pondré en contacto con un asesor para resolver sus dudas técnicas. 😉";
+        await sendMessageToGHL(contactId, cleanedResp, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
+        await triggerHandover(contactId, env, trace);
+        return;
+      }
+
+      if ((esNuevoProducto || !state.yaEnvioMenu) && /Medidas|Colores|Materiales|Precios|Envío|Cuotas/i.test(responseText)) await setCustomFieldValue(contact, fields.menuEnviado, "true", env, trace);
+      await setCustomFieldValue(contact, getFieldId(env, "total_pedido"), targetProduct.precio || 0, env, trace);
+      if (targetProduct.tipo === "combo") {
+        await setCustomFieldValue(contact, fields.comboPadre, targetProduct.id, env, trace);
+        if (Array.isArray(targetProduct.items)) await setCustomFieldValue(contact, fields.comboComp, JSON.stringify(targetProduct.items.map(i => i.id)), env, trace);
+      }
+      estadoPropuesto = pideCompra ? "cierre" : "producto";
+      await setCustomFieldValue(contact, fields.estado, estadoPropuesto, env, trace, state, "currentEstado");
+      let final = responseText;
+      const currentTitle = (targetProduct?.titulo || targetProduct?.nombre || "");
+      if (esNuevoProducto && currentTitle && !responseText.toUpperCase().includes(currentTitle.toUpperCase())) {
+          final = "*" + currentTitle.toUpperCase() + "*\n\n" + responseText;
+      }
+
+      // Fix for double bolding if AI already bolded it
+      final = final.replace(/\*\*(.*?)\*\*/g, "*$1*");
+
+      await sendMessageToGHL(contactId, final, env, trace, responseImgs, (env.GHL_LOCATION_ID || contact.locationId), conversationId);
+      if (pideCompra && !pideInformacion) await triggerHandover(contactId, env, trace);
+      return;
+    } else if (pideCatalogo || catMencionada || pideMasOpciones || /\b(mediano|mediana|medianos|medianas|grande|grandes|pequeño|pequeña|pequeños|pequeñas|chico|chica|chicos|chicas|enorme|enormes|gigante|gigantes|estandar|media|grando|grandos)\b/i.test(norm) || (state.currentEstado === "catalogo" && norm.length > 3)) {
+      let resCat = await moduloCatalogo(message, contact, env, trace);
+      if (resCat.retryWithoutKeywords) resCat = await moduloCatalogo("ver mas", contact, env, trace);
+      if (resCat.text) await sendMessageToGHL(contactId, resCat.text, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
+      if (resCat.handover) await triggerHandover(contactId, env, trace);
+      await setCustomFieldValue(contact, fields.estado, "catalogo", env, trace);
+      return;
+    } else {
+      responseText = await callVendedorElitePro(message, contact, env, targetProduct, pideCompra, await obtenerRespuestaCoverage(rawMsg, env, trace), esSoloSaludo, state.currentEstado === "nuevo", state.yaEnvioMenu, false, null, false, trace);
+
+      // Fix for double bolding
+      responseText = responseText.replace(/\*\*(.*?)\*\*/g, "*$1*");
+
+      if (responseText && responseText.includes("[TRANSFERIR]")) {
+        const cleanedResp = responseText.replace("[TRANSFERIR]", "").trim() || "Un asesor le ayudará con su consulta en un momento. 😉";
+        await sendMessageToGHL(contactId, cleanedResp, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
+        await triggerHandover(contactId, env, trace);
+        return;
+      }
+      await sendMessageToGHL(contactId, responseText, env, trace, [], (env.GHL_LOCATION_ID || contact.locationId), conversationId);
+      return;
+    }
+  } catch (err) {
+    if (contactId) await triggerHandover(contactId, env, trace);
+  }
 }
 
-// --- EXPORT FINAL ---
-
 export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-    if (request.method === "GET") return generateHTML(env);
-    if (request.method === "POST") {
-      if (url.pathname === "/api/get-accounts") return await handleGetAccounts(env);
-      if (url.pathname === "/api/search") {
-        const b = await request.json();
-        return await handleMetaSearch(b, env);
+  async fetch(request, env, ctx) {
+    if (request.method !== "POST") return new Response("OK");
+    const trace = new TraceLog();
+    let contactId;
+    try {
+      const rawBody = await request.text();
+      if (trace) trace.add("RAW BODY RECIBIDO (Iniciando buffer): " + (rawBody.length > 1000 ? rawBody.substring(0, 1000) + "..." : rawBody));
+      const body = JSON.parse(rawBody);
+      contactId = body.contact_id || body.contact?.id;
+      if (!contactId) return new Response("OK");
+
+      const contact = await getContactFromGHL(contactId, env, trace);
+      if (!contact || contact.tags?.includes("humano") || contact.assignedTo) {
+        trace.add("Contacto no apto para IA (Humano o Asignado).");
+        trace.flush();
+        return new Response("OK");
       }
-      if (url.pathname === "/api/openai-generate") {
-        const b = await request.json();
-        return await handleOpenAIGenerate(b, env);
+
+      const convId = body.conversation_id || body.message?.conversationId;
+      const locationId = body.locationId || body.location?.id || contact.locationId;
+      const msgType = body.message?.type;
+      const isMediaMessage = (msgType === 19 || msgType === 21 || msgType === "image" || msgType === "audio");
+      const currentText = (body.message?.body || body.message?.text || "").trim();
+      const currentAttachments = body.message?.attachments || body.attachments || [];
+
+      const bKey = "buffer:" + contactId;
+      const lKey = "last:" + contactId;
+      const now = Date.now();
+
+      // Leer buffer actual o inicializar
+      let buffer = await env.PRODUCTS_DB.get(bKey, { type: "json" }) || {
+        text: "",
+        attachments: [],
+        isMedia: false,
+        locationId: locationId,
+        conversationId: convId
+      };
+
+      // Actualizar buffer
+      if (currentText) buffer.text += " " + currentText;
+      if (currentAttachments.length > 0) buffer.attachments = [...buffer.attachments, ...currentAttachments];
+      if (isMediaMessage) buffer.isMedia = true;
+      if (locationId) buffer.locationId = locationId;
+      if (convId) buffer.conversationId = convId;
+
+      await env.PRODUCTS_DB.put(bKey, JSON.stringify(buffer), { expirationTtl: 60 });
+      await env.PRODUCTS_DB.put(lKey, now.toString(), { expirationTtl: 60 });
+
+      ctx.waitUntil((async () => {
+        try {
+          await new Promise(r => setTimeout(r, 2500));
+          const latestTs = await env.PRODUCTS_DB.get(lKey);
+          if (latestTs === now.toString()) {
+            const finalBuffer = await env.PRODUCTS_DB.get(bKey, { type: "json" });
+            await env.PRODUCTS_DB.delete(bKey);
+            await env.PRODUCTS_DB.delete(lKey);
+
+            if (!finalBuffer) return;
+            trace.add("--- PROCESANDO BUFFER CONSOLIDADO ---");
+            trace.obj("Buffer Final", finalBuffer);
+
+            let extractedText = "";
+            let attachmentsToProcess = finalBuffer.attachments || [];
+
+            if (finalBuffer.isMedia && attachmentsToProcess.length === 0) {
+              trace.add("Mensaje multimedia detectado sin adjuntos en webhook. Consultando API de GHL...");
+              attachmentsToProcess = await getLatestMessageAttachments(contactId, finalBuffer.locationId, env, trace);
+            }
+
+            if (attachmentsToProcess.length > 0) {
+              trace.add("Extrayendo contenido de " + attachmentsToProcess.length + " adjuntos...");
+              for (const att of attachmentsToProcess) {
+                const text = await handleMediaAttachment(att, env, trace);
+                if (text) extractedText += " " + text;
+              }
+            }
+
+            let fullMsg = (finalBuffer.text + " " + extractedText).trim();
+            if (!fullMsg && finalBuffer.isMedia) {
+              trace.add("Media procesada pero sin texto extraíble. Usando placeholder.");
+              fullMsg = "[Imagen/Audio Recibido]";
+            }
+
+            if (!fullMsg) {
+              trace.add("Sin contenido para procesar. Abortando.");
+              return;
+            }
+
+            await processFullFlow(fullMsg, contactId, contact, env, trace, finalBuffer.conversationId);
+            trace.add("--- FIN DE PROCESAMIENTO ---");
+          }
+        } catch (err) {
+          trace.error("Excepción en flujo de fondo (waitUntil): ", err);
+        } finally {
+          trace.flush();
+        }
+      })());
+
+      return new Response("OK");
+    } catch (e) {
+      if (contactId) {
+        try {
+          await triggerHandover(contactId, env, trace);
+        } catch (err) {}
       }
-      if (url.pathname === "/api/get-insights") {
-        const b = await request.json();
-        return await handleGetInsights(b, env);
-      }
-      if (url.pathname === "/api/get-active-campaigns") return await handleGetActiveCampaigns(env);
-      if (url.pathname === "/api/get-adsets") {
-        const b = await request.json();
-        return await handleGetAdSets(b, env);
-      }
-      if (url.pathname === "/api/get-ads") {
-        const b = await request.json();
-        return await handleGetAds(b, env);
-      }
-      if (url.pathname === "/api/get-custom-audiences") return await handleGetCustomAudiences(env);
-      if (url.pathname === "/api/get-instagram-accounts") {
-        const b = await request.json();
-        return await handleGetInstagramAccounts(b, env);
-      }
-      if (url.pathname === "/api/get-message-templates") {
-        const b = await request.json();
-        return await handleGetMessageTemplates(b, env);
-      }
-      if (url.pathname === "/api/check-permissions") return await handleCheckPermissions(env);
-      if (url.pathname === "/api/debug-token") return await handleGetTokenInfo(env);
-      if (url.pathname === "/api/update-status") {
-        const b = await request.json();
-        return await handleUpdateStatus(b, env);
-      }
-      if (url.pathname === "/api/get-full-report") {
-        const b = await request.json();
-        return await handleGetFullReport(b, env);
-      }
-      if (url.pathname === "/api/get-ad-details") {
-        const b = await request.json();
-        const r = await fetch(`https://graph.facebook.com/${API_VERSION}/${b.adId}?fields=name,status,creative{id,name,object_story_spec}&access_token=${env.META_ACCESS_TOKEN}`);
-        const d = await r.json();
-        return new Response(JSON.stringify({ data: d }), { headers: { "Content-Type": "application/json" } });
-      }
-      if (url.pathname === "/api/resolve-regions") return await handleResolveRegions(await request.json(), env);
-      if (url.pathname === "/api/upload-media") return await handleUploadMedia(await request.formData(), env);
-      if (url.pathname === "/api/create-advanced-ad") return await handleCreateAdvancedAd(await request.json(), env);
+      return new Response("OK");
     }
-    return new Response("Not Found", { status: 404 });
   }
 };
