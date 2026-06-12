@@ -292,35 +292,42 @@ async function handleUploadMedia(formData, env) {
   const acc = getAdAccId(env);
 
   if (!file) return new Response(JSON.stringify({ error: "No se recibió ningún archivo" }), { status: 400 });
-
-  console.log(`Iniciando subida de archivo a cuenta ${acc}: ${file.name} (${file.size} bytes)`);
+  console.log(`[Upload] Iniciando: ${file.name} (${file.size} bytes)`);
 
   try {
-    const blob = new Blob([await file.arrayBuffer()], { type: file.type });
+    const isImg = (file.type || "").startsWith('image');
+    const fieldName = isImg ? 'bytes' : 'source';
+    const targetUrl = `https://graph.facebook.com/${API_VERSION}/${acc}/${isImg ? 'adimages' : 'advideos'}?access_token=${token}`;
 
-    if (file.type.startsWith('image')) {
-      const ifd = new FormData();
-      ifd.append('access_token', token);
-      ifd.append('bytes', blob, file.name);
-      const r = await fetch(`https://graph.facebook.com/${API_VERSION}/${acc}/adimages`, { method: 'POST', body: ifd });
-      const d = await r.json();
+    // Leemos el archivo a un buffer puro
+    const buffer = await file.arrayBuffer();
+    console.log(`[Upload] Buffer cargado: ${buffer.byteLength} bytes`);
+
+    // Creamos un nuevo FormData y le pasamos un Blob reconstruido
+    const outForm = new FormData();
+    const blob = new Blob([buffer], { type: file.type || 'application/octet-stream' });
+    outForm.append(fieldName, blob, file.name);
+
+    console.log(`[Upload] Enviando a: ${targetUrl}`);
+
+    const r = await fetch(targetUrl, {
+      method: 'POST',
+      body: outForm
+    });
+
+    const d = await r.json();
+    if (isImg) {
       if (!d.images) {
-        console.error("Error AdImages:", JSON.stringify(d));
+        console.error("Error Meta AdImages:", JSON.stringify(d));
         throw new Error(d.error?.message || "Fallo subida de imagen");
       }
-      const imgValues = Object.values(d.images);
-      if (imgValues.length === 0) throw new Error("Meta no devolvió el hash de la imagen.");
-      const hash = imgValues[0].hash;
+      const hash = Object.values(d.images)[0]?.hash;
+      if (!hash) throw new Error("Meta no devolvió el hash de la imagen.");
       console.log(`Imagen subida: ${hash}`);
       return new Response(JSON.stringify({ id: hash, type: 'img' }), { headers: { "Content-Type": "application/json" } });
     } else {
-      const vfd = new FormData();
-      vfd.append('access_token', token);
-      vfd.append('source', blob, file.name);
-      const r = await fetch(`https://graph.facebook.com/${API_VERSION}/${acc}/advideos`, { method: 'POST', body: vfd });
-      const d = await r.json();
       if (!d.id) {
-        console.error("Error AdVideos:", JSON.stringify(d));
+        console.error("Error Meta AdVideos:", JSON.stringify(d));
         throw new Error(d.error?.message || "Fallo subida de video");
       }
       console.log(`Video subido: ${d.id}`);
