@@ -291,13 +291,17 @@ async function handleUploadMedia(formData, env) {
   const token = env.META_ACCESS_TOKEN;
   const acc = getAdAccId(env);
 
-  console.log(`Iniciando subida de archivo a cuenta ${acc}: ${file.name}`);
+  if (!file) return new Response(JSON.stringify({ error: "No se recibió ningún archivo" }), { status: 400 });
+
+  console.log(`Iniciando subida de archivo a cuenta ${acc}: ${file.name} (${file.size} bytes)`);
 
   try {
+    const blob = new Blob([await file.arrayBuffer()], { type: file.type });
+
     if (file.type.startsWith('image')) {
       const ifd = new FormData();
       ifd.append('access_token', token);
-      ifd.append('bytes', file);
+      ifd.append('bytes', blob, file.name);
       const r = await fetch(`https://graph.facebook.com/${API_VERSION}/${acc}/adimages`, { method: 'POST', body: ifd });
       const d = await r.json();
       if (!d.images) {
@@ -312,7 +316,7 @@ async function handleUploadMedia(formData, env) {
     } else {
       const vfd = new FormData();
       vfd.append('access_token', token);
-      vfd.append('source', file);
+      vfd.append('source', blob, file.name);
       const r = await fetch(`https://graph.facebook.com/${API_VERSION}/${acc}/advideos`, { method: 'POST', body: vfd });
       const d = await r.json();
       if (!d.id) {
