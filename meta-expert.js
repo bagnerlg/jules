@@ -287,12 +287,15 @@ async function handleResolveRegions(body, env) {
 }
 
 async function handleUploadMedia(bodyJson, env) {
-  const { fileName, fileType, base64 } = bodyJson;
+  const { fileName, fileType, base64, fileSize } = bodyJson;
   const token = env.META_ACCESS_TOKEN;
   const acc = getAdAccId(env);
 
   if (!base64) return new Response(JSON.stringify({ error: "No se recibió el contenido del archivo" }), { status: 400 });
-  console.log(`[V15-APICE] Decodificando Base64: ${fileName} (${base64.length} chars)`);
+
+  console.log("Nombre:", fileName);
+  console.log("Tipo:", fileType);
+  console.log("Tamaño:", fileSize);
 
   try {
     const isImg = (fileType || "").startsWith('image');
@@ -332,6 +335,7 @@ async function handleUploadMedia(bodyJson, env) {
     });
 
     const d = await r.json();
+    console.log(JSON.stringify(d));
     if (isImg) {
       if (!d.images) {
         console.error("Error Meta AdImages:", JSON.stringify(d));
@@ -340,14 +344,14 @@ async function handleUploadMedia(bodyJson, env) {
       const hash = Object.values(d.images)[0]?.hash;
       if (!hash) throw new Error("Meta no devolvió el hash de la imagen.");
       console.log(`Imagen subida: ${hash}`);
-      return new Response(JSON.stringify({ id: hash, type: 'img' }), { headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ image_hash: hash, id: hash, type: 'img' }), { headers: { "Content-Type": "application/json" } });
     } else {
       if (!d.id) {
         console.error("Error Meta AdVideos:", JSON.stringify(d));
         throw new Error(d.error?.message || "Fallo subida de video");
       }
       console.log(`Video subido: ${d.id}`);
-      return new Response(JSON.stringify({ id: d.id, type: 'vid' }), { headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ video_id: d.id, id: d.id, type: 'vid' }), { headers: { "Content-Type": "application/json" } });
     }
   } catch (e) {
     console.error("Error fatal en handleUploadMedia:", e.message);
@@ -396,10 +400,22 @@ async function handleCreateAdvancedAd(body, env) {
     let adSetId = config.adSetId;
     if (adSetId === "NEW") {
       console.log(`[Worker] Creando AdSet: ${config.adSetName}`);
-      const destinations = [];
-      if(config.messagingDestinations.messenger) destinations.push('MESSENGER');
-      if(config.messagingDestinations.instagram) destinations.push('INSTAGRAM_DIRECT');
-      if(config.messagingDestinations.whatsapp) destinations.push('WHATSAPP_MESSAGE');
+
+      let destinationType = 'MESSENGER';
+      if (config.messagingDestinations.instagram) {
+        destinationType = 'INSTAGRAM_DIRECT';
+      }
+      if (config.messagingDestinations.whatsapp) {
+        destinationType = 'WHATSAPP';
+      }
+
+      const promoted_object = { page_id: config.pageId };
+      if (destinationType === 'INSTAGRAM_DIRECT') {
+        promoted_object.instagram_actor_id = config.instagramId;
+      }
+      if (destinationType === 'WHATSAPP' && config.whatsappNumber) {
+        promoted_object.whatsapp_phone_number = config.whatsappNumber;
+      }
 
       const asb = {
         name: config.adSetName,
@@ -407,12 +423,15 @@ async function handleCreateAdvancedAd(body, env) {
         optimization_goal: 'CONVERSATIONS',
         billing_event: 'IMPRESSIONS',
         daily_budget: config.budgetAmount * 100,
-        destination_type: destinations,
-        promoted_object: { page_id: config.pageId },
+        destination_type: destinationType,
+        promoted_object: promoted_object,
         targeting: {
           geo_locations: { countries: ['GT'] },
           age_min: parseInt(config.manualAudience.ageMin) || 18,
-          publisher_platforms: Object.keys(config.platforms).filter(p => config.platforms[p])
+          publisher_platforms: ['facebook','instagram'],
+          facebook_positions: ['feed'],
+          instagram_positions: ['stream'],
+          device_platforms: ['mobile','desktop']
         },
         status: config.status,
         access_token: token
@@ -496,47 +515,7 @@ async function handleCreateAdvancedAd(body, env) {
         };
       }
 
-      // Message Template Creation
-      if (config.templateId === 'NEW' && config.newTemplate.text) {
-        console.log("Creando nueva plantilla de mensaje...");
-        const templateData = {
-          message_text: config.newTemplate.text,
-          suggestions: config.newTemplate.response ? [{
-            type: "TEXT",
-            text: config.newTemplate.response,
-            payload: "SUGGESTED_RESPONSE"
-          }] : []
-        };
-
-        const tplRes = await fetch(`https://graph.facebook.com/${API_VERSION}/${config.pageId}/message_templates`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: "Template_" + Date.now(),
-            library_template_name: "greeting",
-            template_type: "ICE_BREAKERS",
-            data: templateData,
-            access_token: token
-          })
-        });
-        const tplData = await tplRes.json();
-        if (tplData.id) {
-          console.log(`Plantilla creada: ${tplData.id}`);
-          if (finalMediaType === 'img') {
-            cb.object_story_spec.link_data.message_template_id = tplData.id;
-          } else if (finalMediaType === 'vid') {
-            cb.object_story_spec.video_data.message_template_id = tplData.id;
-          }
-        } else {
-          console.warn("Error creando plantilla:", tplData);
-        }
-      } else if (config.templateId && config.templateId !== 'NEW') {
-        if (finalMediaType === 'img') {
-          cb.object_story_spec.link_data.message_template_id = config.templateId;
-        } else if (finalMediaType === 'vid') {
-          cb.object_story_spec.video_data.message_template_id = config.templateId;
-        }
-      }
+      // Se omite message_template_id en link_data/video_data por sugerencia del usuario
 
       console.log("Registrando AdCreative en Meta...");
       const ctr = await fetch(`https://graph.facebook.com/${API_VERSION}/${acc}/adcreatives`, {
@@ -722,8 +701,12 @@ function generateHTML(env) {
                   <div class="flex flex-wrap gap-2 mt-2">
                     <label class="flex items-center gap-1 text-[10px] font-bold"><input type="checkbox" id="dest-msg" checked> Messenger</label>
                     <label class="flex items-center gap-1 text-[10px] font-bold"><input type="checkbox" id="dest-ig" checked> Instagram</label>
-                    <label class="flex items-center gap-1 text-[10px] font-bold"><input type="checkbox" id="dest-wa" checked> WhatsApp</label>
+                    <label class="flex items-center gap-1 text-[10px] font-bold"><input type="checkbox" id="dest-wa" onchange="document.getElementById('wa-number-config').classList.toggle('hidden', !this.checked)"> WhatsApp</label>
                   </div>
+                </div>
+                <div id="wa-number-config" class="hidden mt-2">
+                  <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Número WhatsApp (502XXXXXXXX)</label>
+                  <input type="text" id="wa-num" placeholder="502..." class="w-full bg-slate-50 border rounded-lg p-3 text-sm font-bold text-slate-700">
                 </div>
                 <div>
                   <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Objetivo Rendimiento</label>
@@ -1355,12 +1338,13 @@ function generateHTML(env) {
               body: JSON.stringify({
                 fileName: f.name,
                 fileType: f.type,
+                fileSize: f.size,
                 base64: base64
               })
             });
             const md = await mr.json();
             if(md.error) throw new Error(md.error);
-            mediaId = md.id;
+            mediaId = md.image_hash || md.video_id || md.id;
             mediaType = md.type;
             setLdr("Archivo subido exitosamente ID: " + mediaId);
           } catch(me) {
@@ -1387,6 +1371,7 @@ function generateHTML(env) {
             instagram: document.getElementById('dest-ig').checked,
             whatsapp: document.getElementById('dest-wa').checked
           },
+          whatsappNumber: document.getElementById('wa-num').value,
           audienceId: document.getElementById('sel-audience').value,
           manualAudience: {
             depts: depts_selected,
