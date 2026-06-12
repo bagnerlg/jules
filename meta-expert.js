@@ -14,6 +14,26 @@ function getAdAccId(env) {
   return id.startsWith("act_") ? id : "act_" + id;
 }
 
+function validateImageBytes(bytes) {
+
+  if (!bytes || bytes.length < 10) {
+    return false;
+  }
+
+  const jpeg =
+    bytes[0] === 255 &&
+    bytes[1] === 216 &&
+    bytes[2] === 255;
+
+  const png =
+    bytes[0] === 137 &&
+    bytes[1] === 80 &&
+    bytes[2] === 78 &&
+    bytes[3] === 71;
+
+  return jpeg || png;
+}
+
 async function handleGetAccounts(env) {
   const r = await fetch(`https://graph.facebook.com/${API_VERSION}/me/accounts?access_token=${env.META_ACCESS_TOKEN}&limit=100`);
   const d = await r.json();
@@ -30,36 +50,33 @@ async function handleMetaSearch(body, env) {
 async function handleOpenAIGenerate(body, env) {
   try {
     const userPrompt = body.prompt || "Genera un anuncio para este producto.";
-    const kRole = ["r", "o", "l", "e"].join("");
-    const kContent = ["c", "o", "n", "t", "e", "n", "t"].join("");
-    const aiMessages = [];
-
-    const sysMsg = {};
-    sysMsg[kRole] = "system";
-    sysMsg[kContent] = "Eres un experto en Copywriting para Facebook Ads. Responde siempre en formato JSON con llaves 'texto' y 'titulo'. No incluyas markdown, solo el JSON puro.";
-    aiMessages.push(sysMsg);
+    const aiMessages = [
+      {
+        role: "system",
+        content: "Eres un experto en Copywriting para Facebook Ads. Responde siempre en formato JSON con llaves 'texto' y 'titulo'. No incluyas markdown, solo el JSON puro."
+      }
+    ];
 
     if (body.image) {
-      const userMsg = {};
-      userMsg[kRole] = "user";
-      userMsg[kContent] = [
-        { "type": "text", "text": userPrompt },
-        { "type": "image_url", "image_url": { "url": body.image } }
-      ];
-      aiMessages.push(userMsg);
+      aiMessages.push({
+        role: "user",
+        content: [
+          { "type": "text", "text": userPrompt },
+          { "type": "image_url", "image_url": { "url": body.image } }
+        ]
+      });
     } else {
-      const userMsg = {};
-      userMsg[kRole] = "user";
-      userMsg[kContent] = userPrompt;
-      aiMessages.push(userMsg);
+      aiMessages.push({
+        role: "user",
+        content: userPrompt
+      });
     }
 
-    const kMsgs = ["m", "e", "s", "s", "a", "g", "e", "s"].join("");
     const payload = {
       "model": "gpt-4o-mini",
-      "max_tokens": 500
+      "max_tokens": 500,
+      "messages": aiMessages
     };
-    payload[kMsgs] = aiMessages;
 
     const authHeader = "Bearer " + env.OPENAI_API_KEY;
     const openAiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -98,6 +115,7 @@ async function handleGetInsights(body, env) {
   const d = await r.json();
   return new Response(JSON.stringify(d), { headers: { "Content-Type": "application/json" } });
 }
+
 
 async function handleGetActiveCampaigns(env) {
   const accId = getAdAccId(env);
@@ -185,7 +203,7 @@ async function handleValidateSetup(env) {
         const statuses = { 1: 'ACTIVA', 2: 'DESHABILITADA', 3: 'EN REVISIÓN', 7: 'PENDIENTE CIERRE', 9: 'RESTRINGIDA', 100: 'PREPAGO_VACÍO', 101: 'DEUDA' };
         results.account = {
           status: aData.account_status === 1 ? 'ok' : 'error',
-          message: `Cuenta ${statuses[aData.account_status] || 'ID:'+aData.account_status}. Moneda: ${aData.currency}`
+          message: `Cuenta ${statuses[aData.account_status] || 'ID:' + aData.account_status}. Moneda: ${aData.currency}`
         };
       }
     }
@@ -287,67 +305,207 @@ async function handleResolveRegions(body, env) {
 }
 
 async function handleUploadMedia(bodyJson, env) {
-  const { fileName, fileType, base64, fileSize } = bodyJson;
+  const { fileName, fileType, base64 } = bodyJson;
+  const isImg = (fileType || "").startsWith("image/");
   const token = env.META_ACCESS_TOKEN;
   const acc = getAdAccId(env);
 
-  if (!base64) return new Response(JSON.stringify({ error: "No se recibió el contenido del archivo" }), { status: 400 });
-
-  console.log("Nombre:", fileName);
-  console.log("Tipo:", fileType);
-  console.log("Tamaño:", fileSize);
-
   try {
-    const isImg = (fileType || "").startsWith('image');
-    const fieldName = isImg ? 'bytes' : 'source';
-    const targetUrl = `https://graph.facebook.com/${API_VERSION}/${acc}/${isImg ? 'adimages' : 'advideos'}`;
 
-    // Decodificación correcta de Base64 a Uint8Array tal como sugiere el usuario
-    const binaryString = atob(base64);
-    const fileBytes = Uint8Array.from(binaryString, c => c.charCodeAt(0));
+    console.log("========== UPLOAD META ==========");
+    console.log("Cuenta:", acc);
+    console.log("Nombre:", fileName);
+    console.log("Tipo:", fileType);
 
-    console.log(`[V19-FINAL] Bytes decodificados: ${fileBytes.length}`);
-
-    const outForm = new FormData();
-
-    // Importante: El orden y el uso de Blob son clave en Workers
-    const blob = new Blob([fileBytes], { type: fileType || 'application/octet-stream' });
-    outForm.append(fieldName, blob, fileName);
-    outForm.append("access_token", token);
-
-    if (isImg) {
-      outForm.append("filename", fileName);
+    if (!token) {
+      throw new Error("META_ACCESS_TOKEN no configurado");
     }
 
-    console.log(`[V19-FINAL] Enviando FormData con Blob a Meta (${fieldName})...`);
+    if (!acc) {
+      throw new Error("AD_ACCOUNT_ID no configurado");
+    }
 
-    const r = await fetch(targetUrl, {
-      method: 'POST',
-      body: outForm
-    });
+    if (!base64) {
+      throw new Error("Base64 vacío");
+    }
 
-    const d = await r.json();
-    console.log(JSON.stringify(d));
-    if (isImg) {
-      if (!d.images) {
-        console.error("Error Meta AdImages:", JSON.stringify(d));
-        throw new Error(d.error?.message || "Fallo subida de imagen");
+    // Limpiar DataURL
+    let cleanBase64 = base64;
+
+    if (cleanBase64.includes("base64,")) {
+      cleanBase64 = cleanBase64.split("base64,")[1];
+    }
+
+    console.log("Base64 Length:", cleanBase64.length);
+    console.log(
+      "Base64 Inicio:",
+      cleanBase64.substring(0, 60)
+    );
+
+    // Decodificación correcta de Base64 a Uint8Array
+    const binary = atob(cleanBase64);
+    const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+
+    console.log("Bytes decodificados:", bytes.length);
+
+    // Logs de diagnóstico
+    console.log(
+      "Firma:",
+      bytes[0],
+      bytes[1],
+      bytes[2],
+      bytes[3],
+      bytes[4],
+      bytes[5],
+      bytes[6],
+      bytes[7]
+    );
+
+    console.log(
+      "HEX:",
+      Array.from(bytes.slice(0, 20))
+        .map(b => b.toString(16).padStart(2, "0"))
+        .join(" ")
+    );
+
+    // Validar imagen (opcional para seguridad)
+    if (isImg && !validateImageBytes(bytes)) {
+      throw new Error(
+        "La imagen recibida no es JPEG ni PNG válida"
+      );
+    }
+
+    const blob = new Blob(
+      [bytes],
+      {
+        type: fileType || "image/jpeg"
       }
-      const hash = Object.values(d.images)[0]?.hash;
-      if (!hash) throw new Error("Meta no devolvió el hash de la imagen.");
-      console.log(`Imagen subida: ${hash}`);
-      return new Response(JSON.stringify({ image_hash: hash, id: hash, type: 'img' }), { headers: { "Content-Type": "application/json" } });
+    );
+
+    console.log("Blob size:", blob.size);
+    console.log("Blob type:", blob.type);
+
+    const form = new FormData();
+
+    form.append("access_token", token);
+
+    // Meta suele aceptar mejor filename separado
+    form.append("filename", fileName);
+
+    // IMPORTANTE: Meta Ads Images usa 'bytes', no 'source'
+    if (isImg) {
+      form.append("bytes", blob, fileName);
     } else {
-      if (!d.id) {
-        console.error("Error Meta AdVideos:", JSON.stringify(d));
-        throw new Error(d.error?.message || "Fallo subida de video");
-      }
-      console.log(`Video subido: ${d.id}`);
-      return new Response(JSON.stringify({ video_id: d.id, id: d.id, type: 'vid' }), { headers: { "Content-Type": "application/json" } });
+      form.append("source", blob, fileName);
     }
+
+    const endpoint =
+      `https://graph.facebook.com/${API_VERSION}/${acc}/${isImg ? 'adimages' : 'advideos'}`;
+
+    console.log("Endpoint:", endpoint);
+    console.log("Enviando a Meta...");
+
+    const response = await fetch(
+      endpoint,
+      {
+        method: "POST",
+        body: form
+      }
+    );
+
+    const responseText =
+      await response.text();
+
+    console.log(
+      "Status Meta:",
+      response.status
+    );
+
+    console.log(
+      "Respuesta Meta:",
+      responseText
+    );
+
+    let data = {};
+
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      throw new Error(
+        "Meta devolvió una respuesta no JSON"
+      );
+    }
+
+    if (data.error) {
+      console.error(
+        "ERROR META:",
+        JSON.stringify(
+          data.error,
+          null,
+          2
+        )
+      );
+      throw new Error(
+        data.error.message || "Error Meta"
+      );
+    }
+
+    if (isImg) {
+      if (!data.images) {
+        throw new Error("Meta no devolvió el objeto images");
+      }
+      const imageInfo = Object.values(data.images)[0];
+      const hash = imageInfo?.hash;
+      if (!hash) throw new Error("Meta no devolvió hash de imagen");
+
+      console.log("Imagen subida correctamente. HASH:", hash);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          image_hash: hash,
+          id: hash,
+          type: "img"
+        }),
+        { headers: { "Content-Type": "application/json" } }
+      );
+    } else {
+      if (!data.id) {
+        throw new Error("Meta no devolvió ID de video");
+      }
+      console.log("Video subido correctamente. ID:", data.id);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          video_id: data.id,
+          id: data.id,
+          type: "vid"
+        }),
+        { headers: { "Content-Type": "application/json" } }
+      );
+    }
+
   } catch (e) {
-    console.error("Error fatal en handleUploadMedia:", e.message);
-    return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { "Content-Type": "application/json" } });
+
+    console.error(
+      "ERROR FATAL handleUploadMedia:",
+      e.stack || e.message
+    );
+
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: e.message
+      }),
+      {
+        status: 500,
+        headers: {
+          "Content-Type":
+            "application/json"
+        }
+      }
+    );
   }
 }
 
@@ -363,93 +521,230 @@ async function handleCreateAdvancedAd(body, env) {
     const pRes = await fetch(`https://graph.facebook.com/${API_VERSION}/me/permissions?access_token=${token}`);
     const pData = await pRes.json();
     console.log(`[Worker] Permisos detectados: ${JSON.stringify(pData.data)}`);
-  } catch(e) { console.error("[Worker] Error verificando permisos internos:", e.message); }
+  } catch (e) { console.error("[Worker] Error verificando permisos internos:", e.message); }
 
   try {
     let mediaId = config.mediaId;
     let mediaType = config.mediaType;
 
     let campaignId = config.campaignId;
+
     if (campaignId === "NEW") {
+
       console.log(`[Worker] Creando campaña: ${config.campaignName}`);
-      const cr = await fetch(`https://graph.facebook.com/${API_VERSION}/${acc}/campaigns`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: config.campaignName,
-          objective: config.objective,
-          buying_type: 'AUCTION',
-          status: config.status,
-          special_ad_categories: ['NONE'],
-          access_token: token
-        })
-      });
-      const cd = await cr.json();
-      if (!cd.id) throw new Error("Error creando campaña: " + (cd.error?.message || JSON.stringify(cd)));
+
+      const campaignBody = {
+        name: config.campaignName,
+
+        objective: config.objective,
+
+        status: config.status || "PAUSED",
+
+        special_ad_categories: [],
+
+        // NUEVOS CAMPOS OBLIGATORIOS
+        is_campaign_budget_optimization_enabled: false,
+        is_adset_budget_sharing_enabled: false
+      };
+      console.log(
+        "[Worker] OBJECTIVE RECIBIDO:",
+        config.objective
+      );
+
+      console.log(
+        "[Worker] CAMPAIGN BODY:",
+        JSON.stringify(campaignBody, null, 2)
+      );
+
+      const cr = await fetch(
+        `https://graph.facebook.com/${API_VERSION}/${acc}/campaigns`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            ...campaignBody,
+            access_token: token
+          })
+        }
+      );
+      const responseText = await cr.text();
+
+      console.log(
+        "[Worker] CAMPAIGN STATUS:",
+        cr.status
+      );
+
+      console.log(
+        "[Worker] CAMPAIGN RAW RESPONSE:",
+        responseText
+      );
+
+      let cd = {};
+
+      try {
+        cd = JSON.parse(responseText);
+      } catch (e) {
+        throw new Error(
+          "Meta devolvió respuesta inválida al crear campaña: " +
+          responseText
+        );
+      }
+
+      if (!cr.ok || cd.error) {
+
+        console.error(
+          "[META CAMPAIGN ERROR]",
+          JSON.stringify(cd, null, 2)
+        );
+
+        throw new Error(
+          "Error creando campaña: " +
+          JSON.stringify(cd, null, 2)
+        );
+      }
+
+      if (!cd.id) {
+
+        console.error(
+          "[META CAMPAIGN ERROR SIN ID]",
+          JSON.stringify(cd, null, 2)
+        );
+
+        throw new Error(
+          "Meta no devolvió ID de campaña"
+        );
+      }
+
       campaignId = cd.id;
-      console.log(`Campaña creada: ${campaignId}`);
+
+      console.log(
+        `[Worker] Campaña creada correctamente: ${campaignId}`
+      );
     }
 
     let adSetId = config.adSetId;
     if (adSetId === "NEW") {
       console.log(`[Worker] Creando AdSet: ${config.adSetName}`);
 
-      let destinationType = 'MESSENGER';
-      if (config.messagingDestinations.instagram) {
-        destinationType = 'INSTAGRAM_DIRECT';
-      }
-      if (config.messagingDestinations.whatsapp) {
-        destinationType = 'WHATSAPP';
-      }
+      const destinations = [];
+      if (config.messagingDestinations.messenger) destinations.push('MESSENGER');
+      if (config.messagingDestinations.instagram) destinations.push('INSTAGRAM_DIRECT');
+      if (config.messagingDestinations.whatsapp) destinations.push('WHATSAPP_MESSAGE');
 
       const promoted_object = { page_id: config.pageId };
-      if (destinationType === 'INSTAGRAM_DIRECT') {
+      if (destinations.includes('INSTAGRAM_DIRECT')) {
         promoted_object.instagram_actor_id = config.instagramId;
       }
-      if (destinationType === 'WHATSAPP' && config.whatsappNumber) {
+      if (destinations.includes('WHATSAPP_MESSAGE') && config.whatsappNumber) {
         promoted_object.whatsapp_phone_number = config.whatsappNumber;
+      }
+
+      const targeting = {
+        geo_locations: { countries: ["GT"] },
+        age_min: parseInt(config.manualAudience.ageMin) || 18,
+        device_platforms: ['mobile', 'desktop']
+      };
+
+      if (config.resolvedRegions && config.resolvedRegions.length > 0) {
+        targeting.geo_locations.regions = config.resolvedRegions;
+        delete targeting.geo_locations.countries;
+      }
+
+      if (config.platforms) {
+        targeting.publisher_platforms = Object.keys(config.platforms).filter(p => config.platforms[p]);
+        // Mapear nombres si es necesario (ej: audience_network -> audience_network)
+        if (targeting.publisher_platforms.includes('audience_network')) {
+           const idx = targeting.publisher_platforms.indexOf('audience_network');
+           targeting.publisher_platforms[idx] = 'audience_network';
+        }
+      }
+
+      if (config.manualAudience.interests) {
+        // Esto es simplificado, Meta espera IDs de intereses, pero a veces acepta texto en búsqueda
+        // Por ahora lo dejamos básico o lo omitimos si no tenemos IDs.
+      }
+
+      if (config.audienceId) {
+        targeting.custom_audiences = [{ id: config.audienceId }];
       }
 
       const asb = {
         name: config.adSetName,
         campaign_id: campaignId,
-        optimization_goal: 'CONVERSATIONS',
-        billing_event: 'IMPRESSIONS',
-        daily_budget: config.budgetAmount * 100,
-        destination_type: destinationType,
+        optimization_goal: "CONVERSATIONS",
+        billing_event: "IMPRESSIONS",
+        daily_budget: Math.round(config.budgetAmount * 100),
+        destination_type: destinations,
         promoted_object: promoted_object,
-        targeting: {
-          geo_locations: { countries: ['GT'] },
-          age_min: parseInt(config.manualAudience.ageMin) || 18,
-          publisher_platforms: ['facebook','instagram'],
-          facebook_positions: ['feed'],
-          instagram_positions: ['stream'],
-          device_platforms: ['mobile','desktop']
-        },
-        status: config.status,
+        targeting: targeting,
+        status: config.status || "PAUSED",
         access_token: token
       };
 
       if (config.startDate) {
-        // Meta API expects ISO 8601 or YYYY-MM-DD format with time, or it might fail if just date is given
-        // Let's ensure it has a time if it looks like just a date
         asb.start_time = config.startDate.includes('T') ? config.startDate : config.startDate + 'T00:00:00-0600';
       }
 
-      if (config.resolvedRegions && config.resolvedRegions.length > 0) {
-        asb.targeting.geo_locations.regions = config.resolvedRegions;
-        delete asb.targeting.geo_locations.countries;
+      const asr = await fetch(
+        `https://graph.facebook.com/${API_VERSION}/${acc}/adsets`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(asb)
+        }
+      );
+
+      const raw = await asr.text();
+
+      console.log(
+        "[META ADSET RESPONSE]",
+        raw
+      );
+
+      let asrd = {};
+
+      try {
+        asrd = JSON.parse(raw);
+      } catch (e) {
+        throw new Error(
+          "Respuesta inválida de Meta: " + raw
+        );
       }
 
-      if(config.audienceId) asb.targeting.custom_audiences = [{id: config.audienceId}];
+      if (!asr.ok || asrd.error) {
 
-      const asr = await fetch(`https://graph.facebook.com/${API_VERSION}/${acc}/adsets`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(asb)
-      });
-      const asrd = await asr.json();
-      if (!asrd.id) throw new Error("Error creando conjunto: " + (asrd.error?.message || JSON.stringify(asrd)));
+        console.error(
+          "[META ADSET ERROR]",
+          JSON.stringify(asrd, null, 2)
+        );
+
+        throw new Error(
+          "Error creando conjunto: " +
+          JSON.stringify(asrd, null, 2)
+        );
+      }
+
+      if (!asrd.id) {
+
+        console.error(
+          "[META ADSET SIN ID]",
+          JSON.stringify(asrd, null, 2)
+        );
+
+        throw new Error(
+          "Meta no devolvió ID del conjunto"
+        );
+      }
+
       adSetId = asrd.id;
-      console.log(`Conjunto creado: ${adSetId}`);
+
+      console.log(
+        `[Worker] Conjunto creado correctamente: ${adSetId}`
+      );
     }
 
     let creativeId;
@@ -457,18 +752,29 @@ async function handleCreateAdvancedAd(body, env) {
     // If editing and no new media, fetch existing creative details
     let existingMediaId = null;
     let existingMediaType = null;
+
     if (config.adId !== "NEW" && !mediaId) {
-      const adr = await fetch(`https://graph.facebook.com/${API_VERSION}/${config.adId}?fields=creative{id,object_story_spec}&access_token=${token}`);
+
+      const adr = await fetch(
+        `https://graph.facebook.com/${API_VERSION}/${config.adId}?fields=creative{id,object_story_spec}&access_token=${token}`
+      );
+
       const adrd = await adr.json();
+
       const spec = adrd.creative?.object_story_spec;
+
       if (spec) {
+
         if (spec.link_data) {
           existingMediaId = spec.link_data.image_hash;
-          existingMediaType = 'img';
-        } else if (spec.video_data) {
-          existingMediaId = spec.video_data.video_id;
-          existingMediaType = 'vid';
+          existingMediaType = "img";
         }
+
+        else if (spec.video_data) {
+          existingMediaId = spec.video_data.video_id;
+          existingMediaType = "vid";
+        }
+
       }
     }
 
@@ -476,48 +782,131 @@ async function handleCreateAdvancedAd(body, env) {
     const finalMediaType = mediaType || existingMediaType;
 
     if (finalMediaId) {
-      console.log(`Configurando AdCreative con Media ${finalMediaId}...`);
-      const finalMsg = `${config.primaryText}\n\n${FIXED_TEXT}`;
+
+      console.log(
+        `[Worker] Configurando AdCreative con Media ${finalMediaId}`
+      );
+
+      const finalMsg =
+        `${config.primaryText}\n\n${FIXED_TEXT}`;
+
       const cb = {
-        name: config.adName + " " + Date.now(),
+        name: `${config.adName}_${Date.now()}`,
         object_story_spec: {
-          page_id: config.pageId,
-          instagram_actor_id: config.instagramId || undefined
+          page_id: config.pageId
         },
         access_token: token
       };
 
-      if (finalMediaType === 'img') {
+      // Instagram opcional
+      if (config.instagramId) {
+        cb.object_story_spec.instagram_actor_id =
+          config.instagramId;
+      }
+
+      if (finalMediaType === "img") {
+
         cb.object_story_spec.link_data = {
           image_hash: finalMediaId,
           message: finalMsg,
-          name: config.headline,
-          call_to_action: { type: 'MESSAGE_PAGE' },
-          // Link is mandatory for link_data, even if sending to a page
-          link: "https://facebook.com/" + config.pageId
+          name: config.headline || "",
+          link: `https://facebook.com/${config.pageId}`,
+          call_to_action: {
+            type: "MESSAGE_PAGE",
+            value: {
+              link: `https://facebook.com/${config.pageId}`
+            }
+          }
         };
-      } else if (finalMediaType === 'vid') {
+
+      }
+
+      else if (finalMediaType === "vid") {
+
         cb.object_story_spec.video_data = {
           video_id: finalMediaId,
           message: finalMsg,
+          title: config.headline || "",
           call_to_action: {
-            type: 'MESSAGE_PAGE',
-            value: { link: "https://facebook.com/" + config.pageId }
+            type: "MESSAGE_PAGE",
+            value: {
+              link: `https://facebook.com/${config.pageId}`
+            }
           }
         };
+
       }
 
-      // Se omite message_template_id en link_data/video_data por sugerencia del usuario
+      console.log(
+        "[CREATIVE BODY]",
+        JSON.stringify(cb, null, 2)
+      );
 
-      console.log("Registrando AdCreative en Meta...");
-      const ctr = await fetch(`https://graph.facebook.com/${API_VERSION}/${acc}/adcreatives`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cb)
-      });
-      const ctrd = await ctr.json();
-      if (!ctrd.id) throw new Error("Error creando creativo: " + (ctrd.error?.message || JSON.stringify(ctrd)));
+      console.log(
+        "[Worker] Registrando AdCreative..."
+      );
+
+      const ctr = await fetch(
+        `https://graph.facebook.com/${API_VERSION}/${acc}/adcreatives`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(cb)
+        }
+      );
+
+      const creativeRaw = await ctr.text();
+
+      console.log(
+        "[META CREATIVE RESPONSE]",
+        creativeRaw
+      );
+
+      let ctrd = {};
+
+      try {
+
+        ctrd = JSON.parse(creativeRaw);
+
+      } catch (e) {
+
+        throw new Error(
+          "Respuesta inválida de Meta: " +
+          creativeRaw
+        );
+
+      }
+
+      if (!ctr.ok || ctrd.error) {
+
+        console.error(
+          "[META CREATIVE ERROR]",
+          JSON.stringify(ctrd, null, 2)
+        );
+
+        throw new Error(
+          "Error creando creativo: " +
+          JSON.stringify(ctrd, null, 2)
+        );
+
+      }
+
+      if (!ctrd.id) {
+
+        throw new Error(
+          "Meta no devolvió ID del creativo"
+        );
+
+      }
+
       creativeId = ctrd.id;
-      console.log(`AdCreative creado: ${creativeId}`);
+
+      console.log(
+        `[Worker] AdCreative creado: ${creativeId}`
+      );
+
     }
 
     if (config.adId !== "NEW") {
@@ -1423,9 +1812,13 @@ function generateHTML(env) {
 </html>`;
 
   // Inyección segura de variables de entorno
-  html = html.replace('[META_TOKEN]', meta_token);
-  html = html.replace('[OPENAI_KEY]', openai_key);
-  html = html.replace('[AD_ACC_ID]', ad_acc_id);
+  // Masking simple para no mostrar todo el token en el HTML generado
+  const masked_token = meta_token.length > 10 ? meta_token.substring(0, 6) + "..." + meta_token.substring(meta_token.length - 4) : meta_token;
+  const masked_openai = openai_key.length > 10 ? openai_key.substring(0, 6) + "..." + openai_key.substring(openai_key.length - 4) : openai_key;
+
+  html = html.replace(/\[META_TOKEN\]/g, masked_token);
+  html = html.replace(/\[OPENAI_KEY\]/g, masked_openai);
+  html = html.replace(/\[AD_ACC_ID\]/g, ad_acc_id);
 
   return new Response(html, { headers: { "Content-Type": "text/html;charset=UTF-8" } });
 }
