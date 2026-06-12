@@ -302,44 +302,28 @@ async function handleUploadMedia(bodyJson, env) {
     const fieldName = isImg ? 'bytes' : 'source';
     const targetUrl = `https://graph.facebook.com/${API_VERSION}/${acc}/${isImg ? 'adimages' : 'advideos'}`;
 
-    // Decodificación manual de Base64 a Uint8Array
+    // Decodificación correcta de Base64 a Uint8Array tal como sugiere el usuario
     const binaryString = atob(base64);
-    const fileBytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      fileBytes[i] = binaryString.charCodeAt(i);
+    const fileBytes = Uint8Array.from(binaryString, c => c.charCodeAt(0));
+
+    console.log(`[V19-FINAL] Bytes decodificados: ${fileBytes.length}`);
+
+    const outForm = new FormData();
+
+    // Importante: El orden y el uso de Blob son clave en Workers
+    const blob = new Blob([fileBytes], { type: fileType || 'application/octet-stream' });
+    outForm.append(fieldName, blob, fileName);
+    outForm.append("access_token", token);
+
+    if (isImg) {
+      outForm.append("filename", fileName);
     }
 
-    console.log(`[V17-MANUAL] Bytes decodificados: ${fileBytes.length}`);
-
-    const boundary = "----WorkerBoundary" + Math.random().toString(36).substring(2);
-    const encoder = new TextEncoder();
-
-    // Construcción manual del cuerpo Multipart/form-data
-    // Esto evita que el runtime de Cloudflare Workers stringifique los Blobs dentro de FormData
-    const p1 = encoder.encode(
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="access_token"\r\n\r\n${token}\r\n` +
-      (isImg ? `--${boundary}\r\nContent-Disposition: form-data; name="filename"\r\n\r\n${fileName}\r\n` : "") +
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="${fieldName}"; filename="${fileName}"\r\n` +
-      `Content-Type: ${fileType || 'application/octet-stream'}\r\n\r\n`
-    );
-    const p3 = encoder.encode(`\r\n--${boundary}--\r\n`);
-
-    const fullBody = new Uint8Array(p1.length + fileBytes.length + p3.length);
-    fullBody.set(p1, 0);
-    fullBody.set(fileBytes, p1.length);
-    fullBody.set(p3, p1.length + fileBytes.length);
-
-    console.log(`[V17-MANUAL] Enviando cuerpo binario de ${fullBody.length} bytes a Meta...`);
+    console.log(`[V19-FINAL] Enviando FormData con Blob a Meta (${fieldName})...`);
 
     const r = await fetch(targetUrl, {
       method: 'POST',
-      headers: {
-        "Content-Type": `multipart/form-data; boundary=${boundary}`,
-        "Accept": "application/json"
-      },
-      body: fullBody // Enviamos el Uint8Array directamente
+      body: outForm
     });
 
     const d = await r.json();
