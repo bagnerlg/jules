@@ -286,42 +286,49 @@ async function handleResolveRegions(body, env) {
   return new Response(JSON.stringify({ regions: results.filter(r => r !== null) }), { headers: { "Content-Type": "application/json" } });
 }
 
-async function handleUploadMedia(formData, env) {
-  const file = formData.get('file');
+async function handleUploadMedia(bodyJson, env) {
+  const { fileName, fileType, base64 } = bodyJson;
   const token = env.META_ACCESS_TOKEN;
   const acc = getAdAccId(env);
 
-  if (!file) return new Response(JSON.stringify({ error: "No se recibió ningún archivo" }), { status: 400 });
-  console.log(`[V11-UNIV] Subiendo: ${file.name} (${file.size} bytes)`);
+  if (!base64) return new Response(JSON.stringify({ error: "No se recibió el contenido del archivo" }), { status: 400 });
+  console.log(`[V15-APICE] Decodificando Base64: ${fileName} (${base64.length} chars)`);
 
   try {
-    const isImg = (file.type || "").startsWith('image');
+    const isImg = (fileType || "").startsWith('image');
     const fieldName = isImg ? 'bytes' : 'source';
-    const targetUrl = `https://graph.facebook.com/${API_VERSION}/${acc}/${isImg ? 'adimages' : 'advideos'}`;
+    const targetUrl = `https://graph.facebook.com/${API_VERSION}/${acc}/${isImg ? 'adimages' : 'advideos'}?access_token=${token}`;
 
-    // Reconstruimos el binario para asegurar que no haya transformaciones accidentales
-    const arrayBuffer = await file.arrayBuffer();
-    const blob = new Blob([arrayBuffer], { type: file.type || 'application/octet-stream' });
+    // Decodificación manual de Base64 a Uint8Array (compatible con Workers)
+    const binaryString = atob(base64);
+    const fileBytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      fileBytes[i] = binaryString.charCodeAt(i);
+    }
 
-    const outForm = new FormData();
-    outForm.append('access_token', token);
-    outForm.append(fieldName, blob, file.name);
-    if (isImg) outForm.append('filename', file.name);
+    console.log(`[V15-APICE] Bytes decodificados: ${fileBytes.length}`);
 
-    // Serialización binaria forzada
-    const dummyRes = new Response(outForm);
-    const contentType = dummyRes.headers.get('content-type');
-    const binaryBody = await dummyRes.arrayBuffer();
+    const boundary = "----WorkerBoundary" + Math.random().toString(36).substring(2);
+    const encoder = new TextEncoder();
 
-    console.log(`[V11-UNIV] Payload serializado: ${binaryBody.byteLength} bytes. Tipo: ${contentType}`);
+    const p1 = encoder.encode(
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="${fieldName}"; filename="${fileName}"\r\n` +
+      `Content-Type: ${fileType || 'application/octet-stream'}\r\n\r\n`
+    );
+    const p3 = encoder.encode(`\r\n--${boundary}--\r\n`);
+
+    const fullBody = new Uint8Array(p1.length + fileBytes.length + p3.length);
+    fullBody.set(p1, 0);
+    fullBody.set(fileBytes, p1.length);
+    fullBody.set(p3, p1.length + fileBytes.length);
+
+    console.log(`[V15-APICE] Enviando cuerpo binario de ${fullBody.length} bytes a Meta...`);
 
     const r = await fetch(targetUrl, {
       method: 'POST',
-      headers: {
-        "Content-Type": contentType,
-        "Accept": "application/json"
-      },
-      body: binaryBody
+      headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },
+      body: fullBody.buffer
     });
 
     const d = await r.json();
@@ -1332,11 +1339,25 @@ function generateHTML(env) {
 
         let mediaId = null, mediaType = null;
         if(f) {
-          setLdr("Subiendo " + f.name + " (" + (f.size/1024/1024).toFixed(2) + "MB)...");
+          setLdr("Preparando archivo: " + f.name + "...");
           try {
-            const mfd = new FormData();
-            mfd.append('file', f);
-            const mr = await fetch('/api/upload-media', {method:'POST', body:mfd});
+            const base64 = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result.split(',')[1]);
+              reader.onerror = reject;
+              reader.readAsDataURL(f);
+            });
+
+            setLdr("Subiendo " + (f.size/1024/1024).toFixed(2) + "MB a Meta...");
+            const mr = await fetch('/api/upload-media', {
+              method:'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fileName: f.name,
+                fileType: f.type,
+                base64: base64
+              })
+            });
             const md = await mr.json();
             if(md.error) throw new Error(md.error);
             mediaId = md.id;
@@ -1487,7 +1508,7 @@ export default {
         return new Response(JSON.stringify({ data: d }), { headers: { "Content-Type": "application/json" } });
       }
       if (url.pathname === "/api/resolve-regions") return await handleResolveRegions(await request.json(), env);
-      if (url.pathname === "/api/upload-media") return await handleUploadMedia(await request.formData(), env);
+      if (url.pathname === "/api/upload-media") return await handleUploadMedia(await request.json(), env);
       if (url.pathname === "/api/create-advanced-ad") return await handleCreateAdvancedAd(await request.json(), env);
     }
     return new Response("Not Found", { status: 404 });
