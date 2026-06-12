@@ -292,27 +292,42 @@ async function handleUploadMedia(formData, env) {
   const acc = getAdAccId(env);
 
   if (!file) return new Response(JSON.stringify({ error: "No se recibió ningún archivo" }), { status: 400 });
-  console.log(`[Upload] Iniciando: ${file.name} (${file.size} bytes)`);
+  console.log(`[Upload] Iniciando subida robusta manual: ${file.name} (${file.size} bytes)`);
 
   try {
     const isImg = (file.type || "").startsWith('image');
     const fieldName = isImg ? 'bytes' : 'source';
-    const targetUrl = `https://graph.facebook.com/${API_VERSION}/${acc}/${isImg ? 'adimages' : 'advideos'}?access_token=${token}`;
+    const targetUrl = `https://graph.facebook.com/${API_VERSION}/${acc}/${isImg ? 'adimages' : 'advideos'}`;
 
-    // Leemos el archivo a un buffer puro
     const buffer = await file.arrayBuffer();
-    console.log(`[Upload] Buffer cargado: ${buffer.byteLength} bytes`);
+    const boundary = "----WorkerBoundary" + Math.random().toString(36).substring(2);
 
-    // Creamos un nuevo FormData y le pasamos un Blob reconstruido
-    const outForm = new FormData();
-    const blob = new Blob([buffer], { type: file.type || 'application/octet-stream' });
-    outForm.append(fieldName, blob, file.name);
+    // Construcción manual del cuerpo multipart
+    const encoder = new TextEncoder();
+    const part1 = encoder.encode(
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="access_token"\r\n\r\n` +
+      `${token}\r\n` +
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="${fieldName}"; filename="${file.name}"\r\n` +
+      `Content-Type: ${file.type || 'application/octet-stream'}\r\n\r\n`
+    );
+    const part2 = new Uint8Array(buffer);
+    const part3 = encoder.encode(`\r\n--${boundary}--\r\n`);
 
-    console.log(`[Upload] Enviando a: ${targetUrl}`);
+    const body = new Uint8Array(part1.length + part2.length + part3.length);
+    body.set(part1);
+    body.set(part2, part1.length);
+    body.set(part3, part1.length + part2.length);
+
+    console.log(`[Upload] Enviando cuerpo manual de ${body.length} bytes a: ${targetUrl}`);
 
     const r = await fetch(targetUrl, {
       method: 'POST',
-      body: outForm
+      headers: {
+        "Content-Type": `multipart/form-data; boundary=${boundary}`
+      },
+      body: body
     });
 
     const d = await r.json();
