@@ -292,42 +292,36 @@ async function handleUploadMedia(formData, env) {
   const acc = getAdAccId(env);
 
   if (!file) return new Response(JSON.stringify({ error: "No se recibió ningún archivo" }), { status: 400 });
-  console.log(`[Upload] Iniciando subida robusta manual: ${file.name} (${file.size} bytes)`);
+  console.log(`[V11-UNIV] Subiendo: ${file.name} (${file.size} bytes)`);
 
   try {
     const isImg = (file.type || "").startsWith('image');
     const fieldName = isImg ? 'bytes' : 'source';
     const targetUrl = `https://graph.facebook.com/${API_VERSION}/${acc}/${isImg ? 'adimages' : 'advideos'}`;
 
-    const buffer = await file.arrayBuffer();
-    const boundary = "----WorkerBoundary" + Math.random().toString(36).substring(2);
+    // Reconstruimos el binario para asegurar que no haya transformaciones accidentales
+    const arrayBuffer = await file.arrayBuffer();
+    const blob = new Blob([arrayBuffer], { type: file.type || 'application/octet-stream' });
 
-    // Construcción manual del cuerpo multipart
-    const encoder = new TextEncoder();
-    const part1 = encoder.encode(
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="access_token"\r\n\r\n` +
-      `${token}\r\n` +
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="${fieldName}"; filename="${file.name}"\r\n` +
-      `Content-Type: ${file.type || 'application/octet-stream'}\r\n\r\n`
-    );
-    const part2 = new Uint8Array(buffer);
-    const part3 = encoder.encode(`\r\n--${boundary}--\r\n`);
+    const outForm = new FormData();
+    outForm.append('access_token', token);
+    outForm.append(fieldName, blob, file.name);
+    if (isImg) outForm.append('filename', file.name);
 
-    const body = new Uint8Array(part1.length + part2.length + part3.length);
-    body.set(part1);
-    body.set(part2, part1.length);
-    body.set(part3, part1.length + part2.length);
+    // Serialización binaria forzada
+    const dummyRes = new Response(outForm);
+    const contentType = dummyRes.headers.get('content-type');
+    const binaryBody = await dummyRes.arrayBuffer();
 
-    console.log(`[Upload] Enviando cuerpo manual de ${body.length} bytes a: ${targetUrl}`);
+    console.log(`[V11-UNIV] Payload serializado: ${binaryBody.byteLength} bytes. Tipo: ${contentType}`);
 
     const r = await fetch(targetUrl, {
       method: 'POST',
       headers: {
-        "Content-Type": `multipart/form-data; boundary=${boundary}`
+        "Content-Type": contentType,
+        "Accept": "application/json"
       },
-      body: body
+      body: binaryBody
     });
 
     const d = await r.json();
