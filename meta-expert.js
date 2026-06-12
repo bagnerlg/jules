@@ -300,21 +300,26 @@ async function handleUploadMedia(bodyJson, env) {
   try {
     const isImg = (fileType || "").startsWith('image');
     const fieldName = isImg ? 'bytes' : 'source';
-    const targetUrl = `https://graph.facebook.com/${API_VERSION}/${acc}/${isImg ? 'adimages' : 'advideos'}?access_token=${token}`;
+    const targetUrl = `https://graph.facebook.com/${API_VERSION}/${acc}/${isImg ? 'adimages' : 'advideos'}`;
 
-    // Decodificación manual de Base64 a Uint8Array (compatible con Workers)
+    // Decodificación manual de Base64 a Uint8Array
     const binaryString = atob(base64);
     const fileBytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
       fileBytes[i] = binaryString.charCodeAt(i);
     }
 
-    console.log(`[V15-APICE] Bytes decodificados: ${fileBytes.length}`);
+    console.log(`[V17-MANUAL] Bytes decodificados: ${fileBytes.length}`);
 
     const boundary = "----WorkerBoundary" + Math.random().toString(36).substring(2);
     const encoder = new TextEncoder();
 
+    // Construcción manual del cuerpo Multipart/form-data
+    // Esto evita que el runtime de Cloudflare Workers stringifique los Blobs dentro de FormData
     const p1 = encoder.encode(
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="access_token"\r\n\r\n${token}\r\n` +
+      (isImg ? `--${boundary}\r\nContent-Disposition: form-data; name="filename"\r\n\r\n${fileName}\r\n` : "") +
       `--${boundary}\r\n` +
       `Content-Disposition: form-data; name="${fieldName}"; filename="${fileName}"\r\n` +
       `Content-Type: ${fileType || 'application/octet-stream'}\r\n\r\n`
@@ -326,12 +331,15 @@ async function handleUploadMedia(bodyJson, env) {
     fullBody.set(fileBytes, p1.length);
     fullBody.set(p3, p1.length + fileBytes.length);
 
-    console.log(`[V15-APICE] Enviando cuerpo binario de ${fullBody.length} bytes a Meta...`);
+    console.log(`[V17-MANUAL] Enviando cuerpo binario de ${fullBody.length} bytes a Meta...`);
 
     const r = await fetch(targetUrl, {
       method: 'POST',
-      headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },
-      body: fullBody.buffer
+      headers: {
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        "Accept": "application/json"
+      },
+      body: fullBody // Enviamos el Uint8Array directamente
     });
 
     const d = await r.json();
