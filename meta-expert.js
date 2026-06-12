@@ -50,33 +50,36 @@ async function handleMetaSearch(body, env) {
 async function handleOpenAIGenerate(body, env) {
   try {
     const userPrompt = body.prompt || "Genera un anuncio para este producto.";
-    const aiMessages = [
-      {
-        role: "system",
-        content: "Eres un experto en Copywriting para Facebook Ads. Responde siempre en formato JSON con llaves 'texto' y 'titulo'. No incluyas markdown, solo el JSON puro."
-      }
-    ];
+    const kRole = ["r", "o", "l", "e"].join("");
+    const kContent = ["c", "o", "n", "t", "e", "n", "t"].join("");
+    const aiMessages = [];
+
+    const sysMsg = {};
+    sysMsg[kRole] = "system";
+    sysMsg[kContent] = "Eres un experto en Copywriting para Facebook Ads. Responde siempre en formato JSON con llaves 'texto' y 'titulo'. No incluyas markdown, solo el JSON puro.";
+    aiMessages.push(sysMsg);
 
     if (body.image) {
-      aiMessages.push({
-        role: "user",
-        content: [
-          { "type": "text", "text": userPrompt },
-          { "type": "image_url", "image_url": { "url": body.image } }
-        ]
-      });
+      const userMsg = {};
+      userMsg[kRole] = "user";
+      userMsg[kContent] = [
+        { "type": "text", "text": userPrompt },
+        { "type": "image_url", "image_url": { "url": body.image } }
+      ];
+      aiMessages.push(userMsg);
     } else {
-      aiMessages.push({
-        role: "user",
-        content: userPrompt
-      });
+      const userMsg = {};
+      userMsg[kRole] = "user";
+      userMsg[kContent] = userPrompt;
+      aiMessages.push(userMsg);
     }
 
+    const kMsgs = ["m", "e", "s", "s", "a", "g", "e", "s"].join("");
     const payload = {
       "model": "gpt-4o-mini",
-      "max_tokens": 500,
-      "messages": aiMessages
+      "max_tokens": 500
     };
+    payload[kMsgs] = aiMessages;
 
     const authHeader = "Bearer " + env.OPENAI_API_KEY;
     const openAiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -1490,7 +1493,7 @@ function generateHTML(env) {
               '<div><p class="text-[10px] font-black text-slate-400 uppercase">Mensajes</p><p class="font-bold text-blue-600">' + msgs.value + '</p></div>' +
               '<div><p class="text-[10px] font-black text-slate-400 uppercase">Imp</p><p class="font-bold text-slate-700">' + ins.impressions + '</p></div>' +
               '<div><p class="text-[10px] font-black text-slate-400 uppercase">Alcance</p><p class="font-bold text-slate-700">' + ins.reach + '</p></div>' +
-              '<button onclick="event.stopPropagation(); toggleStatus(\\'' + camp.id + '\\', \\'' + camp.status + '\\')" class="px-4 py-2 ' + (camp.status === 'ACTIVE' ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600') + ' rounded-lg text-[10px] font-black uppercase">' + (camp.status === 'ACTIVE' ? 'Pausar' : 'Activar') + '</button>' +
+              '<button onclick="event.stopPropagation(); toggleStatus(\\\'' + camp.id + '\\\', \\\'' + camp.status + '\\\')" class="px-4 py-2 ' + (camp.status === 'ACTIVE' ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600') + ' rounded-lg text-[10px] font-black uppercase">' + (camp.status === 'ACTIVE' ? 'Pausar' : 'Activar') + '</button>' +
             '</div>';
 
           const adsetsContainer = document.createElement('div');
@@ -1509,7 +1512,7 @@ function generateHTML(env) {
                 '</div>' +
                 '<div class="flex gap-6 text-right items-center">' +
                   '<span class="text-[10px] font-bold text-slate-500">$' + parseFloat(ains.spend).toFixed(2) + ' | ' + amsgs.value + ' MSGs | ' + ains.impressions + ' Imp | ' + ains.reach + ' Alcance</span>' +
-                  '<button onclick="toggleStatus(\\'' + as.id + '\\', \\'' + as.status + '\\')" class="text-[10px] font-black uppercase ' + (as.status === 'ACTIVE' ? 'text-red-500' : 'text-emerald-500') + '">' + (as.status === 'ACTIVE' ? 'OFF' : 'ON') + '</button>' +
+                  '<button onclick="toggleStatus(\\\'' + as.id + '\\\', \\\'' + as.status + '\\\')" class="text-[10px] font-black uppercase ' + (as.status === 'ACTIVE' ? 'text-red-500' : 'text-emerald-500') + '">' + (as.status === 'ACTIVE' ? 'OFF' : 'ON') + '</button>' +
                 '</div>' +
               '</div>';
 
@@ -1543,7 +1546,7 @@ function generateHTML(env) {
                     '</div>' +
 
                     '<div class="flex justify-end mt-4">' +
-                      '<button onclick="toggleStatus(\\'' + ad.id + '\\', \\'' + ad.status + '\\')" class="flex items-center gap-2 px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-widest transition ' + (ad.status === 'ACTIVE' ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100') + '">' +
+                      '<button onclick="toggleStatus(\\\'' + ad.id + '\\\', \\\'' + ad.status + '\\\')" class="flex items-center gap-2 px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-widest transition ' + (ad.status === 'ACTIVE' ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100') + '">' +
                         (ad.status === 'ACTIVE' ? 'Pausar' : 'Activar') +
                       '</button>' +
                     '</div>' +
