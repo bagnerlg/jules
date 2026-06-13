@@ -169,6 +169,22 @@ async function handleGetMessageTemplates(body, env) {
   return new Response(JSON.stringify(d), { headers: { "Content-Type": "application/json" } });
 }
 
+async function handleGetWhatsAppNumbers(body, env) {
+  const pageId = body.pageId;
+  const token = env.META_ACCESS_TOKEN;
+  try {
+    const pRes = await fetch(`https://graph.facebook.com/${API_VERSION}/${pageId}?fields=whatsapp_business_account&access_token=${token}`);
+    const pData = await pRes.json();
+    if (pData.whatsapp_business_account && pData.whatsapp_business_account.id) {
+      const wabaId = pData.whatsapp_business_account.id;
+      const nRes = await fetch(`https://graph.facebook.com/${API_VERSION}/${wabaId}/phone_numbers?access_token=${token}`);
+      const nData = await nRes.json();
+      return new Response(JSON.stringify(nData), { headers: { "Content-Type": "application/json" } });
+    }
+  } catch (e) {}
+  return new Response(JSON.stringify({ data: [] }), { headers: { "Content-Type": "application/json" } });
+}
+
 async function handleValidateSetup(env) {
   const token = env.META_ACCESS_TOKEN;
   const accId = env.AD_ACCOUNT_ID;
@@ -291,7 +307,7 @@ async function handleResolveRegions(body, env) {
   console.log(`Resolviendo ${depts.length} regiones...`);
   const promises = depts.map(async (dept) => {
     try {
-      const r = await fetch(`https://graph.facebook.com/${API_VERSION}/search?type=adgeolocation&q=${encodeURIComponent(dept)}&location_types=['region']&access_token=${token}`);
+      const r = await fetch(`https://graph.facebook.com/${API_VERSION}/search?type=adgeolocation&q=${encodeURIComponent(dept)}&location_types=["region"]&access_token=${token}`);
       const d = await r.json();
       if (d.data && d.data.length > 0) {
         const match = d.data.find(it => it.country_code === 'GT') || d.data[0];
@@ -634,13 +650,13 @@ async function handleCreateAdvancedAd(body, env) {
       const destinations = [];
       if (config.messagingDestinations.messenger) destinations.push('MESSENGER');
       if (config.messagingDestinations.instagram) destinations.push('INSTAGRAM_DIRECT');
-      if (config.messagingDestinations.whatsapp) destinations.push('WHATSAPP_MESSAGE');
+      if (config.messagingDestinations.whatsapp) destinations.push('WHATSAPP');
 
       const promoted_object = { page_id: config.pageId };
       if (destinations.includes('INSTAGRAM_DIRECT')) {
         promoted_object.instagram_actor_id = config.instagramId;
       }
-      if (destinations.includes('WHATSAPP_MESSAGE') && config.whatsappNumber) {
+      if (destinations.includes('WHATSAPP') && config.whatsappNumber) {
         promoted_object.whatsapp_phone_number = config.whatsappNumber;
       }
 
@@ -679,7 +695,7 @@ async function handleCreateAdvancedAd(body, env) {
         optimization_goal: "CONVERSATIONS",
         billing_event: "IMPRESSIONS",
         daily_budget: Math.round(config.budgetAmount * 100),
-        destination_type: destinations,
+        destination_type: destinations.length === 1 ? destinations[0] : destinations,
         promoted_object: promoted_object,
         targeting: targeting,
         status: config.status || "PAUSED",
@@ -1089,8 +1105,10 @@ function generateHTML(env) {
                   </div>
                 </div>
                 <div id="wa-number-config" class="hidden mt-2">
-                  <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Número WhatsApp (502XXXXXXXX)</label>
-                  <input type="text" id="wa-num" placeholder="502..." class="w-full bg-slate-50 border rounded-lg p-3 text-sm font-bold text-slate-700">
+                  <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Número WhatsApp</label>
+                  <select id="wa-num" class="w-full bg-slate-50 border rounded-lg p-3 text-sm font-bold text-slate-700">
+                    <option value="">Seleccione número...</option>
+                  </select>
                 </div>
                 <div>
                   <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Objetivo Rendimiento</label>
@@ -1397,12 +1415,23 @@ function generateHTML(env) {
 
         const st = document.getElementById('sel-template');
         st.innerHTML = '<option value="">Cargando plantillas...</option>';
-        const r2 = await fetch('/api/get-message-templates', {method:'POST', body:JSON.stringify({pageId})});
+        const [r2, r3] = await Promise.all([
+          fetch('/api/get-message-templates', {method:'POST', body:JSON.stringify({pageId})}),
+          fetch('/api/get-whatsapp-numbers', {method:'POST', body:JSON.stringify({pageId})})
+        ]);
         const d2 = await r2.json();
         st.innerHTML = '<option value="NEW">+ Crear Nueva Plantilla</option>';
         if(d2.data && d2.data.length > 0) {
           d2.data.forEach(t=>st.add(new Option(t.name, t.id)));
         }
+
+        const d3 = await r3.json();
+        const swa = document.getElementById('wa-num');
+        swa.innerHTML = '<option value="">Seleccione número...</option>';
+        if(d3.data && d3.data.length > 0) {
+          d3.data.forEach(n => swa.add(new Option(n.display_phone_number, n.display_phone_number.replace(/[^0-9]/g, ""))));
+        }
+
         initTemplateUI();
       } catch(e){
         console.error("Error updating page details:", e);
@@ -1863,6 +1892,10 @@ export default {
       if (url.pathname === "/api/get-message-templates") {
         const b = await request.json();
         return await handleGetMessageTemplates(b, env);
+      }
+      if (url.pathname === "/api/get-whatsapp-numbers") {
+        const b = await request.json();
+        return await handleGetWhatsAppNumbers(b, env);
       }
       if (url.pathname === "/api/check-permissions") return await handleCheckPermissions(env);
       if (url.pathname === "/api/debug-token") return await handleGetTokenInfo(env);
