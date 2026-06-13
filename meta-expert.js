@@ -593,7 +593,7 @@ async function handleCreateAdvancedAd(body, env) {
 
         status: config.status || "PAUSED",
 
-        special_ad_categories: [],
+        special_ad_categories: ["NONE"],
 
         // NUEVOS CAMPOS OBLIGATORIOS
         is_campaign_budget_optimization_enabled: false,
@@ -684,13 +684,13 @@ async function handleCreateAdvancedAd(body, env) {
       const destinations = [];
       if (config.messagingDestinations.messenger) destinations.push('MESSENGER');
       if (config.messagingDestinations.instagram) destinations.push('INSTAGRAM_DIRECT');
-      if (config.messagingDestinations.whatsapp) destinations.push('WHATSAPP');
+      if (config.messagingDestinations.whatsapp) destinations.push('WHATSAPP_MESSAGE');
 
       const promoted_object = { page_id: config.pageId };
       if (destinations.includes('INSTAGRAM_DIRECT')) {
         promoted_object.instagram_actor_id = config.instagramId;
       }
-      if (destinations.includes('WHATSAPP') && config.whatsappNumber) {
+      if (destinations.includes('WHATSAPP_MESSAGE') && config.whatsappNumber) {
         promoted_object.whatsapp_phone_number = config.whatsappNumber;
       }
 
@@ -707,17 +707,21 @@ async function handleCreateAdvancedAd(body, env) {
         billing_event: "IMPRESSIONS",
         bid_strategy: "LOWEST_COST_WITHOUT_CAP",
         daily_budget: Math.round(config.budgetAmount * 100),
-        destination_type: destinations.length === 1 ? destinations[0] : destinations,
+        destination_type: Array.isArray(destinations) ? destinations : [destinations],
         promoted_object: promoted_object,
         targeting: {
           geo_locations: geo_locations,
-          age_min: 18,
+          age_min: parseInt(config.manualAudience.ageMin) || 18,
           publisher_platforms: Object.keys(config.platforms).filter(p => config.platforms[p]),
           device_platforms: ['mobile', 'desktop']
         },
         status: config.status || "PAUSED",
         access_token: token
       };
+
+      if (config.startDate) {
+        asb.start_time = config.startDate.includes('T') ? config.startDate : config.startDate + 'T00:00:00-0600';
+      }
 
       const asr = await fetch(
         `https://graph.facebook.com/${API_VERSION}/${acc}/adsets`,
@@ -1443,6 +1447,9 @@ function generateHTML(env) {
         swa.innerHTML = '<option value="">Seleccione número...</option>';
         if(d3.data && d3.data.length > 0) {
           d3.data.forEach(n => swa.add(new Option(n.display_phone_number, n.display_phone_number.replace(/[^0-9]/g, ""))));
+          if(d3.data.length === 1) {
+            swa.selectedIndex = 1;
+          }
         }
 
         initTemplateUI();
@@ -1704,9 +1711,12 @@ function generateHTML(env) {
         const isNewAd = document.getElementById('sel-ad').value === 'NEW';
         const f=document.getElementById('fi').files[0];
         const pageId = document.getElementById('pgs').value;
+        const waChecked = document.getElementById('dest-wa').checked;
+        const waNumber = document.getElementById('wa-num').value;
 
         if(isNewAd && !f) { alert('Debe subir una imagen o video para un anuncio nuevo.'); return; }
         if(!pageId) { alert('Seleccione una página emisora.'); return; }
+        if(waChecked && !waNumber) { alert('Seleccione un número de WhatsApp.'); return; }
 
         const ldr = document.getElementById('ldr');
         const log = document.getElementById('ldr-log');
