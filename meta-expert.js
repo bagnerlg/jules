@@ -307,7 +307,7 @@ async function handleResolveRegions(body, env) {
   console.log(`Resolviendo ${depts.length} regiones...`);
   const promises = depts.map(async (dept) => {
     try {
-      const r = await fetch(`https://graph.facebook.com/${API_VERSION}/search?type=adgeolocation&q=${encodeURIComponent(dept)}&location_types=["region"]&access_token=${token}`);
+      const r = await fetch(`https://graph.facebook.com/${API_VERSION}/search?type=adgeolocation&q=${encodeURIComponent(dept)}&location_types=['region']&access_token=${token}`);
       const d = await r.json();
       if (d.data && d.data.length > 0) {
         const match = d.data.find(it => it.country_code === 'GT') || d.data[0];
@@ -361,9 +361,14 @@ async function handleUploadMedia(bodyJson, env) {
       cleanBase64.substring(0, 60)
     );
 
-    // Decodificación correcta de Base64 a Uint8Array
+    // Decodificar
     const binary = atob(cleanBase64);
-    const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+
+    const bytes = new Uint8Array(binary.length);
+
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
 
     console.log("Bytes decodificados:", bytes.length);
 
@@ -387,8 +392,8 @@ async function handleUploadMedia(bodyJson, env) {
         .join(" ")
     );
 
-    // Validar imagen (opcional para seguridad)
-    if (isImg && !validateImageBytes(bytes)) {
+    // Validar imagen
+    if (!validateImageBytes(bytes)) {
       throw new Error(
         "La imagen recibida no es JPEG ni PNG válida"
       );
@@ -411,7 +416,6 @@ async function handleUploadMedia(bodyJson, env) {
     // Meta suele aceptar mejor filename separado
     form.append("filename", fileName);
 
-    // IMPORTANTE: Meta Ads Images usa 'bytes', no 'source'
     if (isImg) {
       form.append("bytes", blob, fileName);
     } else {
@@ -456,6 +460,7 @@ async function handleUploadMedia(bodyJson, env) {
     }
 
     if (data.error) {
+
       console.error(
         "ERROR META:",
         JSON.stringify(
@@ -464,6 +469,7 @@ async function handleUploadMedia(bodyJson, env) {
           2
         )
       );
+
       throw new Error(
         data.error.message || "Error Meta"
       );
@@ -475,10 +481,8 @@ async function handleUploadMedia(bodyJson, env) {
       }
       const imageInfo = Object.values(data.images)[0];
       const hash = imageInfo?.hash;
-      if (!hash) throw new Error("Meta no devolvió hash de imagen");
-
+      if (!hash) throw new Error("Meta no devolvió hash");
       console.log("Imagen subida correctamente. HASH:", hash);
-
       return new Response(
         JSON.stringify({
           success: true,
@@ -493,7 +497,6 @@ async function handleUploadMedia(bodyJson, env) {
         throw new Error("Meta no devolvió ID de video");
       }
       console.log("Video subido correctamente. ID:", data.id);
-
       return new Response(
         JSON.stringify({
           success: true,
@@ -526,6 +529,37 @@ async function handleUploadMedia(bodyJson, env) {
       }
     );
   }
+}
+
+function normalizeObjective(objective) {
+
+  const map = {
+
+    // antiguos
+    MESSAGES: "OUTCOME_ENGAGEMENT",
+    MESSAGE: "OUTCOME_ENGAGEMENT",
+
+    CONVERSIONS: "OUTCOME_SALES",
+    SALES: "OUTCOME_SALES",
+
+    TRAFFIC: "OUTCOME_TRAFFIC",
+
+    LEADS: "OUTCOME_LEADS",
+
+    AWARENESS: "OUTCOME_AWARENESS",
+
+    APP_INSTALLS: "OUTCOME_APP_PROMOTION",
+
+    // nuevos
+    OUTCOME_ENGAGEMENT: "OUTCOME_ENGAGEMENT",
+    OUTCOME_SALES: "OUTCOME_SALES",
+    OUTCOME_TRAFFIC: "OUTCOME_TRAFFIC",
+    OUTCOME_LEADS: "OUTCOME_LEADS",
+    OUTCOME_AWARENESS: "OUTCOME_AWARENESS",
+    OUTCOME_APP_PROMOTION: "OUTCOME_APP_PROMOTION"
+  };
+
+  return map[objective] || objective;
 }
 
 async function handleCreateAdvancedAd(body, env) {
@@ -660,33 +694,10 @@ async function handleCreateAdvancedAd(body, env) {
         promoted_object.whatsapp_phone_number = config.whatsappNumber;
       }
 
-      const targeting = {
-        geo_locations: { countries: ["GT"] },
-        age_min: parseInt(config.manualAudience.ageMin) || 18,
-        device_platforms: ['mobile', 'desktop']
-      };
-
+      const geo_locations = { countries: ["GT"] };
       if (config.resolvedRegions && config.resolvedRegions.length > 0) {
-        targeting.geo_locations.regions = config.resolvedRegions;
-        delete targeting.geo_locations.countries;
-      }
-
-      if (config.platforms) {
-        targeting.publisher_platforms = Object.keys(config.platforms).filter(p => config.platforms[p]);
-        // Mapear nombres si es necesario (ej: audience_network -> audience_network)
-        if (targeting.publisher_platforms.includes('audience_network')) {
-           const idx = targeting.publisher_platforms.indexOf('audience_network');
-           targeting.publisher_platforms[idx] = 'audience_network';
-        }
-      }
-
-      if (config.manualAudience.interests) {
-        // Esto es simplificado, Meta espera IDs de intereses, pero a veces acepta texto en búsqueda
-        // Por ahora lo dejamos básico o lo omitimos si no tenemos IDs.
-      }
-
-      if (config.audienceId) {
-        targeting.custom_audiences = [{ id: config.audienceId }];
+        geo_locations.regions = config.resolvedRegions;
+        delete geo_locations.countries;
       }
 
       const asb = {
@@ -694,17 +705,19 @@ async function handleCreateAdvancedAd(body, env) {
         campaign_id: campaignId,
         optimization_goal: "CONVERSATIONS",
         billing_event: "IMPRESSIONS",
+        bid_strategy: "LOWEST_COST_WITHOUT_CAP",
         daily_budget: Math.round(config.budgetAmount * 100),
         destination_type: destinations.length === 1 ? destinations[0] : destinations,
         promoted_object: promoted_object,
-        targeting: targeting,
+        targeting: {
+          geo_locations: geo_locations,
+          age_min: 18,
+          publisher_platforms: Object.keys(config.platforms).filter(p => config.platforms[p]),
+          device_platforms: ['mobile', 'desktop']
+        },
         status: config.status || "PAUSED",
         access_token: token
       };
-
-      if (config.startDate) {
-        asb.start_time = config.startDate.includes('T') ? config.startDate : config.startDate + 'T00:00:00-0600';
-      }
 
       const asr = await fetch(
         `https://graph.facebook.com/${API_VERSION}/${acc}/adsets`,
@@ -1104,16 +1117,16 @@ function generateHTML(env) {
                     <label class="flex items-center gap-1 text-[10px] font-bold"><input type="checkbox" id="dest-wa" onchange="document.getElementById('wa-number-config').classList.toggle('hidden', !this.checked)"> WhatsApp</label>
                   </div>
                 </div>
-                <div id="wa-number-config" class="hidden mt-2">
-                  <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Número WhatsApp</label>
-                  <select id="wa-num" class="w-full bg-slate-50 border rounded-lg p-3 text-sm font-bold text-slate-700">
-                    <option value="">Seleccione número...</option>
-                  </select>
-                </div>
                 <div>
                   <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Objetivo Rendimiento</label>
                   <input type="text" value="Maximizar conversaciones" readonly class="w-full bg-slate-100 border rounded-lg p-3 text-sm font-bold text-slate-500">
                 </div>
+              </div>
+              <div id="wa-number-config" class="hidden">
+                <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Número WhatsApp</label>
+                <select id="wa-num" class="w-full bg-slate-50 border rounded-lg p-3 text-sm font-bold text-slate-700">
+                  <option value="">Seleccione número...</option>
+                </select>
               </div>
 
               <div class="grid grid-cols-2 gap-4">
@@ -1844,13 +1857,9 @@ function generateHTML(env) {
 </html>`;
 
   // Inyección segura de variables de entorno
-  // Masking simple para no mostrar todo el token en el HTML generado
-  const masked_token = meta_token.length > 10 ? meta_token.substring(0, 6) + "..." + meta_token.substring(meta_token.length - 4) : meta_token;
-  const masked_openai = openai_key.length > 10 ? openai_key.substring(0, 6) + "..." + openai_key.substring(openai_key.length - 4) : openai_key;
-
-  html = html.replace(/\[META_TOKEN\]/g, masked_token);
-  html = html.replace(/\[OPENAI_KEY\]/g, masked_openai);
-  html = html.replace(/\[AD_ACC_ID\]/g, ad_acc_id);
+  html = html.replace('[META_TOKEN]', meta_token);
+  html = html.replace('[OPENAI_KEY]', openai_key);
+  html = html.replace('[AD_ACC_ID]', ad_acc_id);
 
   return new Response(html, { headers: { "Content-Type": "text/html;charset=UTF-8" } });
 }
