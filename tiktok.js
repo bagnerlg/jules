@@ -160,6 +160,28 @@ app.get("/callback", async (req, res) => {
 
   const data = await r.json();
 
+  // Si tenemos éxito, intentamos obtener información del usuario para demostrar el uso del token
+  if (data.access_token) {
+    const userResp = await fetch("https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name", {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${data.access_token}`
+      }
+    });
+    const userData = await userResp.json();
+
+    return res.send(`
+      <h1>Login Exitoso</h1>
+      <h3>Tokens:</h3>
+      <pre>${JSON.stringify(data, null, 2)}</pre>
+      <hr>
+      <h3>Información del Usuario (usando el access_token):</h3>
+      <pre>${JSON.stringify(userData, null, 2)}</pre>
+      <p>Para probar manualmente desde terminal:</p>
+      <code>curl -H "Authorization: Bearer ${data.access_token}" "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name"</code>
+    `);
+  }
+
   res.send(`<pre>${JSON.stringify(data, null, 2)}</pre>`);
 });
 
