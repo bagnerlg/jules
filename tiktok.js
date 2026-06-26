@@ -27,22 +27,13 @@ function generateChallenge(verifier) {
   return crypto
     .createHash("sha256")
     .update(verifier)
-    .digest("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+    .digest("hex");
 }
 
 function generateVerifier() {
-  return base64URLEncode(crypto.randomBytes(64));
-}
-
-function base64URLEncode(buffer) {
-  return buffer
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+  // TikTok recommends a 64-character random string.
+  // Using hex encoding of 32 random bytes gives exactly 64 characters.
+  return crypto.randomBytes(32).toString("hex");
 }
 
 // =========================
