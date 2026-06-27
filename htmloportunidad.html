@@ -1,0 +1,880 @@
+<style>
+body { font-family: Arial, sans-serif; }
+label { font-size: 12px; margin-top: 6px; display: block; font-weight: bold; }
+input, select { width: 100%; padding: 6px; border-radius: 6px; border: 1px solid #ccc; box-sizing: border-box; }
+.row { display: flex; gap: 8px; margin-top: 6px; }
+.row > div { flex: 1; }
+.section { border-top: 1px dashed #ddd; margin-top: 12px; padding-top: 8px; }
+.autocomplete { position: relative; }
+.combo-list { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ddd; border-radius: 6px; max-height: 180px; overflow: auto; z-index: 9999; display: none; }
+.combo-item { padding: 6px; cursor: pointer; }
+.combo-item:hover { background: #f2f2f2; }
+.fila-producto { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; border: 1px solid #eee; padding: 8px; border-radius: 6px; position: relative; }
+.fila-producto-row { display: flex; gap: 6px; align-items: center; }
+.btn-del { background: #ff4d4d; color: #fff; border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; position: absolute; top: -10px; right: -10px; display: flex; align-items: center; justify-content: center; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+.total-global { font-weight: bold; margin-top: 10px; display: flex; gap: 12px; background: #f9f9f9; padding: 10px; border-radius: 6px; }
+input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type=number] { -moz-appearance: textfield; }
+.error-field { border: 2px solid red !important; }
+.required-label::after { content: " *"; color: red; }
+</style>
+
+<input type="hidden" id="FgGvPHLrkFnWEjyOrUC8" name="JsonData">
+
+<div class="section">
+    <label class="required-label">Nombre</label>
+    <input id="nombre">
+    <div class="row">
+        <div style="flex:1"><label class="required-label">Teléfono 1 (8-11 dígitos)</label><input id="tel1" type="tel" maxlength="11"></div>
+        <div style="flex:1"><label>Teléfono 2 (8-11 dígitos)</label><input id="tel2" type="tel" maxlength="11"></div>
+    </div>
+    <label class="required-label">Fecha de Venta</label>
+    <input type="date" id="fechaVenta">
+    <label>NIT</label>
+    <input id="nit">
+</div>
+
+<div class="section">
+    <h4>Detalles de la Ubicación</h4>
+    <div class="row">
+        <div style="flex:1"><label>Zona</label><input id="locZona"></div>
+        <div style="flex:1"><label>Número (Casa/Lote/Apto)</label><input id="locNumero"></div>
+        <div style="flex:1"><label>Avenida</label><input id="locAvenida"></div>
+    </div>
+    <label>Referencia completa de dirección</label>
+    <input id="locReferencia">
+</div>
+
+<div class="section">
+    <div class="row">
+        <div class="autocomplete">
+            <label class="required-label">Departamento</label>
+            <input id="departamento" autocomplete="off">
+            <div id="dep-list" class="combo-list"></div>
+        </div>
+        <div class="autocomplete">
+            <label class="required-label">Municipio</label>
+            <input id="municipio" autocomplete="off">
+            <div id="mun-list" class="combo-list"></div>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <div class="row">
+        <div><label>Marca</label>
+            <select id="marca">
+                <option value="R1.1">R1.1</option>
+            </select>
+        </div>
+        <div><label>Bodega</label>
+            <select id="bodega">
+                <option value="B023 XENACOJ">B023 XENACOJ</option>
+            </select>
+        </div>
+        <div><label>Canal</label>
+            <select id="canal">
+                <option value="CLAN 1">CLAN 1</option>
+            </select>
+        </div>
+    </div>
+    <div class="row">
+        <div><label>Ubicación</label>
+            <select id="ubicacion">
+                <option value="CXN">CXN</option>
+            </select>
+        </div>
+        <div><label>Anillo</label>
+            <select id="anillo">
+                <option value="R1">R1</option>
+            </select>
+        </div>
+        <div><label>COMENTARIO</label><input id="COMENTARIO"></div>
+    </div>
+</div>
+
+<div class="section">
+    <h4>Selección de Productos</h4>
+    <div class="row">
+        <div class="autocomplete" style="flex:1">
+            <label>Categoría</label>
+            <input id="categoria" autocomplete="off">
+            <div id="cat-list" class="combo-list"></div>
+        </div>
+        <div class="autocomplete" style="flex:3">
+            <label>Buscar SKU</label>
+            <input id="buscarSku" autocomplete="off" placeholder="Escribe para buscar producto...">
+            <div id="sku-search-list" class="combo-list"></div>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <h4>Productos Agregados</h4>
+    <div id="productos"></div>
+    <div class="total-global">
+        <div>Total Unidades: <span id="total-u">0</span></div>
+        <div>Total Q: <span id="total-q">0.00</span></div>
+    </div>
+</div>
+
+<script>
+// He restaurado tus listas completas de datos para que no pierdas nada
+var g_db = [
+{cat:"ROPERO",sku:"R-3C-L-W-0004_ROPERO 3 CUERPOS LISO  WENGUE CAJON BLANCO MELAMINA_1749"},
+{cat:"ROPERO",sku:"R-3C-L-A-0004_ROPERO 3 CUERPOS LISO  ARIZONA CAJON BLANCO MELAMINA_1749"},
+{cat:"ROPERO",sku:"R-3C-E-W-0004_ROPERO 3 CUERPOS ESTANDAR  WENGUE CAJON BLANCO MELAMINA_1949"},
+{cat:"ROPERO",sku:"R-3C-E-A-0004_ROPERO 3 CUERPOS ESTANDAR  ARIZONA CAJON BLANCO MELAMINA_1949"},
+{cat:"ROPERO",sku:"R-4C-L-W-0004_ROPERO 4 CUERPOS LISO  WENGUE CAJON BLANCO MELAMINA_2149"},
+{cat:"ROPERO",sku:"R-4C-L-A-0004_ROPERO 4 CUERPOS LISO  ARIZONA CAJON BLANCO MELAMINA_2149"},
+{cat:"ROPERO",sku:"R-4C-LC-W-0004_ROPERO 4 CUERPOS LISO + MALETERO WENGUE MELAMINA_2599"},
+{cat:"ROPERO",sku:"R-4C-LC-A-0004_ROPERO 4 CUERPOS LISO + MALETERO ARIZONA MELAMINA_2599"},
+{cat:"ROPERO",sku:"R-4C-E-W-0004_ROPERO 4 CUERPOS ESTANDAR WENGUE CAJON BLANCO MELAMINA_2249"},
+{cat:"ROPERO",sku:"R-4C-E-A-0004_ROPERO 4 CUERPOS ESTANDAR  ARIZONA CAJON BLANCO MELAMINA_2249"},
+{cat:"ROPERO",sku:"R-4C-E-F-0004_ROPERO 4 CUERPOS ESTANDAR  FROST MONT CAJON BLANCO MELAMINA_2249"},
+{cat:"ROPERO",sku:"R-4C-E-W-0005_ROPERO 4 CUERPOS ESTANDAR + LIBRERA WENGUE CAJON BLANCO MELAMINA_2449"},
+{cat:"ROPERO",sku:"R-4C-E-A-0005_ROPERO 4 CUERPOS ESTANDAR + LIBRERA ARIZONA CAJON BLANCO MELAMINA_2449"},
+{cat:"ROPERO",sku:"R-4C-E-F-0005_ROPERO 4 CUERPOS ESTANDAR + LIBRERA FROST MONT CAJON BLANCO MELAMINA_2449"},
+{cat:"ROPERO",sku:"R-4C-C-W-0004_ROPERO 4 CUERPOS ESTANDAR +MALETERO  WENGUE CAJON BLANCO MELAMINA_2949"},
+{cat:"ROPERO",sku:"R-4C-C-A-0004_ROPERO 4 CUERPOS ESTANDAR +MALETERO  ARIZONA CAJON BLANCO MELAMINA_2949"},
+{cat:"ROPERO",sku:"R-4C-C-F-0004_ROPERO 4 CUERPOS ESTANDAR +MALETERO  FROST MONT CAJON BLANCO MELAMINA_2949"},
+{cat:"ROPERO",sku:"R-4C-K-W-0004_ROPERO 4 CUERPOS KANDY  WENGUE CAJON BLANCO MELAMINA_2249"},
+{cat:"ROPERO",sku:"R-4C-K-A-0004_ROPERO 4 CUERPOS KANDY  ARIZONA CAJON BLANCO MELAMINA_2249"},
+{cat:"ROPERO",sku:"R-4C-R-W-0004_ROPERO 4 CUERPOS RIEL + ESPEJO  WENGUE CAJON BLANCO MELAMINA_2399"},
+{cat:"ROPERO",sku:"R-4C-R-A-0004_ROPERO 4 CUERPOS RIEL  ARIZONA CAJON BLANCO MELAMINA_2399"},
+{cat:"ROPERO",sku:"R-4C-RC-W-0004_ROPERO 4 CUERPOS RIEL + MALETERO  WENGUE MELAMINA_3049"},
+{cat:"ROPERO",sku:"R-4C-RC-A-0004_ROPERO 4 CUERPOS RIEL + MALETERO  ARIZONA MELAMINA_3049"},
+{cat:"ROPERO",sku:"R-4C-SL-W-0004_ROPERO 4 CUERPOS SLASH WENGUE MELAMINA_2549"},
+{cat:"ROPERO",sku:"R-4C-SL-A-0004_ROPERO 4 CUERPOS SLASH ARIZONA MELAMINA_2549"},
+{cat:"ROPERO",sku:"R-4C-SC-W-0004_ROPERO 4 CUERPOS SLASH + MALETERO WENGUE MELAMINA_3349"},
+{cat:"ROPERO",sku:"R-4C-SC-A-0004_ROPERO 4 CUERPOS SLASH + MALETERO ARIZONA MELAMINA_3349"},
+{cat:"ROPERO",sku:"R-6C-L-W-0004_ROPERO 6 CUERPOS LISO  WENGUE CAJON BLANCO MELAMINA_2999"},
+{cat:"ROPERO",sku:"R-6C-L-A-0004_ROPERO 6 CUERPOS LISO  ARIZONA CAJON BLANCO MELAMINA_2999"},
+{cat:"ROPERO",sku:"R-6C-LC-W-0004_ROPERO 6 CUERPOS LISO + MALETERO WENGUE MELAMINA_3649"},
+{cat:"ROPERO",sku:"R-6C-LC-A-0004_ROPERO 6 CUERPOS LISO + MALETERO ARIZONA CAJON BLANCO MELAMINA_3649"},
+{cat:"ROPERO",sku:"R-6C-E-W-0004_ROPERO 6 CUERPOS ESTANDAR  WENGUE CAJON BLANCO MELAMINA_3299"},
+{cat:"ROPERO",sku:"R-6C-E-A-0004_ROPERO 6 CUERPOS ESTANDAR  ARIZONA CAJON BLANCO MELAMINA_3299"},
+{cat:"ROPERO",sku:"R-6C-E-F-0004_ROPERO 6 CUERPOS ESTANDAR  FROST MONT CAJON BLANCO MELAMINA_3299"},
+{cat:"ROPERO",sku:"R-6C-E-W-0005_ROPERO 6 CUERPOS ESTANDAR + LIBRERA WENGUE CAJON BLANCO MELAMINA_3399"},
+{cat:"ROPERO",sku:"R-6C-E-A-0005_ROPERO 6 CUERPOS ESTANDAR + LIBRERA ARIZONA CAJON BLANCO MELAMINA_3399"},
+{cat:"ROPERO",sku:"R-6C-E-F-0005_ROPERO 6 CUERPOS ESTANDAR + LIBRERA FROST MONT CAJON BLANCO MELAMINA_3399"},
+{cat:"ROPERO",sku:"R-6C-C-W-0004_ROPERO 6 CUERPOS ESTANDAR +MALETERO  WENGUE CAJON BLANCO MELAMINA_3849"},
+{cat:"ROPERO",sku:"R-6C-C-A-0004_ROPERO 6 CUERPOS ESTANDAR +MALETERO  ARIZONA CAJON BLANCO MELAMINA_3849"},
+{cat:"ROPERO",sku:"R-6C-C-F-0004_ROPERO 6 CUERPOS ESTANDAR +MALETERO  FROST MONT CAJON BLANCO MELAMINA_3849"},
+{cat:"ROPERO",sku:"R-6C-K-W-0004_ROPERO 6 CUERPOS KANDY  WENGUE CAJON BLANCO MELAMINA_3199"},
+{cat:"ROPERO",sku:"R-6C-K-A-0004_ROPERO 6 CUERPOS KANDY  ARIZONA CAJON BLANCO MELAMINA_3199"},
+{cat:"ROPERO",sku:"R-6C-K2-W-0004_ROPERO 6 CUERPOS KANDY CON MALETERO WENGUE MELAMINA_3849"},
+{cat:"ROPERO",sku:"R-6C-K2-A-0004_ROPERO 6 CUERPOS KANDY CON MALETERO ARIZONA MELAMINA_3849"},
+{cat:"ROPERO",sku:"R-6C-R-W-0004_ROPERO 6 CUERPOS RIEL + ESPEJO  WENGUE CAJON BLANCO MELAMINA_3649"},
+{cat:"ROPERO",sku:"R-6C-R-A-0004_ROPERO 6 CUERPOS RIEL + ESPEJO  ARIZONA CAJON BLANCO MELAMINA_3649"},
+{cat:"ROPERO",sku:"R-6C-RC-W-0004_ROPERO 6 CUERPOS RIEL + ESPEJO  + MALETERO WENGUE MELAMINA_4499"},
+{cat:"ROPERO",sku:"R-6C-RC-A-0004_ROPERO 6 CUERPOS RIEL + ESPEJO  + MALETERO ARIZONA MELAMINA_4499"},
+{cat:"ROPERO",sku:"R-6C-SL-W-0004_ROPERO 6 CUERPOS SLASH WENGUE MELAMINA_4049"},
+{cat:"ROPERO",sku:"R-6C-SL-A-0004_ROPERO 6 CUERPOS SLASH ARIZONA MELAMINA_4049"},
+{cat:"ROPERO",sku:"R-6C-SC-W-0004_ROPERO 6 CUERPOS SLASH + MALETERO WENGUE MELAMINA_4649"},
+{cat:"ROPERO",sku:"R-6C-SC-A-0004_ROPERO 6 CUERPOS SLASH + MALETERO ARIZONA MELAMINA_4649"},
+{cat:"ROPERO",sku:"R-8C-C-W-0004_ROPERO 8 CUERPOS ESTANDAR +MALETERO  WENGUE CAJON BLANCO MELAMINA_4949"},
+{cat:"ROPERO",sku:"R-8C-C-A-0004_ROPERO 8 CUERPOS ESTANDAR +MALETERO  ARIZONA CAJON BLANCO MELAMINA_4949"},
+{cat:"ROPERO",sku:"R-8C-C-F-0004_ROPERO 8 CUERPOS ESTANDAR +MALETERO  FROST MONT CAJON BLANCO MELAMINA_4949"},
+{cat:"ROPERO",sku:"R-8C-KC-W-0004_ROPERO 8 CUERPOS KANDY  + MALETERO WENGUE MELAMINA_6399"},
+{cat:"ROPERO",sku:"R-8C-KC-A-0004_ROPERO 8 CUERPOS KANDY  + MALETERO ARIZONA MELAMINA_6399"},
+{cat:"ROPERO",sku:"R-8C-R-W-0004_ROPERO 8 CUERPOS RIEL + ESPEJO  WENGUE CAJON BLANCO MELAMINA_4899"},
+{cat:"ROPERO",sku:"R-8C-R-A-0004_ROPERO 8 CUERPOS RIEL + ESPEJO  ARIZONA CAJON BLANCO MELAMINA_4899"},
+{cat:"ROPERO",sku:"R-8C-RC-W-0004_ROPERO 8 CUERPOS RIEL + ESPEJO + MALETERO WENGUE MELAMINA_5999"},
+{cat:"ROPERO",sku:"R-8C-RC-A-0004_ROPERO 8 CUERPOS RIEL + ESPEJO + MALETERO ARIZONA MELAMINA_5999"},
+{cat:"ROPERO",sku:"R-8C-SC-A-0004_ROPERO 8 CUERPOS SLASH + MALETERO ARIZONA MELAMINA_6349"},
+{cat:"ROPERO",sku:"R-8C-SC-W-0004_ROPERO 8 CUERPOS SLASH + MALETERO WENGUE MELAMINA_6349"},
+{cat:"COCINA",sku:"C-RU-L-W-0002_COCINA RUBI LISA 60 WENGUE MELAMINA_3599"},
+{cat:"COCINA",sku:"C-RU-L-F-0002_COCINA RUBI LISA 60 FROST MONT MELAMINA_3599"},
+{cat:"COCINA",sku:"C-TK-L-W-0002_COCINA TIKAL LISA 60 WENGUE MELAMINA_4599"},
+{cat:"COCINA",sku:"C-TK-L-F-0002_COCINA TIKAL LISA 60 FROST MONT MELAMINA_4599"},
+{cat:"COCINA",sku:"C-TK-G-W-0002_COCINA TIKAL GLASS 60 WENGUE MELAMINA_4949"},
+{cat:"COCINA",sku:"C-TK-G-F-0002_COCINA TIKAL GLASS 60 FROST MONT MELAMINA_4949"},
+{cat:"COCINA",sku:"C-OR-G-F-0002_COCINA ORION 60 LISA FROST MONT MELAMINA_4499"},
+{cat:"COCINA",sku:"C-OR-G-W-0002_COCINA ORION 60 LISA WENGUE MELAMINA_4499"},
+{cat:"COCINA",sku:"C-BR-L-W-0002_COCINA BRAULIA 60 LISO WENGUE MELAMINA_5349"},
+{cat:"COCINA",sku:"C-BR-L-F-0002_COCINA BRAULIA 60 LISO FROST MONT MELAMINA_5349"},
+{cat:"COCINA",sku:"C-CR-L-W-0002_COCINA CRISTAL LISA 60 WENGUE MELAMINA_5499"},
+{cat:"COCINA",sku:"C-CR-L-F-0002_COCINA CRISTAL LISA 60 FROST MONT MELAMINA_5499"},
+{cat:"COCINA",sku:"C-CR-G-W-0002_COCINA CRISTAL GLASS 60 WENGUE MELAMINA_5849"},
+{cat:"COCINA",sku:"C-CR-G-F-0002_COCINA CRISTAL GLASS 60 FROST MONT MELAMINA_5849"},
+{cat:"COCINA",sku:"C-OXS-G-F-0005_COCINA ONIX 60 GLASS SIN LAVATRASTOS FROST MONT CAJON BLANCO MELAMINA_7099"},
+{cat:"COCINA",sku:"C-OXS-G-W-0005_COCINA ONIX 60 GLASS SIN LAVATRASTOS WENGUE CAJON BLANCO MELAMINA_7099"},
+{cat:"COCINA",sku:"C-OXS-L-F-0005_COCINA ONIX 60 LISO SIN LAVATRASTOS FROST MONT MELAMINA_6749"},
+{cat:"COCINA",sku:"C-OXS-L-W-0005_COCINA ONIX 60 LISO SIN LAVATRASTOS WENGUE MELAMINA_6749"},
+{cat:"COCINA",sku:"C-OX-L-W-0002_COCINA ONIX LISA 60 WENGUE MELAMINA_7349"},
+{cat:"COCINA",sku:"C-OX-L-F-0002_COCINA ONIX LISA 60 FROST MONT MELAMINA_7349"},
+{cat:"COCINA",sku:"C-OX-G-W-0002_COCINA ONIX GLASS 60 WENGUE MELAMINA_7949"},
+{cat:"COCINA",sku:"C-OX-G-F-0002_COCINA ONIX GLASS 60 FROST MONT MELAMINA_7949"},
+{cat:"COCINA",sku:"C-TI-G-W-0002_COCINA TITAN 60 LISO WENGUE MELAMINA_6599"},
+{cat:"COCINA",sku:"C-TI-G-F-0002_COCINA TITAN 60 LISO FROST MONT MELAMINA_6599"},
+{cat:"COCINA",sku:"C-CL-L-W-0002_COCINA CRISTAL EN L LISA 60 WENGUE MELAMINA_9199"},
+{cat:"COCINA",sku:"C-CL-L-F-0002_COCINA CRISTAL EN L LISA 60 FROST MONT MELAMINA_9199"},
+{cat:"COCINA",sku:"C-CL-G-W-0002_COCINA CRISTAL EN L GLASS 60 WENGUE MELAMINA_9699"},
+{cat:"COCINA",sku:"C-CL-G-F-0002_COCINA CRISTAL EN L GLASS 60 FROST MONT MELAMINA_9699"},
+{cat:"COCINA",sku:"C-AU-L-W-0002_COCINA AUREA 60 LISO WENGUE MELAMINA_9499"},
+{cat:"COCINA",sku:"C-AU-L-F-0002_COCINA AUREA 60 LISO FROST MONT MELAMINA_9499"},
+{cat:"COCINA",sku:"C-FN-G-W-0002_COCINA FENIX GLASS 60 WENGUE MELAMINA_11199"},
+{cat:"COCINA",sku:"C-FN-G-F-0002_COCINA FENIX GLASS 60 FROST MONT MELAMINA_11199"},
+{cat:"COCINA",sku:"P-A-L-W-0002_ALACENA 60 WENGUE CAJON BLANCO MELAMINA_1599"},
+{cat:"COCINA",sku:"P-A-L-W-0001_ALACENA 120 WENGUE CAJON BLANCO MELAMINA_2449"},
+{cat:"COCINA",sku:"P-A-L-W-0003_ALACENA 180 WENGUE CAJON BLANCO MELAMINA_2849"},
+{cat:"COCINA",sku:"C-TK-LL-W-0002_COCINA TIKAL + LAVATRASTOS LISA WENGUE MELAMINA_6199"},
+{cat:"COCINA",sku:"C-TK-LL-F-0002_COCINA TIKAL + LAVATRASTOS LISA FROST MONT MELAMINA_6199"},
+{cat:"COCINA",sku:"C-TK-GL-W-0002_COCINA TIKAL + LAVATRASTOS GLASS WENGUE MELAMINA_6499"},
+{cat:"COCINA",sku:"C-TK-GL-F-0002_COCINA TIKAL + LAVATRASTOS GLASS FROST MONT MELAMINA_6499"},
+{cat:"COCINA",sku:"C-CR-LL-W-0002_COCINA CRISTAL + LAVATRASTOS LISA WENGUE MELAMINA_7099"},
+{cat:"COCINA",sku:"C-CR-LL-F-0002_COCINA CRISTAL + LAVATRASTOS LISA FROST MONT MELAMINA_7099"},
+{cat:"COCINA",sku:"C-CR-GL-W-0002_COCINA CRISTAL + LAVATRASTOS GLASS WENGUE MELAMINA_7449"},
+{cat:"COCINA",sku:"C-CR-GL-F-0002_COCINA CRISTAL + LAVATRASTOS GLASS FROST MONT MELAMINA_7449"},
+{cat:"COCINA",sku:"C-CB-L-W-0004_COCINETA BRASIL WENGUE_3899"},
+{cat:"COCINA",sku:"C-CB-L-F-0004_COCINETA BRASIL FROST MONT_3899"},
+{cat:"COCINA",sku:"C-CF-L-W-0004_COCINETA FRANCIA WENGUE_4749"},
+{cat:"COCINA",sku:"C-CF-L-F-0004_COCINETA FRANCIA FROST MONT_4749"},
+{cat:"COCINA",sku:"C-CA-L-W-0004_COCINETA ALEMANIA WENGUE_3749"},
+{cat:"COCINA",sku:"C-CA-L-F-0004_COCINETA ALEMANIA FROST MONT_3749"},
+{cat:"CAMA",sku:"10600395_CAMA QUEEN STEARIS 2 EUROS_2249"},
+{cat:"CAMA",sku:"10600396_CAMA KING STEARIS 2 EUROS_2849"},
+{cat:"PROMOCIONAL",sku:"P-CS-L-B-0008_CABECERA SUED BLANCA MATRI / QUEEN_299"},
+{cat:"PROMOCIONAL",sku:"P-CS-L-G-0008_CABECERA SUED BLANCA KING_349"},
+{cat:"PROMOCIONAL",sku:"C-AC-L-B-0007_AEREO EXTRACTOR DE COCINA BLANCO SIN PUERTAS_249"},
+{cat:"PROMOCIONAL",sku:"CK0000070_ALMOHADAS SUEÑOLANDIA_30"},
+{cat:"PROMOCIONAL",sku:"P-ME-L-B-0001_MESA DE 60 BLANCA MELAMINA LISO_299"},
+{cat:"PROMOCIONAL",sku:"P-RR-L-W-0003_RACK ROCHEDO WENGUE MELAMINA_749"},
+{cat:"PROMOCIONAL",sku:"P-RR-L-A-0003_RACK ROCHEDO ARIZONA MELAMINA_749"},
+{cat:"PROMOCIONAL",sku:"P-RI-L-W-0003_RACK IMPERIAL WENGUE CAJON BLANCO MELAMINA LISO_949"},
+{cat:"PROMOCIONAL",sku:"P-RI-L-A-0003_RACK IMPERIAL ARIZONA CAJON BLANCO MELAMINA LISO_949"},
+{cat:"PROMOCIONAL",sku:"P-MR-L-W-0003_MODULO ROCHEDO WENGUE MELAMINA_1499"},
+{cat:"PROMOCIONAL",sku:"P-MR-L-A-0003_MODULO ROCHEDO ARZIONA MELAMINA_1499"},
+{cat:"PROMOCIONAL",sku:"P-MI-L-W-0003_MODULO IMPERIAL PLUS WENGUE MELAMINA_1699"},
+{cat:"PROMOCIONAL",sku:"P-MI-L-A-0003_MODULO IMPERIAL PLUS ARIZONA MELAMINA_1699"},
+{cat:"PROMOCIONAL",sku:"P-MN-L-W-0003_MODULO NOVA WENGUE MELAMINA_2199"},
+{cat:"PROMOCIONAL",sku:"P-MN-L-A-0003_MODULO NOVA ARIZONA MELAMINA_2199"},
+{cat:"PROMOCIONAL",sku:"P-L-L-W-0001_LAVATRASTOS 120 WENGUE CAJON BLANCO MELAMINA_2249"},
+{cat:"PROMOCIONAL",sku:"P-L-L-F-0001_LAVATRASTOS 120 FROST MONT CAJON BLANCO MELAMINA_2249"},
+{cat:"PROMOCIONAL",sku:"P-M-L-W-0001_MARQUEZA 120 WENGUE CAJON BLANCO MELAMINA_799"},
+{cat:"PROMOCIONAL",sku:"B-CA06T05-NE_CAFETERA 0.6L 600W BLANTEK_149"},
+{cat:"PROMOCIONAL",sku:"B-HT800-SL_HORNO TOSTADOR 8 LITROS BLANTEK_199"},
+{cat:"PROMOCIONAL",sku:"BLSTKAP-WPB_LICUADORA OSTER COLOR BLANCA_649"},
+{cat:"PROMOCIONAL",sku:"FMDO20S3GSPG_MICROONDAS GRIS FRIGIDAIRE DE0.7 PIES_999"},
+{cat:"FLETE",sku:"FLETE_FLETE_200"},
+{cat:"FLETE",sku:"FLETE-E_FLETE EXTENSO_365"},
+{cat:"COMBO",sku:"B1221A982_COMBO CAMA 2E QUEEN + CABECERA SUED BLANCA M/Q_2299"},
+{cat:"COMBO",sku:"B1221A976_COMBO CAMA 2E MATRI BLANCA + CABECERA SUED BLANCA M/Q + MESA BLANCA DE 60 + MARQUEZA WENGUE_2999"},
+{cat:"COMBO",sku:"B1221A977_COMBO CAMA 2E QUEEN BLANCA + CABECERA SUED BLANCA M/Q + MESA BLANCA DE 60 + MARQUEZA WENGUE_3199"},
+{cat:"COMBO",sku:"B1221B059_COMBO CAMA 2E KING BLANCA + CABECERA SUED KING BLANCA + MESA BLANCA DE 60_2999"},
+{cat:"COMBO",sku:"B1221B092_COMBO R. 4C LISO WENGUE + MARQUEZA WENGUE_2999"},
+{cat:"COMBO",sku:"B1221B093_COMBO R. 6C LISO WENGUE + MARQUEZA WENGUE_3999"},
+{cat:"COMBO",sku:"B1221B094_COMBO R. 8C ESTANDAR + MALETERO WENGUE + MARQUEZA WENGUE_5999"},
+{cat:"COMBO",sku:"B1221B098_COMBO R. 6C SLASH + MALETERO WENGUE_4899"},
+{cat:"COMBO",sku:"B1221B099_COMBO R. 8C SLASH + MALETERO WENGUE_6499"},
+{cat:"COMBO",sku:"B1221B100_COMBO R. 4C SLASH + MALETERO ARIZONA_3499"},
+{cat:"COMBO",sku:"B1221B101_COMBO R. 6C SLASH + MALETERO ARIZONA_4899"},
+{cat:"COMBO",sku:"B1221B102_COMBO R. 8C SLASH + MALETERO ARIZONA_6499"},
+{cat:"COMBO",sku:"B1221B103_COMBO R. 4C SLASH + MALETERO WENGUE_3499"},
+{cat:"COMBO",sku:"B1221B105_COMBO CAMA 2E KING BLANCA + CABECERA SUED BLANCA K + R. 3C LISO WENGUE + MARQUEZA WENGUE_4999"},
+{cat:"COMBO",sku:"B1221B110_COMBO CAMA 2E KING BLANCA + CABECERA SUED BLANCA K_2799"},
+{cat:"COMBO",sku:"B1221B135_COMBO COCINA RUBI LISA FROST MONT_3499"},
+{cat:"COMBO",sku:"B1221B137_COMBO COCINA TIKAL LISA FROST MONT_3999"},
+{cat:"COMBO",sku:"B1221B139_COMBO COCINA CRISTAL LISA FROST MONT_4999"},
+{cat:"COMBO",sku:"B1221B141_COCINA TIKAL + LAVATRASTOS LISA FROST MONT_5999"},
+{cat:"COMBO",sku:"B1221B151_COMBO R. 8C ESTANDAR + MALETERO WENGUE_4699"},
+{cat:"COMBO",sku:"B1221B168_COMBO COCINA BRAULIA LISO FROST MONT_4599"},
+{cat:"COMBO",sku:"B1221B169_COMBO COCINA CRISTAL + LAVATRASTOS LISO FROST MONT_5999"},
+{cat:"COMBO",sku:"B1221B173_COMBO COCINA RUBI LISA WENGUE_3499"},
+{cat:"COMBO",sku:"B1221B174_COMBO COCINA TIKAL LISA WENGUE_3999"},
+{cat:"COMBO",sku:"B1221B175_COMBO COCINA TIKAL + LAVATRASTOS WENGUE_5999"},
+{cat:"COMBO",sku:"B1221B177_COMBO COCINA BRAULIA LISA WENGUE_4599"},
+{cat:"COMBO",sku:"B1221B178_COMBO COCINA CRISTAL LISA WENGUE_4999"},
+{cat:"COMBO",sku:"B1221B180_COMBO COCINA ONIX LISO WENGUE_5999"},
+{cat:"COMBO",sku:"B1221B216_COMBO ROPERO 2C LISO WENGUE + CABECERA SUED BLANCA M/Q + MESA BLANCA DE 60 + CAMA QUEEN STELARIS 2E NEGRO + MARQUEZA WENGUE_4299"},
+{cat:"COMBO",sku:"B1221B222_COMBO R. 6C LISO WENGUE + MARQUEZA WENGUE_3599"},
+{cat:"COMBO",sku:"B1221B214_COMBO R. 6C ESTANDAR WENGUE + MARQUEZA WENGUE + MESA BLANCA DE 60_4199"},
+{cat:"COMBO",sku:"B1221B232_COMBO CAMA MATRI 2E ESTELARIS + CABECERA SUED BLANCA M/Q_1999"},
+{cat:"COMBO",sku:"B1221B264_COMBO R. 3C LISO WENGUE + MARQUEZA WENGUE + CABECERA SUED BLANCA M/Q + MESAS BLANCAS DE 60_2999"},
+{cat:"COMBO",sku:"B1221B267_COMBO R. 6C ESTANDAR WENGUE + CABECERA SUED BLANCA M/Q + MESA BLANCA DE 60_3599"},
+{cat:"COMBO",sku:"B1221B271_COMBO COCINA TIKAL LISA FROST MONT + CAFETERA 0.6L 600W BLANTEK_3899"},
+{cat:"COMBO",sku:"B1221B277_COMBO ALACENA 180 WENGUE + HORNO TOSTADOR 8 LITROS BLANTEK_2999"},
+{cat:"COMBO",sku:"B1221B283_COMBO COCINA FENIX GLASS WENGUE + CAFETERA 0.6L 600W BLANTEK_9999"},
+{cat:"COMBO",sku:"B1221B284_COMBO COCINA FENIX GLASS FROST MONT + CAFETERA 0.6L 600W BLANTEK_9999"},
+{cat:"COMBO",sku:"B1221B274_COMBO CAMA 2E MATRI STELARIS + CABECERA SUED BLANCA M/Q + MESA BLANCA DE 60 + R. 2C LISO WENGUE_3299"},
+{cat:"PROMOCIONAL",sku:"REG0001_ALMOHADA FAMESA_1"},
+{cat:"PROMOCIONAL",sku:"REG-0001_COMBO REGALIA ELECTRODOMESTICOS C 3K-4K_1"},
+{cat:"PROMOCIONAL",sku:"REG0002_REGALIA TABURETE_1"},
+{cat:"COMBO",sku:"B1221B285_COMBO CAMA 2E STELARIS KING + MESAS BLANCAS DE 60 + CABECERA SUED BALNCA K + R. 2C LISO WENGUE + MARQUEZA 120 WENGUE_4999"},
+{cat:"COMBO",sku:"B1221B286_COMBO CAMA 2E STELARIS MATRI + CABECERA SUED BLANCA M/Q + MESAS BLANCAS DE 60 + R. 2C LISO WENGUE + MARQUEZA WENGUE_3999"},
+{cat:"COMBO",sku:"B1221B287_COMBO CAMA 2E STELARIS MATRI + CABECERA SUED BLANCA M/Q + R. 3C LISO WENGUE + MARQUEZA WENGUE_4099"},
+{cat:"COMBO",sku:"B1221B292_COMBO CAMA 2E STELARIS KING + MARQUEZA WENGUE + CABECERA SUED BLANCA K + MESAES BLANCAS DE 60_3999"},
+{cat:"COMBO",sku:"B1221B293_COMBO CAMA 2E STELARIS QUEEN + MARQUEZA WENGUE + CABECERA SUED BLANCA M/Q + MESAES BLANCAS DE 60_3599"},
+{cat:"COMBO",sku:"B1221B297_COMBO CAMA 2E STELARIS QUEEN + MESA BLANCA DE 60 + CABECERA SUED BLANCA M/Q_2599"},
+{cat:"COMBO",sku:"B1221B298_COMBO CAMA 2E STELARIS KING + CABECERA SUED BLANCA K + MESAS BLANCAS DE 60_3299"},
+{cat:"COMBO",sku:"B1221B299_COMBO CAMA 2E STELARIS KING + CABECERA SUED BLANCA K + MESAS BLANCAS DE 60_3299"},
+{cat:"COMBO",sku:"B1221B304_COBMO COCINA CRISTAL EN L GLASS_8999"},
+{cat:"COMBO",sku:"B1221B291_COMBO CAMA 2E STELARIS MATRI + MARQUEZA WENGUE + CABECERA SUED BLANCA M/Q + MESAES BLANCAS DE 60_3299"},
+{cat:"COMBO",sku:"B1221B296_COMBO CAMA 2E STELARIS MATRI + MESA BLANCA DE 60 + CABECERA SUED BLANCA M/Q_2599"},
+{cat:"COMBO",sku:"B1221B179_COMBO COCINA CRISTAL + LAVATRASTOS LISA WENGUE_5999"},
+{cat:"COMBO",sku:"B1221B182_COMBO COCINA TITAL LISO WENGUE + MICROONDAS 0.07 FRIGIDAIRE GRIS_5599"},
+{cat:"COMBO",sku:"B1221B250_COMBO COCINA TIKAL LISA WENGUE + CAFETERA 0.6L 600W BLANTEK_3899"},
+{cat:"COMBO",sku:"B1221B265 _COMBO R. 4C LISO WENGUE + MARQUEZA WENGUE + CABECERA SUED BLANCA M/Q + MESAS BLANCAS DE 60_3499"},
+{cat:"COMBO",sku:"B1221B288_COMBO CAMA 2E STELARIS QUEEN + CABECERA SUED BLANCA M/Q + R. 3C LISO WENGUE + MARQUEZA WENGUE_4299"},
+{cat:"COMBO",sku:"B1221B098_COMBO R. 6C SLASH + MALETERO WENGUE_4899"},
+{cat:"COMBO",sku:"B1221B099_COMBO R. 8C SLASH + MALETERO WENGUE_6499"},
+{cat:"COMBO",sku:"B1221B100_COMBO R. 4C SLASH + MALETERO ARIZONA_3499"},
+{cat:"COMBO",sku:"B1221B267_COMBO R. 6C LISO WENGUE + CABECERA SUED BLANCA M/Q + MESA BLANCA DE 60_3599"},
+{cat:"COMBO",sku:"B1221B305_COMBO LAVATRASTOS + BASE DE 60 WENGUE_3399"},
+{cat:"COMBO",sku:"B1221B306_COMBO R. 6C LISO WENGUE + MARQUEZA WENGUE + CABECERA SUED BLANCA M/Q_3699"},
+{cat:"COMBO",sku:"B1221B307_COMBO COCINA CRISTAL L FROST MONT_7499"},
+{cat:"COMBO",sku:"B1221B181_COMBO COCINA ONIX GLASS WENGUE_6599"},
+
+];
+var g_dm = {
+"GUATEMALA": [
+    "Guatemala  Barcenas",
+    "Guatemala  Boca del Monte",
+    "Guatemala  Villa Hermosa",
+    "Guatemala Ciudad Peronia",
+    "Guatemala Ruta a El Salvador",
+    "Guatemala Villa Lobos",
+    "Guatemala Zona 01",
+    "Guatemala Zona 02",
+    "Guatemala Zona 03",
+    "Guatemala Zona 04",
+    "Guatemala Zona 05",
+    "Guatemala Zona 06",
+    "Guatemala Zona 07",
+    "Guatemala Zona 08",
+    "Guatemala Zona 10",
+    "Guatemala Zona 11",
+    "Guatemala Zona 12",
+    "Guatemala Zona 13",
+    "Guatemala Zona 14",
+    "Guatemala Zona 17",
+    "Guatemala Zona 19",
+    "Guatemala Zona 21",
+    "Guatemala Zona 24",
+    "Guatemala Zona 15",
+    "Guatemala Zona 16",
+    "Guatemala Zona 18",
+    "Guatemala Zona 25",
+    "Guatemala Zona 09",
+    "GUATEMALA",
+    "Amatitlán",
+    "Chinautla",
+    "Chuarrancho",
+    "Fraijanes",
+    "Mixco",
+    "Palencia",
+    "San José del Golfo",
+    "San José Pinula",
+    "San Juan Sacatepequez",
+    "San Miguel Petapa",
+    "San Pedro Ayampuc",
+    "San Pedro Sac. (Guatemala)",
+    "San Raymundo",
+    "Santa Catarina Pinula",
+    "Villa Canales",
+    "Villa Nueva"
+  ],
+"ESCUINTLA": [
+    "Sipacate",
+    "ESCUINTLA",
+    "Guanagazapa",
+    "Iztapa",
+    "La Democracía",
+    "La Gomera",
+    "Masagua",
+    "Nueva Concepción",
+    "Palín",
+    "Pueblo Nuevo Tiquisate",
+    "San José (Escuintla)",
+    "Santa Lucía Cotzumalguapa",
+    "San Vicente Pacaya",
+    "Siquinalá"
+  ],
+
+"SUCHITEPEQUEZ": [
+    "San José La Máquina",
+    "MAZATENANGO",
+    "Chicacao",
+    "Cuyotenango",
+    "Patulul",
+    "Pueblo Nuevo",
+    "Rio Bravo",
+    "Samayac",
+    "San Antonio Suchitepequez",
+    "San Bernardino",
+    "San Francisco Zapotitlán",
+    "San Gabriel",
+    "San Jose El Idolo",
+    "San Juan Bautista",
+    "San Lorenzo (Suchi)",
+    "San Miguel Panam",
+    "San Pablo Jocopilas",
+    "Santa Bárbara (suchi)",
+    "Santo Domingo Suchitepequez",
+    "Santo Tomás La Unión",
+    "Zunilito"
+  ],
+
+ "ALTA VERAPAZ": [
+    "COBAN",
+    "La Tinta",
+    "San Crístobal Verapaz",
+    "San Juan Chamelco",
+    "San Miguel Tucurú",
+    "San Pedro Carchá",
+    "Santa Cruz Verapaz",
+    "Tactic",
+    "Tamahú",
+    "Cubulco",
+    "Purulhá",
+    "Rabinal",
+    "Salamá",
+    "San Jerónimo",
+    "San Miguel Chicaj"
+  ],
+
+"QUICHE": [
+    "SANTA CRUZ DEL QUICHE",
+    "Chicamán",
+    "Chiché",
+    "Chinique",
+    "Cunén",
+    "Joyabaj",
+    "Nebaj",
+    "Pachalúm",
+    "Patzité",
+    "Sacapulas",
+    "San Andrés Salcabaja",
+    "San Antonio Ilotenango",
+    "San Bartolomé Jocotenango",
+    "San Miguel Uspantán",
+    "San Pedro Jocopilas",
+    "Santo Tomás Chichicastenango",
+    "Zacualpa"
+  ],
+
+"SACATEPEQUEZ": [
+    "ANTIGUA GUATEMALA",
+    "Ciudad Vieja",
+    "Jocotenango",
+    "Magdalena Milpas Altas",
+    "Pastores",
+    "San Antonio Aguas Calientes",
+    "San Bartolomé Milpas Altas",
+    "San Juan Alotenango",
+    "San Lucas Sacatepequez",
+    "San Miguel Dueñas",
+    "Santa Catarina Barahona",
+    "Santa Lucía Milpas Altas",
+    "Santa María de Jesús",
+    "Santiago Sacatepequez",
+    "Santo Domingo Xenacoj",
+    "Sumpango"
+  ],
+
+  "CHIMALTENANGO": [
+    "CHIMALTENANGO",
+    "Acatenango",
+    "Comalapa",
+    "El Tejar",
+    "Parramos",
+    "Patzicía",
+    "Patzún",
+    "Pochuta",
+    "San Andrés Itzapa",
+    "San José Poaquil",
+    "San Martín Jilotepeque",
+    "San Pedro Yepocapa",
+    "Santa Apolonia",
+    "Santa Cruz Balanyá",
+    "Tecpán Guatemala",
+    "Zaragoza"
+  ],
+
+  "BAJA VERAPAZ": [
+    "Cubulco",
+    "Purulhá",
+    "Rabinal",
+    "SALAMA",
+    "San Jerónimo",
+    "San Miguel Chicaj"
+  ],
+
+  "SAN MARCOS": [
+    "SAN MARCOS",
+    "Ayutla (Tecún Umán)",
+    "Catarina",
+    "Comitancillo",
+    "Concepción Tutuapa",
+    "El Quetzal",
+    "El Rodeo",
+    "El Tumbador",
+    "Esquipulas Palo Gordo",
+    "Ixchiguán",
+    "La Reforma",
+    "Malacatán",
+    "Nuevo Progreso",
+    "Ocós",
+    "Pajapita",
+    "Rio Blanco",
+    "San Antonio Sacatepequez",
+    "San Cristobal Cucho",
+    "San José Ojetenám",
+    "San Lorenzo (San Marcos)",
+    "San Miguel Ixtahuacán",
+    "San Pablo",
+    "San Pedro Sac. (San Marcos)",
+    "San Rafael Pie de la Cuesta",
+    "Sibinal",
+    "Sipacapa",
+    "Tacaná",
+    "Tajumulco",
+    "Tecún Umán",
+    "Tejutla"
+  ],
+
+  "SANTA ROSA": [
+    "CUILAPA",
+    "Barberena",
+    "Casillas",
+    "Chiquimulilla",
+    "Guazacapán",
+    "Nueva Santa Rosa",
+    "Oratorio",
+    "Pueblo Nuevo Viñas",
+    "San Juan Tecuaco",
+    "San Rafael Las Flores",
+    "Santa Cruz Naranjo",
+    "Santa María Ixhuatán",
+    "Santa Rosa de Lima",
+    "Taxisco"
+  ],
+
+  "TOTONICAPAN": [
+    "TOTONICAPAN",
+    "Momostenango",
+    "San Andrés Xecul",
+    "San Bartolo",
+    "San Cristóbal Totonicapán",
+    "San Francisco El Alto",
+    "Santa Lucía La Reforma"
+  ],
+
+ "SOLOLA": [
+    "SOLOLA",
+    "Concepción",
+    "Nahualá",
+    "San Andrés Semetabaj",
+    "San Antonio Palopó",
+    "San José Chacayá",
+    "San Juan La Laguna",
+    "San Lucas Tolimán",
+    "San Marcos La Laguna",
+    "San Pablo La Laguna",
+    "San Pedro La Laguna",
+    "Santa Catarina Ixtahuacán",
+    "Santa Catarina Palopó",
+    "Santa Clara La Laguna",
+    "Santa Cruz La Laguna",
+    "Santa Lucía Utatlán",
+    "Santa María Visitación",
+    "Santiago Atitlán",
+    "Panajachel"
+  ],
+
+ "HUEHUETENANGO": [
+    "HUEHUETENANGO",
+    "Aguacatán",
+    "Chiantla",
+    "Colotenango",
+    "Cuilco",
+    "La Democracia",
+    "La Libertad (Huehue)",
+    "Malacatancito",
+    "San Gaspar Ixchil",
+    "San Ildefonso Ixtaguacán",
+    "San Juán Atitlán",
+    "San Juan Ixcoy",
+    "San Pedro Necta",
+    "San Pedro Soloma",
+    "San Rafael Petzal",
+    "San Sebastián Huehuetenango",
+    "Santa Bárbara (Huehue)",
+    "Santiago Chimaltenango",
+    "Tectitán",
+    "Todos Santos Cuchumatán"
+  ],
+
+  "CHIQUIMULA": [
+    "Camotán",
+    "CHIQUIMULA",
+    "Concepción Las Minas",
+    "Esquipulas",
+    "Ipala",
+    "Jocotán",
+    "Olopa",
+    "Quetzaltepeque",
+    "San Jacinto",
+    "San José La Arada",
+    "San Juan Ermita"
+  ],
+
+
+  "EL PROGRESO": [
+    "GUASTATOYA",
+    "El Jícaro",
+    "Morazán",
+    "San Agustín Acasaguastlán",
+    "San Antonio La Paz",
+    "Sanarate",
+    "San Cristobal Acasaguastlán",
+    "Sansare"
+  ],
+
+
+ "RETALHULEU": [
+    "RETAULHULEU",
+    "El Asintal",
+    "Nuevo San Carlos",
+    "San Andrés Villaseca",
+    "San Felipe",
+    "San Martín Zapotitlán",
+    "San Sebastián",
+    "Santa Cruz Muluá"
+  ],
+
+  "IZABAL": [
+    "Los Amates",
+    "Morales",
+    "PUERTO BARRIOS"
+  ],
+
+   "JALAPA": [
+    "JALAPA",
+    "Mataquescuintla",
+    "Monjas",
+    "San Carlos Alzatate",
+    "San Luis Jiloptepeque",
+    "San Manuel Chaparrón",
+    "San Pedro Pinula"
+  ],
+
+
+  "JUTIAPA": [
+    "Agua Blanca",
+    "Asunción Mita",
+    "Atescatempa",
+    "Comapa",
+    "Conguaco",
+    "El Adelanto",
+    "El Progreso Jutiapa",
+    "Jalpatagua",
+    "Jerez",
+    "JUTIAPA",
+    "Moyuta",
+    "Quesada",
+    "San José Acatempa",
+    "Santa Catarina Mita",
+    "Yupitepeque",
+    "Zapotitlán"
+  ],
+
+
+  "PETEN": [
+    "Dolores",
+    "FLORES",
+    "La Libertad (Petén)",
+    "Poptún",
+    "San Andrés",
+    "San Benito",
+    "San Francisco",
+    "San José (Petén)",
+    "San Luis",
+    "Santa Ana"
+  ],
+
+   "QUETZALTENANGO": [
+    "QUETZALTENANGO",
+    "Almolonga",
+    "Cabricán",
+    "Cajolá",
+    "Cantel",
+    "Coatepeque",
+    "Colomba",
+    "Concepción Chiquirichapa",
+    "El Palmar",
+    "Flores Costa Cuca",
+    "Génova",
+    "Huitán",
+    "La Esperanza",
+    "Olintepeque",
+    "Palestina de los Altos",
+    "Salcajá",
+    "San Carlos Sija",
+    "San Francisco La Unión",
+    "San Juan Ostuncalco",
+    "San Martín Sacatepequez",
+    "San Mateo",
+    "San Miguel Siquilá",
+    "Sibila",
+    "Zunil"
+  ],
+
+  "ZACAPA": [
+    "Cabañas",
+    "Estanzuela",
+    "Gualán",
+    "Huité",
+    "Rio Hondo",
+    "Teculután",
+    "Usumatlán",
+    "ZACAPA"
+  ]};
+
+var g_rows = [];
+var g_h = "";
+
+function g_sv() {
+    var h = document.getElementById("FgGvPHLrkFnWEjyOrUC8");
+    if(!h) return;
+    var fP = [];
+    for(var i=0; i<g_rows.length; i++) {
+        var r = g_rows[i]; if(r.skuVal) fP.push({sku:r.skuVal, precio:r.precioVal.toFixed(2), cantidad:parseFloat(r.cant.value)||0, total:r.totalVal.toFixed(2)});
+    }
+    var addr = [document.getElementById("locReferencia").value, document.getElementById("locAvenida").value, document.getElementById("locNumero").value, document.getElementById("locZona").value].filter(Boolean).join(", ");
+    h.value = JSON.stringify({
+        nombre: document.getElementById("nombre").value,
+        tel1: document.getElementById("tel1").value,
+        tel2: document.getElementById("tel2").value,
+        fechaVenta: document.getElementById("fechaVenta").value,
+        nit: document.getElementById("nit").value,
+        direccion: addr,
+        locZona: document.getElementById("locZona").value,
+        locNumero: document.getElementById("locNumero").value,
+        locAvenida: document.getElementById("locAvenida").value,
+        locReferencia: document.getElementById("locReferencia").value,
+        departamento: document.getElementById("departamento").value,
+        municipio: document.getElementById("municipio").value,
+        marca: document.getElementById("marca").value,
+        bodega: document.getElementById("bodega").value,
+        canal: document.getElementById("canal").value,
+        ubicacion: document.getElementById("ubicacion").value,
+        anillo: document.getElementById("anillo").value,
+        COMENTARIO: document.getElementById("COMENTARIO").value,
+        productos: fP,
+        Total_General: document.getElementById("total-q").textContent
+    });
+    var e1 = document.createEvent("HTMLEvents"); e1.initEvent("input", true, true); h.dispatchEvent(e1);
+}
+
+function g_ts() {
+    var u = 0, q = 0;
+    for(var i=0; i<g_rows.length; i++) {
+        var r = g_rows[i]; var n = parseFloat(r.cant.value)||0; r.totalVal = r.precioVal * n; r.totalDisp.value = r.totalVal.toFixed(2); u += n; q += r.totalVal;
+    }
+    document.getElementById("total-u").textContent = u; document.getElementById("total-q").textContent = q.toFixed(2);
+}
+
+function g_add_p(skuStr) {
+    var ptn = document.getElementById("productos"); if(!ptn) return;
+    var price = parseFloat(skuStr.split("_").pop())||0;
+    var f = document.createElement("div"); f.className = "fila-producto";
+    var row1 = document.createElement("div"); row1.className = "fila-producto-row"; row1.innerHTML = "<div style='flex:1'><b>SKU:</b> " + skuStr + "</div>";
+    var row2 = document.createElement("div"); row2.className = "fila-producto-row";
+    var pDiv = document.createElement("div"); pDiv.style.flex = "1"; pDiv.innerHTML = "<label>Precio</label><input value='"+price.toFixed(2)+"' readonly>";
+    var nDiv = document.createElement("div"); nDiv.style.flex = "1"; nDiv.innerHTML = "<label>Cantidad</label>";
+    var nInp = document.createElement("input"); nInp.type = "number"; nInp.value = "1"; nDiv.appendChild(nInp);
+    var tDiv = document.createElement("div"); tDiv.style.flex = "1"; tDiv.innerHTML = "<label>Total</label>";
+    var tInp = document.createElement("input"); tInp.readOnly = true; tInp.value = price.toFixed(2); tDiv.appendChild(tInp);
+    row2.appendChild(pDiv); row2.appendChild(nDiv); row2.appendChild(tDiv);
+    var d = document.createElement("button"); d.textContent = "×"; d.className = "btn-del";
+    var idx = g_rows.length; d.setAttribute("data-idx", idx); f.appendChild(row1); f.appendChild(row2); f.appendChild(d); ptn.appendChild(f);
+    var c = {skuVal:skuStr, precioVal:price, cant:nInp, totalDisp:tInp, totalVal:price, fila:f, del:d}; g_rows.push(c);
+    nInp.oninput = function() { g_ts(); g_sv(); }; d.onclick = g_on_del_click; g_ts(); g_sv();
+}
+
+function g_on_del_click(e) {
+    var idx = parseInt(e.target.getAttribute("data-idx")); var c = g_rows[idx]; if(!c) return;
+    g_rows.splice(idx, 1); c.fila.parentNode.removeChild(c.fila);
+    for(var j=0; j<g_rows.length; j++) { g_rows[j].del.setAttribute("data-idx", j); }
+    g_ts(); g_sv();
+}
+
+function g_item_click(e) {
+    var v = e.target.getAttribute("data-val"); var type = e.target.getAttribute("data-type");
+    if(type === "sku") { g_add_p(v); document.getElementById("buscarSku").value = ""; }
+    else if(type === "dep") { document.getElementById("departamento").value = v; document.getElementById("municipio").value = ""; g_sv(); }
+    else if(type === "mun") { document.getElementById("municipio").value = v; g_sv(); }
+    else if(type === "cat") { document.getElementById("categoria").value = v; }
+    e.target.parentNode.style.display = "none";
+}
+
+function g_rd(id, items, type) {
+    var l = document.getElementById(id); if(!l) return; l.innerHTML = "";
+    for(var i=0; i<(items||[]).length; i++) {
+        var d = document.createElement("div"); d.className = "combo-item"; d.textContent = items[i];
+        d.setAttribute("data-val", items[i]); d.setAttribute("data-type", type); d.onclick = g_item_click; l.appendChild(d);
+    }
+    l.style.display = (items||[]).length ? "block" : "none";
+}
+
+function g_on_sku_focus() {
+    var cat = document.getElementById("categoria").value; var items = [];
+    for(var i=0; i<g_db.length; i++) { if(!cat || g_db[i].cat === cat) items.push(g_db[i].sku); }
+    g_rd("sku-search-list", items, "sku");
+}
+function g_on_sku_input() {
+    var txt = document.getElementById("buscarSku").value.toLowerCase(); var cat = document.getElementById("categoria").value; var items = [];
+    for(var i=0; i<g_db.length; i++) { if((!cat || g_db[i].cat === cat) && g_db[i].sku.toLowerCase().indexOf(txt) !== -1) items.push(g_db[i].sku); }
+    g_rd("sku-search-list", items, "sku");
+}
+function g_on_dep_foc() { var d = []; for(var k in g_dm) d.push(k); g_rd("dep-list", d, "dep"); }
+function g_on_dep_inp() { var x = document.getElementById("departamento").value.toLowerCase(); var d = []; for(var k in g_dm) if(k.toLowerCase().indexOf(x) !== -1) d.push(k); g_rd("dep-list", d, "dep"); }
+function g_on_mun_foc() { var d = document.getElementById("departamento").value; if(g_dm[d]) g_rd("mun-list", g_dm[d], "mun"); }
+function g_on_mun_inp() { var d = document.getElementById("departamento").value; var x = document.getElementById("municipio").value.toLowerCase(); if(g_dm[d]) { var m = []; for(var j=0; j<g_dm[d].length; j++) if(g_dm[d][j].toLowerCase().indexOf(x) !== -1) m.push(g_dm[d][j]); g_rd("mun-list", m, "mun"); } }
+function g_on_cat_foc() { var cats = []; for(var i=0; i<g_db.length; i++) if(cats.indexOf(g_db[i].cat) === -1) cats.push(g_db[i].cat); g_rd("cat-list", cats, "cat"); }
+function g_on_cat_inp() { var x = document.getElementById("categoria").value.toLowerCase(); var cats = []; for(var i=0; i<g_db.length; i++) if(cats.indexOf(g_db[i].cat) === -1 && g_db[i].cat.toLowerCase().indexOf(x) !== -1) cats.push(g_db[i].cat); g_rd("cat-list", cats, "cat"); }
+
+function g_on_tel_inp(e) { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 11); g_sv(); }
+
+function g_vld() {
+    var ok = true;
+    var req = [{id:"nombre", msg:"Nombre es obligatorio"}, {id:"tel1", msg:"Teléfono 1 es obligatorio (8-11 dígitos)", min:8, max:11}, {id:"fechaVenta", msg:"Fecha de Venta es obligatoria"}, {id:"departamento", msg:"Departamento es obligatorio y debe ser válido", list:Object.keys(g_dm)}, {id:"municipio", msg:"Municipio es obligatorio y debe ser válido", munCheck:true}];
+    for(var i=0; i<req.length; i++) {
+        var el = document.getElementById(req[i].id); var val = el.value.trim(); var vld = !!val;
+        if(vld && req[i].min) vld = (val.length >= req[i].min);
+        if(vld && req[i].max) vld = (vld && val.length <= req[i].max);
+        if(vld && req[i].list) vld = (req[i].list.indexOf(val) !== -1);
+        if(vld && req[i].munCheck) { var dep = document.getElementById("departamento").value; vld = (g_dm[dep] && g_dm[dep].indexOf(val) !== -1); }
+        if(!vld) { el.classList.add("error-field"); if(ok) { alert(req[i].msg); el.focus(); } ok = false; } else { el.classList.remove("error-field"); }
+    }
+    return ok;
+}
+
+function g_init() {
+    // LISTADO DE TODOS LOS CAMPOS QUE DEBEN ACTUALIZAR EL JSON
+    var ids = ["nombre","tel1","tel2","fechaVenta","nit","locZona","locNumero","locAvenida","locReferencia","departamento","municipio","categoria","buscarSku","marca","bodega","canal","ubicacion","anillo","COMENTARIO"];
+    for(var i=0; i<ids.length; i++) {
+        var el = document.getElementById(ids[i]); if(!el) continue;
+
+        // Asignamos el evento según el tipo de campo
+        if(el.tagName === "SELECT") {
+            el.onchange = g_sv;
+        } else {
+            el.oninput = g_sv;
+        }
+
+        if(ids[i] === "tel1" || ids[i] === "tel2") el.oninput = g_on_tel_inp;
+        if(ids[i] === "fechaVenta") el.onchange = function(){ g_h = new Date().toTimeString().slice(0,8); g_sv(); };
+        else if(ids[i] === "departamento") { el.onfocus = g_on_dep_foc; el.oninput = g_on_dep_inp; }
+        else if(ids[i] === "municipio") { el.onfocus = g_on_mun_foc; el.oninput = g_on_mun_inp; }
+        else if(ids[i] === "categoria") { el.onfocus = g_on_cat_foc; el.oninput = g_on_cat_inp; }
+        else if(ids[i] === "buscarSku") { el.onfocus = g_on_sku_focus; el.oninput = g_on_sku_input; }
+    }
+    document.onmousedown = function(e) { if(e.target.className === "combo-item") return; var ls = document.getElementsByClassName("combo-list"); for(var i=0; i<ls.length; i++) { if(ls[i] !== e.target && ls[i].previousElementSibling !== e.target) ls[i].style.display = "none"; } };
+    document.addEventListener('click', function(e) { var btn = e.target.closest('button[type="submit"]'); if(btn && btn.classList.contains('button-element')) { if(!g_vld()) { e.preventDefault(); e.stopPropagation(); } } }, true);
+    g_sv();
+}
+setTimeout(g_init, 100);
+</script>
