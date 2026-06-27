@@ -1,125 +1,300 @@
 <style>
-body { font-family: Arial, sans-serif; }
-label { font-size: 12px; margin-top: 6px; display: block; font-weight: bold; }
-input, select { width: 100%; padding: 6px; border-radius: 6px; border: 1px solid #ccc; box-sizing: border-box; }
-.row { display: flex; gap: 8px; margin-top: 6px; }
+:root {
+    --primary: #3F51B5;
+    --primary-light: #C5CAE9;
+    --primary-dark: #303F9F;
+    --accent: #FF4081;
+    --bg: #F5F5F5;
+    --surface: #FFFFFF;
+    --text-main: #212121;
+    --text-sec: #757575;
+    --border: #E0E0E0;
+    --error: #F44336;
+    --shadow: 0 2px 4px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-hover: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+}
+
+body {
+    font-family: 'Roboto', Arial, sans-serif;
+    background-color: var(--bg);
+    color: var(--text-main);
+    margin: 0;
+    padding: 20px;
+    display: flex;
+    justify-content: center;
+}
+
+.main-container {
+    background: var(--surface);
+    width: 100%;
+    max-width: 800px;
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+}
+
+h4 {
+    color: var(--primary);
+    margin-bottom: 15px;
+    border-bottom: 2px solid var(--primary-light);
+    padding-bottom: 5px;
+    font-size: 1.1rem;
+}
+
+label {
+    font-size: 13px;
+    margin-top: 10px;
+    display: block;
+    font-weight: 600;
+    color: var(--text-sec);
+}
+
+input, select {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    box-sizing: border-box;
+    font-size: 14px;
+    transition: all 0.2s ease;
+    background: #FAFAFA;
+}
+
+input:focus, select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-light);
+    background: #FFF;
+}
+
+.row {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+}
+
 .row > div { flex: 1; }
-.section { border-top: 1px dashed #ddd; margin-top: 12px; padding-top: 8px; }
+
+.section {
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid #EEE;
+}
+
 .autocomplete { position: relative; }
-.combo-list { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ddd; border-radius: 6px; max-height: 180px; overflow: auto; z-index: 9999; display: none; }
-.combo-item { padding: 6px; cursor: pointer; }
-.combo-item:hover { background: #f2f2f2; }
-.fila-producto { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; border: 1px solid #eee; padding: 8px; border-radius: 6px; position: relative; }
-.fila-producto-row { display: flex; gap: 6px; align-items: center; }
-.btn-del { background: #ff4d4d; color: #fff; border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; position: absolute; top: -10px; right: -10px; display: flex; align-items: center; justify-content: center; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
-.total-global { font-weight: bold; margin-top: 10px; display: flex; gap: 12px; background: #f9f9f9; padding: 10px; border-radius: 6px; }
+
+.combo-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    max-height: 200px;
+    overflow: auto;
+    z-index: 9999;
+    display: none;
+    box-shadow: var(--shadow-hover);
+}
+
+.combo-item {
+    padding: 10px 15px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.combo-item:hover { background: var(--bg); color: var(--primary); font-weight: 500; }
+
+/* Fichas de Productos */
+#productos {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.fila-producto {
+    background: #fff;
+    border: 1px solid var(--border);
+    padding: 15px;
+    border-radius: 12px;
+    position: relative;
+    box-shadow: var(--shadow);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.fila-producto:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-hover);
+}
+
+.fila-producto-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+    margin-top: 8px;
+}
+
+.sku-label {
+    font-size: 12px;
+    color: var(--text-sec);
+    word-break: break-all;
+    line-height: 1.4;
+    border-bottom: 1px dashed var(--border);
+    padding-bottom: 8px;
+    margin-bottom: 5px;
+}
+
+.btn-del {
+    background: var(--error);
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    width: 26px;
+    height: 26px;
+    cursor: pointer;
+    position: absolute;
+    top: -10px;
+    right: -10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    transition: transform 0.1s;
+}
+
+.btn-del:active { transform: scale(0.9); }
+
+.total-global {
+    font-weight: bold;
+    margin-top: 25px;
+    display: flex;
+    justify-content: space-between;
+    background: var(--primary);
+    color: white;
+    padding: 15px 20px;
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+}
+
 input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 input[type=number] { -moz-appearance: textfield; }
-.error-field { border: 2px solid red !important; }
-.required-label::after { content: " *"; color: red; }
+
+.error-field {
+    border: 2px solid var(--error) !important;
+    background-color: #FFEBEE !important;
+}
+
+.required-label::after { content: " *"; color: var(--error); }
 </style>
 
-<input type="hidden" id="FgGvPHLrkFnWEjyOrUC8" name="JsonData">
+<div class="main-container">
+    <input type="hidden" id="FgGvPHLrkFnWEjyOrUC8" name="JsonData">
 
-<div class="section">
-    <label class="required-label">Nombre</label>
-    <input id="nombre">
-    <div class="row">
-        <div style="flex:1"><label class="required-label">Teléfono 1 (8-11 dígitos)</label><input id="tel1" type="tel" maxlength="11"></div>
-        <div style="flex:1"><label>Teléfono 2 (8-11 dígitos)</label><input id="tel2" type="tel" maxlength="11"></div>
-    </div>
-    <label class="required-label">Fecha de Venta</label>
-    <input type="date" id="fechaVenta">
-    <label>NIT</label>
-    <input id="nit">
-</div>
-
-<div class="section">
-    <h4>Detalles de la Ubicación</h4>
-    <div class="row">
-        <div style="flex:1"><label>Zona</label><input id="locZona"></div>
-        <div style="flex:1"><label>Número (Casa/Lote/Apto)</label><input id="locNumero"></div>
-        <div style="flex:1"><label>Avenida</label><input id="locAvenida"></div>
-    </div>
-    <label>Referencia completa de dirección</label>
-    <input id="locReferencia">
-</div>
-
-<div class="section">
-    <div class="row">
-        <div class="autocomplete">
-            <label class="required-label">Departamento</label>
-            <input id="departamento" autocomplete="off">
-            <div id="dep-list" class="combo-list"></div>
+    <div class="section" style="border-top:none; padding-top:0;">
+        <h4>Información del Cliente</h4>
+        <label class="required-label">Nombre</label>
+        <input id="nombre" placeholder="Nombre completo">
+        <div class="row">
+            <div style="flex:1"><label class="required-label">Teléfono 1</label><input id="tel1" type="tel" maxlength="11" placeholder="8-11 dígitos"></div>
+            <div style="flex:1"><label>Teléfono 2</label><input id="tel2" type="tel" maxlength="11" placeholder="Opcional"></div>
         </div>
-        <div class="autocomplete">
-            <label class="required-label">Municipio</label>
-            <input id="municipio" autocomplete="off">
-            <div id="mun-list" class="combo-list"></div>
+        <div class="row">
+            <div style="flex:1"><label class="required-label">Fecha de Venta</label><input type="date" id="fechaVenta"></div>
+            <div style="flex:1"><label>NIT</label><input id="nit" placeholder="NIT o CF"></div>
         </div>
     </div>
-</div>
 
-<div class="section">
-    <div class="row">
-        <div><label>Marca</label>
-            <select id="marca">
-                <option value="R1.1">R1.1</option>
-            </select>
+    <div class="section">
+        <h4>Detalles de la Ubicación</h4>
+        <div class="row">
+            <div style="flex:1"><label>Zona</label><input id="locZona"></div>
+            <div style="flex:1"><label>Número</label><input id="locNumero" placeholder="Casa/Lote"></div>
+            <div style="flex:1"><label>Avenida</label><input id="locAvenida"></div>
         </div>
-        <div><label>Bodega</label>
-            <select id="bodega">
-                <option value="B023 XENACOJ">B023 XENACOJ</option>
-            </select>
-        </div>
-        <div><label>Canal</label>
-            <select id="canal">
-                <option value="CLAN 1">CLAN 1</option>
-            </select>
+        <label>Referencia de dirección</label>
+        <input id="locReferencia" placeholder="Ej: Frente a parque central...">
+    </div>
+
+    <div class="section">
+        <div class="row">
+            <div class="autocomplete">
+                <label class="required-label">Departamento</label>
+                <input id="departamento" autocomplete="off" placeholder="Seleccione...">
+                <div id="dep-list" class="combo-list"></div>
+            </div>
+            <div class="autocomplete">
+                <label class="required-label">Municipio</label>
+                <input id="municipio" autocomplete="off" placeholder="Seleccione...">
+                <div id="mun-list" class="combo-list"></div>
+            </div>
         </div>
     </div>
-    <div class="row">
-        <div><label>Ubicación</label>
-            <select id="ubicacion">
-                <option value="CXN">CXN</option>
-            </select>
-        </div>
-        <div><label>Anillo</label>
-            <select id="anillo">
-                <option value="R1">R1</option>
-            </select>
-        </div>
-        <div><label>COMENTARIO</label><input id="COMENTARIO"></div>
-    </div>
-</div>
 
-<div class="section">
-    <h4>Selección de Productos</h4>
-    <div class="row">
-        <div class="autocomplete" style="flex:1">
-            <label>Categoría</label>
-            <input id="categoria" autocomplete="off">
-            <div id="cat-list" class="combo-list"></div>
+    <div class="section">
+        <h4>Configuración Interna</h4>
+        <div class="row">
+            <div><label>Marca</label>
+                <select id="marca">
+                    <option value="R1.1">R1.1</option>
+                </select>
+            </div>
+            <div><label>Bodega</label>
+                <select id="bodega">
+                    <option value="B023 XENACOJ">B023 XENACOJ</option>
+                </select>
+            </div>
+            <div><label>Canal</label>
+                <select id="canal">
+                    <option value="CLAN 1">CLAN 1</option>
+                </select>
+            </div>
         </div>
-        <div class="autocomplete" style="flex:3">
-            <label>Buscar SKU</label>
-            <input id="buscarSku" autocomplete="off" placeholder="Escribe para buscar producto...">
-            <div id="sku-search-list" class="combo-list"></div>
+        <div class="row">
+            <div><label>Ubicación</label>
+                <select id="ubicacion">
+                    <option value="CXN">CXN</option>
+                </select>
+            </div>
+            <div><label>Anillo</label>
+                <select id="anillo">
+                    <option value="R1">R1</option>
+                </select>
+            </div>
+            <div><label>COMENTARIO</label><input id="COMENTARIO" placeholder="..."></div>
         </div>
     </div>
-</div>
 
-<div class="section">
-    <h4>Productos Agregados</h4>
-    <div id="productos"></div>
-    <div class="total-global">
-        <div>Total Unidades: <span id="total-u">0</span></div>
-        <div>Total Q: <span id="total-q">0.00</span></div>
+    <div class="section">
+        <h4>Selección de Productos</h4>
+        <div class="row">
+            <div class="autocomplete" style="flex:1">
+                <label>Categoría</label>
+                <input id="categoria" autocomplete="off" placeholder="Filtrar por...">
+                <div id="cat-list" class="combo-list"></div>
+            </div>
+            <div class="autocomplete" style="flex:2">
+                <label>Buscar Producto</label>
+                <input id="buscarSku" autocomplete="off" placeholder="Escriba para buscar...">
+                <div id="sku-search-list" class="combo-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h4>Productos Agregados</h4>
+        <div id="productos"></div>
+        <div class="total-global">
+            <div>Unidades: <span id="total-u">0</span></div>
+            <div style="font-size:1.2rem">Total: Q <span id="total-q">0.00</span></div>
+        </div>
     </div>
 </div>
 
 <script>
-// He restaurado tus listas completas de datos para que no pierdas nada
+// Base de datos de productos y municipios
 var g_db = [
 {cat:"ROPERO",sku:"R-3C-L-W-0004_ROPERO 3 CUERPOS LISO  WENGUE CAJON BLANCO MELAMINA_1749"},
 {cat:"ROPERO",sku:"R-3C-L-A-0004_ROPERO 3 CUERPOS LISO  ARIZONA CAJON BLANCO MELAMINA_1749"},
@@ -325,412 +500,32 @@ var g_db = [
 {cat:"COMBO",sku:"B1221B306_COMBO R. 6C LISO WENGUE + MARQUEZA WENGUE + CABECERA SUED BLANCA M/Q_3699"},
 {cat:"COMBO",sku:"B1221B307_COMBO COCINA CRISTAL L FROST MONT_7499"},
 {cat:"COMBO",sku:"B1221B181_COMBO COCINA ONIX GLASS WENGUE_6599"},
-
 ];
+
 var g_dm = {
-"GUATEMALA": [
-    "Guatemala  Barcenas",
-    "Guatemala  Boca del Monte",
-    "Guatemala  Villa Hermosa",
-    "Guatemala Ciudad Peronia",
-    "Guatemala Ruta a El Salvador",
-    "Guatemala Villa Lobos",
-    "Guatemala Zona 01",
-    "Guatemala Zona 02",
-    "Guatemala Zona 03",
-    "Guatemala Zona 04",
-    "Guatemala Zona 05",
-    "Guatemala Zona 06",
-    "Guatemala Zona 07",
-    "Guatemala Zona 08",
-    "Guatemala Zona 10",
-    "Guatemala Zona 11",
-    "Guatemala Zona 12",
-    "Guatemala Zona 13",
-    "Guatemala Zona 14",
-    "Guatemala Zona 17",
-    "Guatemala Zona 19",
-    "Guatemala Zona 21",
-    "Guatemala Zona 24",
-    "Guatemala Zona 15",
-    "Guatemala Zona 16",
-    "Guatemala Zona 18",
-    "Guatemala Zona 25",
-    "Guatemala Zona 09",
-    "GUATEMALA",
-    "Amatitlán",
-    "Chinautla",
-    "Chuarrancho",
-    "Fraijanes",
-    "Mixco",
-    "Palencia",
-    "San José del Golfo",
-    "San José Pinula",
-    "San Juan Sacatepequez",
-    "San Miguel Petapa",
-    "San Pedro Ayampuc",
-    "San Pedro Sac. (Guatemala)",
-    "San Raymundo",
-    "Santa Catarina Pinula",
-    "Villa Canales",
-    "Villa Nueva"
-  ],
-"ESCUINTLA": [
-    "Sipacate",
-    "ESCUINTLA",
-    "Guanagazapa",
-    "Iztapa",
-    "La Democracía",
-    "La Gomera",
-    "Masagua",
-    "Nueva Concepción",
-    "Palín",
-    "Pueblo Nuevo Tiquisate",
-    "San José (Escuintla)",
-    "Santa Lucía Cotzumalguapa",
-    "San Vicente Pacaya",
-    "Siquinalá"
-  ],
-
-"SUCHITEPEQUEZ": [
-    "San José La Máquina",
-    "MAZATENANGO",
-    "Chicacao",
-    "Cuyotenango",
-    "Patulul",
-    "Pueblo Nuevo",
-    "Rio Bravo",
-    "Samayac",
-    "San Antonio Suchitepequez",
-    "San Bernardino",
-    "San Francisco Zapotitlán",
-    "San Gabriel",
-    "San Jose El Idolo",
-    "San Juan Bautista",
-    "San Lorenzo (Suchi)",
-    "San Miguel Panam",
-    "San Pablo Jocopilas",
-    "Santa Bárbara (suchi)",
-    "Santo Domingo Suchitepequez",
-    "Santo Tomás La Unión",
-    "Zunilito"
-  ],
-
- "ALTA VERAPAZ": [
-    "COBAN",
-    "La Tinta",
-    "San Crístobal Verapaz",
-    "San Juan Chamelco",
-    "San Miguel Tucurú",
-    "San Pedro Carchá",
-    "Santa Cruz Verapaz",
-    "Tactic",
-    "Tamahú",
-    "Cubulco",
-    "Purulhá",
-    "Rabinal",
-    "Salamá",
-    "San Jerónimo",
-    "San Miguel Chicaj"
-  ],
-
-"QUICHE": [
-    "SANTA CRUZ DEL QUICHE",
-    "Chicamán",
-    "Chiché",
-    "Chinique",
-    "Cunén",
-    "Joyabaj",
-    "Nebaj",
-    "Pachalúm",
-    "Patzité",
-    "Sacapulas",
-    "San Andrés Salcabaja",
-    "San Antonio Ilotenango",
-    "San Bartolomé Jocotenango",
-    "San Miguel Uspantán",
-    "San Pedro Jocopilas",
-    "Santo Tomás Chichicastenango",
-    "Zacualpa"
-  ],
-
-"SACATEPEQUEZ": [
-    "ANTIGUA GUATEMALA",
-    "Ciudad Vieja",
-    "Jocotenango",
-    "Magdalena Milpas Altas",
-    "Pastores",
-    "San Antonio Aguas Calientes",
-    "San Bartolomé Milpas Altas",
-    "San Juan Alotenango",
-    "San Lucas Sacatepequez",
-    "San Miguel Dueñas",
-    "Santa Catarina Barahona",
-    "Santa Lucía Milpas Altas",
-    "Santa María de Jesús",
-    "Santiago Sacatepequez",
-    "Santo Domingo Xenacoj",
-    "Sumpango"
-  ],
-
-  "CHIMALTENANGO": [
-    "CHIMALTENANGO",
-    "Acatenango",
-    "Comalapa",
-    "El Tejar",
-    "Parramos",
-    "Patzicía",
-    "Patzún",
-    "Pochuta",
-    "San Andrés Itzapa",
-    "San José Poaquil",
-    "San Martín Jilotepeque",
-    "San Pedro Yepocapa",
-    "Santa Apolonia",
-    "Santa Cruz Balanyá",
-    "Tecpán Guatemala",
-    "Zaragoza"
-  ],
-
-  "BAJA VERAPAZ": [
-    "Cubulco",
-    "Purulhá",
-    "Rabinal",
-    "SALAMA",
-    "San Jerónimo",
-    "San Miguel Chicaj"
-  ],
-
-  "SAN MARCOS": [
-    "SAN MARCOS",
-    "Ayutla (Tecún Umán)",
-    "Catarina",
-    "Comitancillo",
-    "Concepción Tutuapa",
-    "El Quetzal",
-    "El Rodeo",
-    "El Tumbador",
-    "Esquipulas Palo Gordo",
-    "Ixchiguán",
-    "La Reforma",
-    "Malacatán",
-    "Nuevo Progreso",
-    "Ocós",
-    "Pajapita",
-    "Rio Blanco",
-    "San Antonio Sacatepequez",
-    "San Cristobal Cucho",
-    "San José Ojetenám",
-    "San Lorenzo (San Marcos)",
-    "San Miguel Ixtahuacán",
-    "San Pablo",
-    "San Pedro Sac. (San Marcos)",
-    "San Rafael Pie de la Cuesta",
-    "Sibinal",
-    "Sipacapa",
-    "Tacaná",
-    "Tajumulco",
-    "Tecún Umán",
-    "Tejutla"
-  ],
-
-  "SANTA ROSA": [
-    "CUILAPA",
-    "Barberena",
-    "Casillas",
-    "Chiquimulilla",
-    "Guazacapán",
-    "Nueva Santa Rosa",
-    "Oratorio",
-    "Pueblo Nuevo Viñas",
-    "San Juan Tecuaco",
-    "San Rafael Las Flores",
-    "Santa Cruz Naranjo",
-    "Santa María Ixhuatán",
-    "Santa Rosa de Lima",
-    "Taxisco"
-  ],
-
-  "TOTONICAPAN": [
-    "TOTONICAPAN",
-    "Momostenango",
-    "San Andrés Xecul",
-    "San Bartolo",
-    "San Cristóbal Totonicapán",
-    "San Francisco El Alto",
-    "Santa Lucía La Reforma"
-  ],
-
- "SOLOLA": [
-    "SOLOLA",
-    "Concepción",
-    "Nahualá",
-    "San Andrés Semetabaj",
-    "San Antonio Palopó",
-    "San José Chacayá",
-    "San Juan La Laguna",
-    "San Lucas Tolimán",
-    "San Marcos La Laguna",
-    "San Pablo La Laguna",
-    "San Pedro La Laguna",
-    "Santa Catarina Ixtahuacán",
-    "Santa Catarina Palopó",
-    "Santa Clara La Laguna",
-    "Santa Cruz La Laguna",
-    "Santa Lucía Utatlán",
-    "Santa María Visitación",
-    "Santiago Atitlán",
-    "Panajachel"
-  ],
-
- "HUEHUETENANGO": [
-    "HUEHUETENANGO",
-    "Aguacatán",
-    "Chiantla",
-    "Colotenango",
-    "Cuilco",
-    "La Democracia",
-    "La Libertad (Huehue)",
-    "Malacatancito",
-    "San Gaspar Ixchil",
-    "San Ildefonso Ixtaguacán",
-    "San Juán Atitlán",
-    "San Juan Ixcoy",
-    "San Pedro Necta",
-    "San Pedro Soloma",
-    "San Rafael Petzal",
-    "San Sebastián Huehuetenango",
-    "Santa Bárbara (Huehue)",
-    "Santiago Chimaltenango",
-    "Tectitán",
-    "Todos Santos Cuchumatán"
-  ],
-
-  "CHIQUIMULA": [
-    "Camotán",
-    "CHIQUIMULA",
-    "Concepción Las Minas",
-    "Esquipulas",
-    "Ipala",
-    "Jocotán",
-    "Olopa",
-    "Quetzaltepeque",
-    "San Jacinto",
-    "San José La Arada",
-    "San Juan Ermita"
-  ],
-
-
-  "EL PROGRESO": [
-    "GUASTATOYA",
-    "El Jícaro",
-    "Morazán",
-    "San Agustín Acasaguastlán",
-    "San Antonio La Paz",
-    "Sanarate",
-    "San Cristobal Acasaguastlán",
-    "Sansare"
-  ],
-
-
- "RETALHULEU": [
-    "RETAULHULEU",
-    "El Asintal",
-    "Nuevo San Carlos",
-    "San Andrés Villaseca",
-    "San Felipe",
-    "San Martín Zapotitlán",
-    "San Sebastián",
-    "Santa Cruz Muluá"
-  ],
-
-  "IZABAL": [
-    "Los Amates",
-    "Morales",
-    "PUERTO BARRIOS"
-  ],
-
-   "JALAPA": [
-    "JALAPA",
-    "Mataquescuintla",
-    "Monjas",
-    "San Carlos Alzatate",
-    "San Luis Jiloptepeque",
-    "San Manuel Chaparrón",
-    "San Pedro Pinula"
-  ],
-
-
-  "JUTIAPA": [
-    "Agua Blanca",
-    "Asunción Mita",
-    "Atescatempa",
-    "Comapa",
-    "Conguaco",
-    "El Adelanto",
-    "El Progreso Jutiapa",
-    "Jalpatagua",
-    "Jerez",
-    "JUTIAPA",
-    "Moyuta",
-    "Quesada",
-    "San José Acatempa",
-    "Santa Catarina Mita",
-    "Yupitepeque",
-    "Zapotitlán"
-  ],
-
-
-  "PETEN": [
-    "Dolores",
-    "FLORES",
-    "La Libertad (Petén)",
-    "Poptún",
-    "San Andrés",
-    "San Benito",
-    "San Francisco",
-    "San José (Petén)",
-    "San Luis",
-    "Santa Ana"
-  ],
-
-   "QUETZALTENANGO": [
-    "QUETZALTENANGO",
-    "Almolonga",
-    "Cabricán",
-    "Cajolá",
-    "Cantel",
-    "Coatepeque",
-    "Colomba",
-    "Concepción Chiquirichapa",
-    "El Palmar",
-    "Flores Costa Cuca",
-    "Génova",
-    "Huitán",
-    "La Esperanza",
-    "Olintepeque",
-    "Palestina de los Altos",
-    "Salcajá",
-    "San Carlos Sija",
-    "San Francisco La Unión",
-    "San Juan Ostuncalco",
-    "San Martín Sacatepequez",
-    "San Mateo",
-    "San Miguel Siquilá",
-    "Sibila",
-    "Zunil"
-  ],
-
-  "ZACAPA": [
-    "Cabañas",
-    "Estanzuela",
-    "Gualán",
-    "Huité",
-    "Rio Hondo",
-    "Teculután",
-    "Usumatlán",
-    "ZACAPA"
-  ]};
+"GUATEMALA": ["Guatemala  Barcenas","Guatemala  Boca del Monte","Guatemala  Villa Hermosa","Guatemala Ciudad Peronia","Guatemala Ruta a El Salvador","Guatemala Villa Lobos","Guatemala Zona 01","Guatemala Zona 02","Guatemala Zona 03","Guatemala Zona 04","Guatemala Zona 05","Guatemala Zona 06","Guatemala Zona 07","Guatemala Zona 08","Guatemala Zona 10","Guatemala Zona 11","Guatemala Zona 12","Guatemala Zona 13","Guatemala Zona 14","Guatemala Zona 17","Guatemala Zona 19","Guatemala Zona 21","Guatemala Zona 24","Guatemala Zona 15","Guatemala Zona 16","Guatemala Zona 18","Guatemala Zona 25","Guatemala Zona 09","GUATEMALA","Amatitlán","Chinautla","Chuarrancho","Fraijanes","Mixco","Palencia","San José del Golfo","San José Pinula","San Juan Sacatepequez","San Miguel Petapa","San Pedro Ayampuc","San Pedro Sac. (Guatemala)","San Raymundo","Santa Catarina Pinula","Villa Canales","Villa Nueva"],
+"ESCUINTLA": ["Sipacate","ESCUINTLA","Guanagazapa","Iztapa","La Democracía","La Gomera","Masagua","Nueva Concepción","Palín","Pueblo Nuevo Tiquisate","San José (Escuintla)","Santa Lucía Cotzumalguapa","San Vicente Pacaya","Siquinalá"],
+"SUCHITEPEQUEZ": ["San José La Máquina","MAZATENANGO","Chicacao","Cuyotenango","Patulul","Pueblo Nuevo","Rio Bravo","Samayac","San Antonio Suchitepequez","San Bernardino","San Francisco Zapotitlán","San Gabriel","San Jose El Idolo","San Juan Bautista","San Lorenzo (Suchi)","San Miguel Panam","San Pablo Jocopilas","Santa Bárbara (suchi)","Santo Domingo Suchitepequez","Santo Tomás La Unión","Zunilito"],
+"ALTA VERAPAZ": ["COBAN","La Tinta","San Crístobal Verapaz","San Juan Chamelco","San Miguel Tucurú","San Pedro Carchá","Santa Cruz Verapaz","Tactic","Tamahú","Purulhá","Salamá","San Jerónimo","San Miguel Chicaj"],
+"QUICHE": ["SANTA CRUZ DEL QUICHE","Chicamán","Chiché","Chinique","Cunén","Joyabaj","Nebaj","Pachalúm","Patzité","Sacapulas","San Andrés Salcabaja","San Antonio Ilotenango","San Bartolomé Jocotenango","San Miguel Uspantán","San Pedro Jocopilas","Santo Tomás Chichicastenango","Zacualpa"],
+"SACATEPEQUEZ": ["ANTIGUA GUATEMALA","Ciudad Vieja","Jocotenango","Magdalena Milpas Altas","Pastores","San Antonio Aguas Calientes","San Bartolomé Milpas Altas","San Juan Alotenango","San Lucas Sacatepequez","San Miguel Dueñas","Santa Catarina Barahona","Santa Lucía Milpas Altas","Santa María de Jesús","Santiago Sacatepequez","Santo Domingo Xenacoj","Sumpango"],
+"CHIMALTENANGO": ["CHIMALTENANGO","Acatenango","Comalapa","El Tejar","Parramos","Patzicía","Patzún","Pochuta","San Andrés Itzapa","San José Poaquil","San Martín Jilotepeque","San Pedro Yepocapa","Santa Apolonia","Santa Cruz Balanyá","Tecpán Guatemala","Zaragoza"],
+"BAJA VERAPAZ": ["Cubulco","Purulhá","Rabinal","SALAMA","San Jerónimo","San Miguel Chicaj"],
+"SAN MARCOS": ["SAN MARCOS","Ayutla (Tecún Umán)","Catarina","Comitancillo","Concepción Tutuapa","El Quetzal","El Rodeo","El Tumbador","Esquipulas Palo Gordo","Ixchiguán","La Reforma","Malacatán","Nuevo Progreso","Ocós","Pajapita","Rio Blanco","San Antonio Sacatepequez","San Cristobal Cucho","San José Ojetenám","San Lorenzo (San Marcos)","San Miguel Ixtahuacán","San Pablo","San Pedro Sac. (San Marcos)","San Rafael Pie de la Cuesta","Sibinal","Sipacapa","Tacaná","Tajumulco","Tecún Umán","Tejutla"],
+"SANTA ROSA": ["CUILAPA","Barberena","Casillas","Chiquimulilla","Guazacapán","Nueva Santa Rosa","Oratorio","Pueblo Nuevo Viñas","San Juan Tecuaco","San Rafael Las Flores","Santa Cruz Naranjo","Santa María Ixhuatán","Santa Rosa de Lima","Taxisco"],
+"TOTONICAPAN": ["TOTONICAPAN","Momostenango","San Andrés Xecul","San Bartolo","San Cristóbal Totonicapán","San Francisco El Alto","Santa Lucía La Reforma"],
+"SOLOLA": ["SOLOLA","Concepción","Nahualá","San Andrés Semetabaj","San Antonio Palopó","San José Chacayá","San Juan La Laguna","San Lucas Tolimán","San Marcos La Laguna","San Pablo La Laguna","San Pedro La Laguna","Santa Catarina Ixtahuacán","Santa Catarina Palopó","Santa Clara La Laguna","Santa Cruz La Laguna","Santa Lucía Utatlán","Santa María Visitación","Santiago Atitlán","Panajachel"],
+"HUEHUETENANGO": ["HUEHUETENANGO","Aguacatán","Chiantla","Colotenango","Cuilco","La Democracia","La Libertad (Huehue)","Malacatancito","San Gaspar Ixchil","San Ildefonso Ixtaguacán","San Juán Atitlán","San Juan Ixcoy","San Pedro Necta","San Pedro Soloma","San Rafael Petzal","San Sebastián Huehuetenango","Santa Bárbara (Huehue)","Santiago Chimaltenango","Tectitán","Todos Santos Cuchumatán"],
+"CHIQUIMULA": ["Camotán","CHIQUIMULA","Concepción Las Minas","Esquipulas","Ipala","Jocotán","Olopa","Quetzaltepeque","San Jacinto","San José La Arada","San Juan Ermita"],
+"EL PROGRESO": ["GUASTATOYA","El Jícaro","Morazán","San Agustín Acasaguastlán","San Antonio La Paz","Sanarate","San Cristobal Acasaguastlán","Sansare"],
+"RETALHULEU": ["RETAULHULEU","El Asintal","Nuevo San Carlos","San Andrés Villaseca","San Felipe","San Martín Zapotitlán","San Sebastián","Santa Cruz Muluá"],
+"IZABAL": ["Los Amates","Morales","PUERTO BARRIOS"],
+"JALAPA": ["JALAPA","Mataquescuintla","Monjas","San Carlos Alzatate","San Luis Jiloptepeque","San Manuel Chaparrón","San Pedro Pinula"],
+"JUTIAPA": ["Agua Blanca","Asunción Mita","Atescatempa","Comapa","Conguaco","El Adelanto","El Progreso Jutiapa","Jalpatagua","Jerez","JUTIAPA","Moyuta","Quesada","San José Acatempa","Santa Catarina Mita","Yupitepeque","Zapotitlán"],
+"PETEN": ["Dolores","FLORES","La Libertad (Petén)","Poptún","San Andrés","San Benito","San Francisco","San José (Petén)","San Luis","Santa Ana"],
+"QUETZALTENANGO": ["QUETZALTENANGO","Almolonga","Cabricán","Cajolá","Cantel","Coatepeque","Colomba","Concepción Chiquirichapa","El Palmar","Flores Costa Cuca","Génova","Huitán","La Esperanza","Olintepeque","Palestina de los Altos","Salcajá","San Carlos Sija","San Francisco La Unión","San Juan Ostuncalco","San Martín Sacatepequez","San Mateo","San Miguel Siquilá","Sibila","Zunil"],
+"ZACAPA": ["Cabañas","Estanzuela","Gualán","Huité","Rio Hondo","Teculután","Usumatlán","ZACAPA"]
+};
 
 var g_rows = [];
 var g_h = "";
@@ -780,16 +575,21 @@ function g_add_p(skuStr) {
     var ptn = document.getElementById("productos"); if(!ptn) return;
     var price = parseFloat(skuStr.split("_").pop())||0;
     var f = document.createElement("div"); f.className = "fila-producto";
-    var row1 = document.createElement("div"); row1.className = "fila-producto-row"; row1.innerHTML = "<div style='flex:1'><b>SKU:</b> " + skuStr + "</div>";
-    var row2 = document.createElement("div"); row2.className = "fila-producto-row";
-    var pDiv = document.createElement("div"); pDiv.style.flex = "1"; pDiv.innerHTML = "<label>Precio</label><input value='"+price.toFixed(2)+"' readonly>";
-    var nDiv = document.createElement("div"); nDiv.style.flex = "1"; nDiv.innerHTML = "<label>Cantidad</label>";
+
+    var skuLabel = document.createElement("div"); skuLabel.className = "sku-label"; skuLabel.innerHTML = "<b>SKU:</b> " + skuStr;
+    var row = document.createElement("div"); row.className = "fila-producto-row";
+
+    var pDiv = document.createElement("div"); pDiv.style.flex = "1.5"; pDiv.innerHTML = "<label>Precio Q</label><input value='"+price.toFixed(2)+"' readonly>";
+    var nDiv = document.createElement("div"); nDiv.style.flex = "1"; nDiv.innerHTML = "<label>Cant.</label>";
     var nInp = document.createElement("input"); nInp.type = "number"; nInp.value = "1"; nDiv.appendChild(nInp);
-    var tDiv = document.createElement("div"); tDiv.style.flex = "1"; tDiv.innerHTML = "<label>Total</label>";
+    var tDiv = document.createElement("div"); tDiv.style.flex = "1.5"; tDiv.innerHTML = "<label>Subtotal</label>";
     var tInp = document.createElement("input"); tInp.readOnly = true; tInp.value = price.toFixed(2); tDiv.appendChild(tInp);
-    row2.appendChild(pDiv); row2.appendChild(nDiv); row2.appendChild(tDiv);
+
+    row.appendChild(pDiv); row.appendChild(nDiv); row.appendChild(tDiv);
     var d = document.createElement("button"); d.textContent = "×"; d.className = "btn-del";
-    var idx = g_rows.length; d.setAttribute("data-idx", idx); f.appendChild(row1); f.appendChild(row2); f.appendChild(d); ptn.appendChild(f);
+    var idx = g_rows.length; d.setAttribute("data-idx", idx);
+
+    f.appendChild(skuLabel); f.appendChild(row); f.appendChild(d); ptn.appendChild(f);
     var c = {skuVal:skuStr, precioVal:price, cant:nInp, totalDisp:tInp, totalVal:price, fila:f, del:d}; g_rows.push(c);
     nInp.oninput = function() { g_ts(); g_sv(); }; d.onclick = g_on_del_click; g_ts(); g_sv();
 }
@@ -853,18 +653,10 @@ function g_vld() {
 }
 
 function g_init() {
-    // LISTADO DE TODOS LOS CAMPOS QUE DEBEN ACTUALIZAR EL JSON
     var ids = ["nombre","tel1","tel2","fechaVenta","nit","locZona","locNumero","locAvenida","locReferencia","departamento","municipio","categoria","buscarSku","marca","bodega","canal","ubicacion","anillo","COMENTARIO"];
     for(var i=0; i<ids.length; i++) {
         var el = document.getElementById(ids[i]); if(!el) continue;
-
-        // Asignamos el evento según el tipo de campo
-        if(el.tagName === "SELECT") {
-            el.onchange = g_sv;
-        } else {
-            el.oninput = g_sv;
-        }
-
+        if(el.tagName === "SELECT") { el.onchange = g_sv; } else { el.oninput = g_sv; }
         if(ids[i] === "tel1" || ids[i] === "tel2") el.oninput = g_on_tel_inp;
         if(ids[i] === "fechaVenta") el.onchange = function(){ g_h = new Date().toTimeString().slice(0,8); g_sv(); };
         else if(ids[i] === "departamento") { el.onfocus = g_on_dep_foc; el.oninput = g_on_dep_inp; }
