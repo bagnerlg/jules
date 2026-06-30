@@ -317,8 +317,8 @@
     // 1. En tu Google Sheet ve a Archivo > Compartir > Publicar en la Web.
     // 2. Selecciona "Valores separados por comas (.csv)" y publica cada hoja por separado.
     // 3. Pega las URLs resultantes aquí:
-    var URL_SHEET_PRODUCTOS = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSny_P6H46_7h82aV77p8_mB8H7-nF779hV-Pz-W0H4H9_nF-f77-z-7-f-7-7-f-7/pub?gid=0&single=true&output=csv";
-    var URL_SHEET_UBICACIONES = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSny_P6H46_7h82aV77p8_mB8H7-nF779hV-Pz-W0H4H9_nF-f77-z-7-f-7-7-f-7/pub?gid=123456789&single=true&output=csv";
+    var URL_SHEET_PRODUCTOS = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR_l-VVACl7YT1Q6DEm2BSUpZZP-c8oZF0UBfIbPRQQmxz3KRiBfkuZ2ZwQwyhtSLJj5BtmIiZJsOHe/pub?gid=0&single=true&output=csv";
+    var URL_SHEET_UBICACIONES = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR_l-VVACl7YT1Q6DEm2BSUpZZP-c8oZF0UBfIbPRQQmxz3KRiBfkuZ2ZwQwyhtSLJj5BtmIiZJsOHe/pub?gid=1131031247&single=true&output=csv";
 
     var container = document.getElementById("form-oportunidad-container");
     var loadingOverlay = document.createElement("div");
@@ -394,14 +394,27 @@
         var price = parseFloat(skuStr.split("_").pop())||0;
         var f = document.createElement("div"); f.className = "fila-producto";
 
-        var skuLabel = document.createElement("div"); skuLabel.className = "sku-label"; skuLabel.innerHTML = "<b>SKU:</b> " + skuStr;
+        var skuLabel = document.createElement("div"); skuLabel.className = "sku-label";
+        var skuB = document.createElement("b"); skuB.textContent = "SKU: ";
+        skuLabel.appendChild(skuB);
+        skuLabel.appendChild(document.createTextNode(skuStr));
+
         var row = document.createElement("div"); row.className = "fila-producto-row";
 
-        var pDiv = document.createElement("div"); pDiv.style.flex = "1.5"; pDiv.innerHTML = "<label>Precio Q</label><input value='"+price.toFixed(2)+"' readonly>";
-        var nDiv = document.createElement("div"); nDiv.style.flex = "1"; nDiv.innerHTML = "<label>Cant.</label>";
+        var pDiv = document.createElement("div"); pDiv.style.flex = "1.5";
+        var pLab = document.createElement("label"); pLab.textContent = "Precio Q";
+        var pInp = document.createElement("input"); pInp.value = price.toFixed(2); pInp.readOnly = true;
+        pDiv.appendChild(pLab); pDiv.appendChild(pInp);
+
+        var nDiv = document.createElement("div"); nDiv.style.flex = "1";
+        var nLab = document.createElement("label"); nLab.textContent = "Cant.";
+        nDiv.appendChild(nLab);
         var nInp = document.createElement("input"); nInp.type = "number"; nInp.value = "1"; nDiv.appendChild(nInp);
-        var tDiv = document.createElement("div"); tDiv.style.flex = "1.5"; tDiv.innerHTML = "<label>Subtotal</label>";
-        var tInp = document.createElement("input"); tInp.readOnly = true; tInp.value = price.toFixed(2); tDiv.appendChild(tInp);
+
+        var tDiv = document.createElement("div"); tDiv.style.flex = "1.5";
+        var tLab = document.createElement("label"); tLab.textContent = "Subtotal";
+        var tInp = document.createElement("input"); tInp.readOnly = true; tInp.value = price.toFixed(2);
+        tDiv.appendChild(tLab); tDiv.appendChild(tInp);
 
         row.appendChild(pDiv); row.appendChild(nDiv); row.appendChild(tDiv);
         var d = document.createElement("button"); d.textContent = "×"; d.className = "btn-del";
@@ -473,18 +486,40 @@
         container.style.position = "relative";
         container.appendChild(loadingOverlay);
         console.log("Iniciando carga de datos desde Google Sheets...");
+
+        async function fetchCSV(url, label) {
+            try {
+                const res = await fetch(url);
+                const text = await res.text();
+
+                // Verificación básica de que recibimos CSV y no HTML (error de permisos de Google)
+                if (text.trim().toLowerCase().startsWith("<!doctype html") || text.includes("<html")) {
+                    console.error("Error en " + label + ": La URL devolvió HTML en lugar de CSV. Verifica que la hoja esté publicada correctamente como CSV y sea pública.");
+                    return [];
+                }
+
+                // Dividir líneas manejando \n y \r\n
+                const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
+                if (lines.length <= 1) return []; // Solo encabezado o vacío
+
+                return lines.slice(1).map(line => {
+                    // Regex para separar por comas respetando comillas
+                    return line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(part => part.replace(/^"|"$/g, "").trim());
+                });
+            } catch (err) {
+                console.error("Fallo al descargar " + label + ":", err);
+                return [];
+            }
+        }
+
         try {
             // 1. Cargar Productos
             if (URL_SHEET_PRODUCTOS.includes("/pub?")) {
-                const resProd = await fetch(URL_SHEET_PRODUCTOS);
-                const csvProd = await resProd.text();
-                const lines = csvProd.split("\n").slice(1); // Saltar encabezado
-                g_db = lines.filter(l => l.trim()).map(line => {
-                    // Manejar posible CSV con comas dentro de comillas
-                    const parts = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
-                    const cat = parts[0]?.replace(/"/g, "").trim() || "";
-                    const sku = parts[1]?.replace(/"/g, "").trim() || "";
-                    const precio = parts[2]?.replace(/"/g, "").trim() || "0";
+                const dataProd = await fetchCSV(URL_SHEET_PRODUCTOS, "Productos");
+                g_db = dataProd.map(parts => {
+                    const cat = parts[0] || "";
+                    const sku = parts[1] || "";
+                    const precio = parts[2] || "0";
                     return { cat: cat, sku: sku + "_" + precio };
                 });
                 console.log("Productos cargados:", g_db.length);
@@ -492,14 +527,11 @@
 
             // 2. Cargar Ubicaciones
             if (URL_SHEET_UBICACIONES.includes("/pub?")) {
-                const resLoc = await fetch(URL_SHEET_UBICACIONES);
-                const csvLoc = await resLoc.text();
-                const lines = csvLoc.split("\n").slice(1);
+                const dataLoc = await fetchCSV(URL_SHEET_UBICACIONES, "Ubicaciones");
                 g_dm = {};
-                lines.forEach(line => {
-                    const parts = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
-                    const dep = parts[0]?.replace(/"/g, "").trim().toUpperCase() || "";
-                    const mun = parts[1]?.replace(/"/g, "").trim() || "";
+                dataLoc.forEach(parts => {
+                    const dep = (parts[0] || "").toUpperCase();
+                    const mun = parts[1] || "";
                     if (dep && mun) {
                         if (!g_dm[dep]) g_dm[dep] = [];
                         g_dm[dep].push(mun);
@@ -508,7 +540,7 @@
                 console.log("Departamentos cargados:", Object.keys(g_dm).length);
             }
         } catch (e) {
-            console.error("Error cargando datos remotos:", e);
+            console.error("Error general cargando datos remotos:", e);
         } finally {
             if (loadingOverlay.parentNode) loadingOverlay.parentNode.removeChild(loadingOverlay);
         }
