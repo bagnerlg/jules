@@ -345,7 +345,17 @@
         }
         var fP = [];
         for(var i=0; i<g_rows.length; i++) {
-            var r = g_rows[i]; if(r.skuVal) fP.push({sku:r.skuVal, precio:r.precioVal.toFixed(2), cantidad:parseFloat(r.cant.value)||0, total:r.totalVal.toFixed(2)});
+            var r = g_rows[i];
+            if(r.skuVal) {
+                var p = r.skuVal.split("|");
+                fP.push({
+                    sku: p[0],
+                    descripcion: p[1],
+                    precio: r.precioVal.toFixed(2),
+                    cantidad: parseFloat(r.cant.value)||0,
+                    total: r.totalVal.toFixed(2)
+                });
+            }
         }
         var addr = [$("locReferencia").value, $("locAvenida").value, $("locNumero").value, $("locZona").value].filter(Boolean).join(", ");
         var data = {
@@ -391,13 +401,22 @@
 
     function g_add_p(skuStr) {
         var ptn = container.querySelector("#productos"); if(!ptn) return;
-        var price = parseFloat(skuStr.split("_").pop())||0;
+        var parts = skuStr.split("|");
+        var sku = parts[0] || "";
+        var desc = parts[1] || "";
+        var price = parseFloat(parts[2]) || 0;
+
         var f = document.createElement("div"); f.className = "fila-producto";
 
         var skuLabel = document.createElement("div"); skuLabel.className = "sku-label";
         var skuB = document.createElement("b"); skuB.textContent = "SKU: ";
         skuLabel.appendChild(skuB);
-        skuLabel.appendChild(document.createTextNode(skuStr));
+        skuLabel.appendChild(document.createTextNode(sku));
+        skuLabel.appendChild(document.createElement("br"));
+
+        var descB = document.createElement("b"); descB.textContent = "DESC: ";
+        skuLabel.appendChild(descB);
+        skuLabel.appendChild(document.createTextNode(desc));
 
         var row = document.createElement("div"); row.className = "fila-producto-row";
 
@@ -443,7 +462,15 @@
     function g_rd(id, items, type) {
         var l = container.querySelector("#" + id); if(!l) return; l.innerHTML = "";
         for(var i=0; i<(items||[]).length; i++) {
-            var d = document.createElement("div"); d.className = "combo-item"; d.textContent = items[i];
+            var d = document.createElement("div"); d.className = "combo-item";
+
+            var displayText = items[i];
+            if (type === "sku" && displayText.includes("|")) {
+                var p = displayText.split("|");
+                displayText = p[0] + " - " + p[1]; // Mostrar SKU - Descripción
+            }
+
+            d.textContent = displayText;
             d.setAttribute("data-val", items[i]); d.setAttribute("data-type", type); d.onclick = g_item_click; l.appendChild(d);
         }
         l.style.display = (items||[]).length ? "block" : "none";
@@ -519,8 +546,10 @@
                 g_db = dataProd.map(parts => {
                     const cat = parts[0] || "";
                     const sku = parts[1] || "";
-                    const precio = parts[2] || "0";
-                    return { cat: cat, sku: sku + "_" + precio };
+                    const desc = parts[2] || "";
+                    const precio = parts[3] || "0";
+                    // Formato interno robusto usando pipes
+                    return { cat: cat, sku: sku + "|" + desc + "|" + precio };
                 });
                 console.log("Productos cargados:", g_db.length);
             }
