@@ -1,3 +1,4 @@
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 #form-oportunidad-container {
     --foc-primary: #3F51B5;
@@ -312,7 +313,11 @@
 <script>
 (function() {
     var container = document.getElementById("form-oportunidad-container");
-    function $(id) { return container.querySelector("#" + id); }
+    function $(id) {
+        var el = document.getElementById(id);
+        if (!el && container) el = container.querySelector("#" + id);
+        return el;
+    }
 
     var g_db = [
         {cat:"ROPERO",sku:"R-3C-L-W-0004_ROPERO 3 CUERPOS LISO  WENGUE CAJON BLANCO MELAMINA_1749"},
@@ -551,35 +556,46 @@
 
     function g_sv() {
         var h = $("FgGvPHLrkFnWEjyOrUC8");
-        if(!h) return;
+        if(!h) {
+            console.error("No se encontró el campo oculto FgGvPHLrkFnWEjyOrUC8");
+            return;
+        }
         var fP = [];
         for(var i=0; i<g_rows.length; i++) {
             var r = g_rows[i]; if(r.skuVal) fP.push({sku:r.skuVal, precio:r.precioVal.toFixed(2), cantidad:parseFloat(r.cant.value)||0, total:r.totalVal.toFixed(2)});
         }
         var addr = [$("locReferencia").value, $("locAvenida").value, $("locNumero").value, $("locZona").value].filter(Boolean).join(", ");
-        h.value = JSON.stringify({
-            nombre: $("nombre").value,
-            tel1: $("tel1").value,
-            tel2: $("tel2").value,
-            fechaVenta: $("fechaVenta").value,
-            nit: $("nit").value,
+        var data = {
+            nombre: ($("nombre") || {}).value || "",
+            tel1: ($("tel1") || {}).value || "",
+            tel2: ($("tel2") || {}).value || "",
+            fechaVenta: ($("fechaVenta") || {}).value || "",
+            nit: ($("nit") || {}).value || "",
             direccion: addr,
-            locZona: $("locZona").value,
-            locNumero: $("locNumero").value,
-            locAvenida: $("locAvenida").value,
-            locReferencia: $("locReferencia").value,
-            departamento: $("departamento").value,
-            municipio: $("municipio").value,
-            marca: $("marca").value,
-            bodega: $("bodega").value,
-            canal: $("canal").value,
-            ubicacion: $("ubicacion").value,
-            anillo: $("anillo").value,
-            COMENTARIO: $("COMENTARIO").value,
+            locZona: ($("locZona") || {}).value || "",
+            locNumero: ($("locNumero") || {}).value || "",
+            locAvenida: ($("locAvenida") || {}).value || "",
+            locReferencia: ($("locReferencia") || {}).value || "",
+            departamento: ($("departamento") || {}).value || "",
+            municipio: ($("municipio") || {}).value || "",
+            marca: ($("marca") || {}).value || "",
+            bodega: ($("bodega") || {}).value || "",
+            canal: ($("canal") || {}).value || "",
+            ubicacion: ($("ubicacion") || {}).value || "",
+            anillo: ($("anillo") || {}).value || "",
+            COMENTARIO: ($("COMENTARIO") || {}).value || "",
             productos: fP,
-            Total_General: container.querySelector("#total-q").textContent
-        });
-        var e1 = document.createEvent("HTMLEvents"); e1.initEvent("input", true, true); h.dispatchEvent(e1);
+            Total_General: (container.querySelector("#total-q") || {textContent:"0.00"}).textContent
+        };
+        h.value = JSON.stringify(data);
+        console.log("JSON Data updated:", h.value);
+
+        try {
+            h.dispatchEvent(new Event("input", { bubbles: true }));
+            h.dispatchEvent(new Event("change", { bubbles: true }));
+        } catch(e) {
+            var e1 = document.createEvent("HTMLEvents"); e1.initEvent("input", true, true); h.dispatchEvent(e1);
+        }
     }
 
     function g_ts() {
