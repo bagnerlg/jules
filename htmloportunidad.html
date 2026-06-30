@@ -348,9 +348,10 @@
             var r = g_rows[i];
             if(r.skuVal) {
                 var p = r.skuVal.split("|");
+                // Restauramos el formato original: SKU_DESCRIPCION_PRECIO
+                var legacySku = p[0] + "_" + p[1] + "_" + Math.round(r.precioVal);
                 fP.push({
-                    sku: p[0],
-                    descripcion: p[1],
+                    sku: legacySku,
                     precio: r.precioVal.toFixed(2),
                     cantidad: parseFloat(r.cant.value)||0,
                     total: r.totalVal.toFixed(2)
