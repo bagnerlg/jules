@@ -468,7 +468,8 @@
             var displayText = items[i];
             if (type === "sku" && displayText.includes("|")) {
                 var p = displayText.split("|");
-                displayText = p[0] + " - " + p[1]; // Mostrar SKU - Descripción
+                // Mostrar SKU - Descripción - Precio para mayor claridad
+                displayText = p[0] + " - " + p[1] + " (Q " + p[2] + ")";
             }
 
             d.textContent = displayText;
