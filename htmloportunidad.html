@@ -310,23 +310,29 @@
     </div>
 </div>
 
-<script
-    src="https://cdn.jsdelivr.net/gh/bagnerlg/jules@fix/ghl-whatsapp-bot-improvements-1127568564414407312/oportunidad-data.js"
-    onerror="console.error('Error cargando oportunidad-data.js desde GitHub CDN. Usando datos locales si están disponibles.')"
-></script>
 <script>
 (function() {
+    // --- CONFIGURACIÓN GOOGLE SHEETS ---
+    // Instrucciones:
+    // 1. En tu Google Sheet ve a Archivo > Compartir > Publicar en la Web.
+    // 2. Selecciona "Valores separados por comas (.csv)" y publica cada hoja por separado.
+    // 3. Pega las URLs resultantes aquí:
+    var URL_SHEET_PRODUCTOS = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSny_P6H46_7h82aV77p8_mB8H7-nF779hV-Pz-W0H4H9_nF-f77-z-7-f-7-7-f-7/pub?gid=0&single=true&output=csv";
+    var URL_SHEET_UBICACIONES = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSny_P6H46_7h82aV77p8_mB8H7-nF779hV-Pz-W0H4H9_nF-f77-z-7-f-7-7-f-7/pub?gid=123456789&single=true&output=csv";
+
     var container = document.getElementById("form-oportunidad-container");
+    var loadingOverlay = document.createElement("div");
+    loadingOverlay.style = "position:absolute; top:0; left:0; right:0; bottom:0; background:rgba(255,255,255,0.7); z-index:10000; display:flex; align-items:center; justify-content:center; border-radius:12px; font-weight:bold; color:#3F51B5;";
+    loadingOverlay.innerHTML = "Cargando datos...";
     function $(id) {
         var el = document.getElementById(id);
         if (!el && container) el = container.querySelector("#" + id);
         return el;
     }
 
-    // Usamos los datos globales si existen, de lo contrario usamos un array vacío
-    var g_db = (typeof window.g_db !== "undefined") ? window.g_db : [];
-
-    var g_dm = (typeof window.g_dm !== "undefined") ? window.g_dm : {};
+    // Variables globales de datos
+    var g_db = [];
+    var g_dm = {};
 
     var g_rows = [];
     var g_h = "";
@@ -463,7 +469,53 @@
         return ok;
     }
 
-    function g_init() {
+    async function loadRemoteData() {
+        container.style.position = "relative";
+        container.appendChild(loadingOverlay);
+        console.log("Iniciando carga de datos desde Google Sheets...");
+        try {
+            // 1. Cargar Productos
+            if (URL_SHEET_PRODUCTOS.includes("/pub?")) {
+                const resProd = await fetch(URL_SHEET_PRODUCTOS);
+                const csvProd = await resProd.text();
+                const lines = csvProd.split("\n").slice(1); // Saltar encabezado
+                g_db = lines.filter(l => l.trim()).map(line => {
+                    // Manejar posible CSV con comas dentro de comillas
+                    const parts = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+                    const cat = parts[0]?.replace(/"/g, "").trim() || "";
+                    const sku = parts[1]?.replace(/"/g, "").trim() || "";
+                    const precio = parts[2]?.replace(/"/g, "").trim() || "0";
+                    return { cat: cat, sku: sku + "_" + precio };
+                });
+                console.log("Productos cargados:", g_db.length);
+            }
+
+            // 2. Cargar Ubicaciones
+            if (URL_SHEET_UBICACIONES.includes("/pub?")) {
+                const resLoc = await fetch(URL_SHEET_UBICACIONES);
+                const csvLoc = await resLoc.text();
+                const lines = csvLoc.split("\n").slice(1);
+                g_dm = {};
+                lines.forEach(line => {
+                    const parts = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+                    const dep = parts[0]?.replace(/"/g, "").trim().toUpperCase() || "";
+                    const mun = parts[1]?.replace(/"/g, "").trim() || "";
+                    if (dep && mun) {
+                        if (!g_dm[dep]) g_dm[dep] = [];
+                        g_dm[dep].push(mun);
+                    }
+                });
+                console.log("Departamentos cargados:", Object.keys(g_dm).length);
+            }
+        } catch (e) {
+            console.error("Error cargando datos remotos:", e);
+        } finally {
+            if (loadingOverlay.parentNode) loadingOverlay.parentNode.removeChild(loadingOverlay);
+        }
+    }
+
+    async function g_init() {
+        await loadRemoteData();
         var ids = ["nombre","tel1","tel2","fechaVenta","nit","locZona","locNumero","locAvenida","locReferencia","departamento","municipio","categoria","buscarSku","marca","bodega","canal","ubicacion","anillo","COMENTARIO"];
         for(var i=0; i<ids.length; i++) {
             var el = $(ids[i]); if(!el) continue;
