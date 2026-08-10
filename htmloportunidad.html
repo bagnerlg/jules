@@ -535,36 +535,10 @@
                 var p = items[i].split("|");
                 var displayTitle = p[0] + " - " + p[1] + " (Q " + p[2] + ")";
 
-                // Buscar si es un combo en g_db
-                var dbItem = null;
-                for (var k = 0; k < g_db.length; k++) {
-                    if (g_db[k].sku === items[i]) {
-                        dbItem = g_db[k];
-                        break;
-                    }
-                }
-
                 var titleDiv = document.createElement("div");
                 titleDiv.style.fontWeight = "500";
                 titleDiv.textContent = displayTitle;
                 d.appendChild(titleDiv);
-
-                if (dbItem && dbItem.isCombo && dbItem.items && dbItem.items.length > 0) {
-                    var itemsDiv = document.createElement("div");
-                    itemsDiv.style.fontSize = "11px";
-                    itemsDiv.style.color = "var(--foc-text-sec)";
-                    itemsDiv.style.marginTop = "4px";
-                    itemsDiv.style.paddingLeft = "10px";
-                    itemsDiv.style.borderLeft = "2px solid var(--foc-primary-light)";
-                    itemsDiv.style.lineHeight = "1.4";
-
-                    dbItem.items.forEach(function(innerItem) {
-                        var bullet = document.createElement("div");
-                        bullet.textContent = "• " + innerItem.quantity + "x [" + innerItem.sku + "] " + innerItem.description;
-                        itemsDiv.appendChild(bullet);
-                    });
-                    d.appendChild(itemsDiv);
-                }
             } else {
                 d.textContent = items[i];
             }
