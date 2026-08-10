@@ -364,34 +364,57 @@
     var g_rows = [];
     var g_h = "";
 
-    // Detectar dinámicamente el ID del campo oculto de datos de forma ultra robusta y 100% automática
+    // Detectar dinámicamente el ID del campo oculto de datos de forma ultra robusta y 100% automática, incluyendo soporte multi-iframe en GoHighLevel
     function obtenerHiddenInput() {
-        // 1. Buscar prioritariamente por el atributo data-q="jsondata" (Estándar nativo de GoHighLevel)
-        var h = document.querySelector('[data-q="jsondata"]');
-        if (h) return h;
+        var h = null;
 
-        h = document.querySelector('[data-q="JSONDATA"]');
-        if (h) return h;
+        // 1. Intentar buscar en la ventana local (en el documento actual)
+        try {
+            h = document.querySelector('[data-q="jsondata"]') || document.querySelector('[data-q="JSONDATA"]');
+            if (h) return h;
+        } catch (e) {}
+
+        // 2. Intentar buscar en el documento padre (por si estamos dentro de un iframe en GoHighLevel)
+        try {
+            if (window.parent && window.parent !== window && window.parent.document) {
+                h = window.parent.document.querySelector('[data-q="jsondata"]') || window.parent.document.querySelector('[data-q="JSONDATA"]');
+                if (h) return h;
+            }
+        } catch (e) {}
+
+        // 3. Intentar buscar en el documento superior top
+        try {
+            if (window.top && window.top !== window && window.top.document) {
+                h = window.top.document.querySelector('[data-q="jsondata"]') || window.top.document.querySelector('[data-q="JSONDATA"]');
+                if (h) return h;
+            }
+        } catch (e) {}
 
         if (!container) return document.getElementById("FgGvPHLrkFnWEjyOrUC8");
 
-        // 2. Buscar por atributo name="JsonData" en todo el documento (por si GHL lo movió de nivel)
-        h = document.querySelector('input[name="JsonData"]');
-        if (h) return h;
+        // 4. Buscar por atributo name="JsonData" en el documento local
+        try {
+            h = document.querySelector('input[name="JsonData"]');
+            if (h) return h;
+        } catch (e) {}
 
-        // 3. Buscar el primer input de tipo "hidden" dentro de nuestro contenedor
-        h = container.querySelector('input[type="hidden"]');
-        if (h) return h;
+        // 5. Buscar el primer input de tipo "hidden" dentro de nuestro contenedor
+        try {
+            h = container.querySelector('input[type="hidden"]');
+            if (h) return h;
+        } catch (e) {}
 
-        // 4. Buscar cualquier input con id de 20 caracteres (formato clásico de campos personalizados de GHL)
-        var inputs = container.querySelectorAll("input");
-        for (var i = 0; i < inputs.length; i++) {
-            if (inputs[i].id && inputs[i].id.length === 20) {
-                return inputs[i];
+        // 6. Buscar cualquier input con id de 20 caracteres (formato clásico de campos personalizados de GHL)
+        try {
+            var inputs = container.querySelectorAll("input");
+            for (var i = 0; i < inputs.length; i++) {
+                if (inputs[i].id && inputs[i].id.length === 20) {
+                    return inputs[i];
+                }
             }
-        }
+        } catch (e) {}
 
-        // 5. Fallback clásico al ID inicial
+        // 7. Fallback clásico al ID inicial
         return document.getElementById("FgGvPHLrkFnWEjyOrUC8");
     }
 
