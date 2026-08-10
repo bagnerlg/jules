@@ -419,6 +419,34 @@
         skuLabel.appendChild(descB);
         skuLabel.appendChild(document.createTextNode(desc));
 
+        // Buscar si es un combo en g_db para mostrar su contenido
+        var dbItem = g_db.find(function(x) { return x.sku === skuStr; });
+        if (dbItem && dbItem.isCombo && dbItem.items && dbItem.items.length > 0) {
+            var comboContentDiv = document.createElement("div");
+            comboContentDiv.style.marginTop = "8px";
+            comboContentDiv.style.padding = "8px";
+            comboContentDiv.style.background = "var(--foc-bg)";
+            comboContentDiv.style.borderRadius = "6px";
+            comboContentDiv.style.fontSize = "11px";
+            comboContentDiv.style.lineHeight = "1.3";
+            comboContentDiv.style.color = "var(--foc-text-main)";
+
+            var comboHeader = document.createElement("div");
+            comboHeader.style.fontWeight = "bold";
+            comboHeader.style.marginBottom = "4px";
+            comboHeader.style.color = "var(--foc-primary)";
+            comboHeader.textContent = "Contenido del Combo:";
+            comboContentDiv.appendChild(comboHeader);
+
+            dbItem.items.forEach(function(innerItem) {
+                var innerItemDiv = document.createElement("div");
+                innerItemDiv.style.marginBottom = "2px";
+                innerItemDiv.textContent = "• Cant: " + innerItem.quantity + " | SKU: " + innerItem.sku + " | " + innerItem.description;
+                comboContentDiv.appendChild(innerItemDiv);
+            });
+            skuLabel.appendChild(comboContentDiv);
+        }
+
         var row = document.createElement("div"); row.className = "fila-producto-row";
 
         var pDiv = document.createElement("div"); pDiv.style.flex = "1.5";
@@ -452,28 +480,57 @@
     }
 
     function g_item_click(e) {
-        var v = e.target.getAttribute("data-val"); var type = e.target.getAttribute("data-type");
+        var target = e.target.closest(".combo-item");
+        if (!target) return;
+        var v = target.getAttribute("data-val"); var type = target.getAttribute("data-type");
         if(type === "sku") { g_add_p(v); $("buscarSku").value = ""; }
         else if(type === "dep") { $("departamento").value = v; $("municipio").value = ""; g_sv(); }
         else if(type === "mun") { $("municipio").value = v; g_sv(); }
         else if(type === "cat") { $("categoria").value = v; }
-        e.target.parentNode.style.display = "none";
+        target.parentNode.style.display = "none";
     }
 
     function g_rd(id, items, type) {
         var l = container.querySelector("#" + id); if(!l) return; l.innerHTML = "";
         for(var i=0; i<(items||[]).length; i++) {
             var d = document.createElement("div"); d.className = "combo-item";
+            d.setAttribute("data-val", items[i]);
+            d.setAttribute("data-type", type);
+            d.onclick = g_item_click;
 
-            var displayText = items[i];
-            if (type === "sku" && displayText.includes("|")) {
-                var p = displayText.split("|");
-                // Mostrar SKU - Descripción - Precio para mayor claridad
-                displayText = p[0] + " - " + p[1] + " (Q " + p[2] + ")";
+            if (type === "sku" && items[i].includes("|")) {
+                var p = items[i].split("|");
+                var displayTitle = p[0] + " - " + p[1] + " (Q " + p[2] + ")";
+
+                // Buscar si es un combo en g_db
+                var dbItem = g_db.find(function(x) { return x.sku === items[i]; });
+
+                var titleDiv = document.createElement("div");
+                titleDiv.style.fontWeight = "500";
+                titleDiv.textContent = displayTitle;
+                d.appendChild(titleDiv);
+
+                if (dbItem && dbItem.isCombo && dbItem.items && dbItem.items.length > 0) {
+                    var itemsDiv = document.createElement("div");
+                    itemsDiv.style.fontSize = "11px";
+                    itemsDiv.style.color = "var(--foc-text-sec)";
+                    itemsDiv.style.marginTop = "4px";
+                    itemsDiv.style.paddingLeft = "10px";
+                    itemsDiv.style.borderLeft = "2px solid var(--foc-primary-light)";
+                    itemsDiv.style.lineHeight = "1.4";
+
+                    dbItem.items.forEach(function(innerItem) {
+                        var bullet = document.createElement("div");
+                        bullet.textContent = "• " + innerItem.quantity + "x [" + innerItem.sku + "] " + innerItem.description;
+                        itemsDiv.appendChild(bullet);
+                    });
+                    d.appendChild(itemsDiv);
+                }
+            } else {
+                d.textContent = items[i];
             }
 
-            d.textContent = displayText;
-            d.setAttribute("data-val", items[i]); d.setAttribute("data-type", type); d.onclick = g_item_click; l.appendChild(d);
+            l.appendChild(d);
         }
         l.style.display = (items||[]).length ? "block" : "none";
     }
@@ -514,7 +571,7 @@
     async function loadRemoteData() {
         container.style.position = "relative";
         container.appendChild(loadingOverlay);
-        console.log("Iniciando carga de datos desde Google Sheets...");
+        console.log("Iniciando carga de datos remotos...");
 
         async function fetchCSV(url, label) {
             try {
@@ -542,18 +599,48 @@
         }
 
         try {
-            // 1. Cargar Productos
-            if (URL_SHEET_PRODUCTOS.includes("/pub?")) {
-                const dataProd = await fetchCSV(URL_SHEET_PRODUCTOS, "Productos");
-                g_db = dataProd.map(parts => {
-                    const cat = parts[0] || "";
-                    const sku = parts[1] || "";
-                    const desc = parts[2] || "";
-                    const precio = parts[3] || "0";
-                    // Formato interno robusto usando pipes
-                    return { cat: cat, sku: sku + "|" + desc + "|" + precio };
-                });
-                console.log("Productos cargados:", g_db.length);
+            // 1. Cargar Productos y Combos desde la API
+            try {
+                console.log("Descargando combos y productos desde la API...");
+                const resApi = await fetch("https://api.zashome.dpdns.org/api/public/combos-generated?limit=500");
+                const apiData = await resApi.json();
+
+                g_db = [];
+
+                // Cargar combos
+                if (apiData.combos && Array.isArray(apiData.combos)) {
+                    apiData.combos.forEach(combo => {
+                        const cat = combo.category || "";
+                        const sku = combo.sku || "";
+                        const desc = combo.description || "";
+                        const precio = combo.salePrice || 0;
+                        g_db.push({
+                            cat: cat,
+                            sku: sku + "|" + desc + "|" + precio,
+                            isCombo: true,
+                            items: combo.items || []
+                        });
+                    });
+                }
+
+                // Cargar productos
+                if (apiData.products && Array.isArray(apiData.products)) {
+                    apiData.products.forEach(prod => {
+                        const cat = prod.category || "";
+                        const sku = prod.sku || "";
+                        const desc = prod.description || "";
+                        const precio = prod.salePrice || 0;
+                        g_db.push({
+                            cat: cat,
+                            sku: sku + "|" + desc + "|" + precio,
+                            isCombo: false,
+                            items: []
+                        });
+                    });
+                }
+                console.log("Total de productos y combos cargados:", g_db.length);
+            } catch (apiErr) {
+                console.error("Fallo al descargar combos y productos desde la API:", apiErr);
             }
 
             // 2. Cargar Ubicaciones
@@ -591,7 +678,7 @@
             else if(ids[i] === "buscarSku") { el.onfocus = g_on_sku_focus; el.oninput = g_on_sku_input; }
         }
         document.addEventListener('mousedown', function(e) {
-            if(e.target.className === "combo-item") return;
+            if(e.target.closest(".combo-item")) return;
             var ls = container.querySelectorAll(".combo-list");
             for(var i=0; i<ls.length; i++) { if(ls[i] !== e.target && ls[i].previousElementSibling !== e.target) ls[i].style.display = "none"; }
         });
