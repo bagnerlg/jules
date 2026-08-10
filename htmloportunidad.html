@@ -312,13 +312,13 @@
 
 <script>
 (function() {
-    // --- CONFIGURACIÓN GOOGLE SHEETS ---
-    // Instrucciones:
-    // 1. En tu Google Sheet ve a Archivo > Compartir > Publicar en la Web.
-    // 2. Selecciona "Valores separados por comas (.csv)" y publica cada hoja por separado.
-    // 3. Pega las URLs resultantes aquí:
-    var URL_SHEET_PRODUCTOS = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR_l-VVACl7YT1Q6DEm2BSUpZZP-c8oZF0UBfIbPRQQmxz3KRiBfkuZ2ZwQwyhtSLJj5BtmIiZJsOHe/pub?gid=0&single=true&output=csv";
+    // --- CONFIGURACIÓN DE ORIGEN DE DATOS ---
+    // URL de la API de combos y productos:
+    var URL_API_PRODUCTOS = "https://api.zashome.dpdns.org/api/public/combos-generated?limit=500";
+    // URL de la Google Sheet de Ubicaciones (CSV):
     var URL_SHEET_UBICACIONES = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR_l-VVACl7YT1Q6DEm2BSUpZZP-c8oZF0UBfIbPRQQmxz3KRiBfkuZ2ZwQwyhtSLJj5BtmIiZJsOHe/pub?gid=1131031247&single=true&output=csv";
+    // Google Sheet de Productos original (usado como fallback si falla la API):
+    var URL_SHEET_PRODUCTOS = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR_l-VVACl7YT1Q6DEm2BSUpZZP-c8oZF0UBfIbPRQQmxz3KRiBfkuZ2ZwQwyhtSLJj5BtmIiZJsOHe/pub?gid=0&single=true&output=csv";
 
     var container = document.getElementById("form-oportunidad-container");
     var loadingOverlay = document.createElement("div");
@@ -641,7 +641,7 @@
             // 1. Cargar Productos y Combos desde la API
             try {
                 console.log("Descargando combos y productos desde la API...");
-                const resApi = await fetch("https://api.zashome.dpdns.org/api/public/combos-generated?limit=500");
+                const resApi = await fetch(URL_API_PRODUCTOS);
                 const apiData = await resApi.json();
 
                 g_db = [];
