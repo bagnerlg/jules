@@ -330,9 +330,36 @@
         return el;
     }
 
-    // Variables globales de datos
-    var g_db = [];
-    var g_dm = {};
+    // Variables globales de datos con datos de fallback por si falla la red o CORS local (file://)
+    var g_db = [
+        {
+            cat: "Cama",
+            sku: "A1051A006|COMBO CAMA FIRE 2E QUEEN + R. 2C LISO WENGUE + CABECERA SUED M/Q + MESA DE 60|3999",
+            isCombo: true,
+            items: [
+                { description: "CAMA FIRE DOBLE EURO QUEEN", quantity: 1, sku: "B-2E-L-FR-0010" },
+                { description: "CABECERA SUED MATRI / QUEEN", quantity: 1, sku: "P-CS-L-B-0008" },
+                { description: "MESA DE 60 BLANCA MELAMINA LISO", quantity: 1, sku: "P-ME-L-B-0001" },
+                { description: "ROPERO 2 CUERPOS LISO  WENGUE CAJON BLANCO MELAMINA", quantity: 1, sku: "R-2C-L-W-0004" }
+            ]
+        },
+        {
+            cat: "Ropero",
+            sku: "R-2C-L-W-0004|ROPERO 2 CUERPOS LISO  WENGUE CAJON BLANCO MELAMINA|949",
+            isCombo: false,
+            items: []
+        },
+        {
+            cat: "Cocina",
+            sku: "C-RU-L-W-0002|COCINA RUBI LISA 60 WENGUE MELAMINA|2150",
+            isCombo: false,
+            items: []
+        }
+    ];
+    var g_dm = {
+        "GUATEMALA": ["Guatemala  Barcenas", "Villa Nueva", "Mixco"],
+        "SACATEPEQUEZ": ["Antigua Guatemala", "Jocotenango"]
+    };
 
     var g_rows = [];
     var g_h = "";
@@ -420,7 +447,13 @@
         skuLabel.appendChild(document.createTextNode(desc));
 
         // Buscar si es un combo en g_db para mostrar su contenido
-        var dbItem = g_db.find(function(x) { return x.sku === skuStr; });
+        var dbItem = null;
+        for (var k = 0; k < g_db.length; k++) {
+            if (g_db[k].sku === skuStr) {
+                dbItem = g_db[k];
+                break;
+            }
+        }
         if (dbItem && dbItem.isCombo && dbItem.items && dbItem.items.length > 0) {
             var comboContentDiv = document.createElement("div");
             comboContentDiv.style.marginTop = "8px";
@@ -503,7 +536,13 @@
                 var displayTitle = p[0] + " - " + p[1] + " (Q " + p[2] + ")";
 
                 // Buscar si es un combo en g_db
-                var dbItem = g_db.find(function(x) { return x.sku === items[i]; });
+                var dbItem = null;
+                for (var k = 0; k < g_db.length; k++) {
+                    if (g_db[k].sku === items[i]) {
+                        dbItem = g_db[k];
+                        break;
+                    }
+                }
 
                 var titleDiv = document.createElement("div");
                 titleDiv.style.fontWeight = "500";
@@ -609,7 +648,7 @@
 
                 // Cargar combos
                 if (apiData.combos && Array.isArray(apiData.combos)) {
-                    apiData.combos.forEach(combo => {
+                    apiData.combos.forEach(function(combo) {
                         const cat = combo.category || "";
                         const sku = combo.sku || "";
                         const desc = combo.description || "";
@@ -625,7 +664,7 @@
 
                 // Cargar productos
                 if (apiData.products && Array.isArray(apiData.products)) {
-                    apiData.products.forEach(prod => {
+                    apiData.products.forEach(function(prod) {
                         const cat = prod.category || "";
                         const sku = prod.sku || "";
                         const desc = prod.description || "";
@@ -640,22 +679,46 @@
                 }
                 console.log("Total de productos y combos cargados:", g_db.length);
             } catch (apiErr) {
-                console.error("Fallo al descargar combos y productos desde la API:", apiErr);
+                console.warn("Fallo al descargar combos y productos desde la API, usando Google Sheets como fallback:", apiErr);
+                if (URL_SHEET_PRODUCTOS.includes("/pub?")) {
+                    const dataProd = await fetchCSV(URL_SHEET_PRODUCTOS, "Productos (Fallback)");
+                    if (dataProd && dataProd.length > 0) {
+                        g_db = dataProd.map(function(parts) {
+                            const cat = parts[0] || "";
+                            const sku = parts[1] || "";
+                            const desc = parts[2] || "";
+                            const precio = parts[3] || "0";
+                            return {
+                                cat: cat,
+                                sku: sku + "|" + desc + "|" + precio,
+                                isCombo: false,
+                                items: []
+                            };
+                        });
+                        console.log("Productos cargados desde Google Sheets (Fallback):", g_db.length);
+                    } else {
+                        console.log("Manteniendo datos de fallback estáticos de productos debido a fallo de red.");
+                    }
+                }
             }
 
             // 2. Cargar Ubicaciones
             if (URL_SHEET_UBICACIONES.includes("/pub?")) {
                 const dataLoc = await fetchCSV(URL_SHEET_UBICACIONES, "Ubicaciones");
-                g_dm = {};
-                dataLoc.forEach(parts => {
-                    const dep = (parts[0] || "").toUpperCase();
-                    const mun = parts[1] || "";
-                    if (dep && mun) {
-                        if (!g_dm[dep]) g_dm[dep] = [];
-                        g_dm[dep].push(mun);
-                    }
-                });
-                console.log("Departamentos cargados:", Object.keys(g_dm).length);
+                if (dataLoc && dataLoc.length > 0) {
+                    g_dm = {};
+                    dataLoc.forEach(function(parts) {
+                        const dep = (parts[0] || "").toUpperCase();
+                        const mun = parts[1] || "";
+                        if (dep && mun) {
+                            if (!g_dm[dep]) g_dm[dep] = [];
+                            g_dm[dep].push(mun);
+                        }
+                    });
+                    console.log("Departamentos cargados:", Object.keys(g_dm).length);
+                } else {
+                    console.log("Manteniendo datos de fallback estáticos de ubicaciones debido a fallo de red.");
+                }
             }
         } catch (e) {
             console.error("Error general cargando datos remotos:", e);
