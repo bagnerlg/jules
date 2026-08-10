@@ -364,12 +364,27 @@
     var g_rows = [];
     var g_h = "";
 
-    // Detectar dinámicamente el ID del campo oculto de datos
+    // Detectar dinámicamente el ID del campo oculto de datos de forma ultra robusta y 100% automática
     function obtenerHiddenInput() {
-        // Primero intentamos buscar por el atributo name="JsonData"
-        var h = document.querySelector('input[name="JsonData"]');
+        if (!container) return document.getElementById("FgGvPHLrkFnWEjyOrUC8");
+
+        // 1. Buscar el primer input de tipo "hidden" dentro del contenedor (el método más directo y seguro)
+        var h = container.querySelector('input[type="hidden"]');
         if (h) return h;
-        // Fallback al ID legacy si no se encuentra por name
+
+        // 2. Buscar por atributo name="JsonData" en todo el documento (por si GHL lo movió de nivel)
+        h = document.querySelector('input[name="JsonData"]');
+        if (h) return h;
+
+        // 3. Buscar cualquier input con id de 20 caracteres (formato clásico de campos personalizados de GHL)
+        var inputs = container.querySelectorAll("input");
+        for (var i = 0; i < inputs.length; i++) {
+            if (inputs[i].id && inputs[i].id.length === 20) {
+                return inputs[i];
+            }
+        }
+
+        // 4. Fallback clásico al ID inicial
         return document.getElementById("FgGvPHLrkFnWEjyOrUC8");
     }
 
