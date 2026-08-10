@@ -466,17 +466,76 @@
 
             var comboHeader = document.createElement("div");
             comboHeader.style.fontWeight = "bold";
-            comboHeader.style.marginBottom = "4px";
+            comboHeader.style.marginBottom = "6px";
             comboHeader.style.color = "var(--foc-primary)";
             comboHeader.textContent = "Contenido del Combo:";
             comboContentDiv.appendChild(comboHeader);
 
+            // Crear mini tabla
+            var table = document.createElement("table");
+            table.style.width = "100%";
+            table.style.borderCollapse = "collapse";
+            table.style.fontSize = "10px";
+            table.style.textAlign = "left";
+
+            // Encabezado de la tabla
+            var thead = document.createElement("thead");
+            var headerRow = document.createElement("tr");
+            headerRow.style.borderBottom = "1px solid var(--foc-primary-light)";
+
+            var thSku = document.createElement("th");
+            thSku.style.padding = "4px 2px";
+            thSku.style.fontWeight = "bold";
+            thSku.style.color = "var(--foc-primary)";
+            thSku.textContent = "SKU";
+
+            var thDesc = document.createElement("th");
+            thDesc.style.padding = "4px 2px";
+            thDesc.style.fontWeight = "bold";
+            thDesc.style.color = "var(--foc-primary)";
+            thDesc.textContent = "Descripción";
+
+            var thCant = document.createElement("th");
+            thCant.style.padding = "4px 2px";
+            thCant.style.fontWeight = "bold";
+            thCant.style.color = "var(--foc-primary)";
+            thCant.style.textAlign = "center";
+            thCant.textContent = "Cant.";
+
+            headerRow.appendChild(thSku);
+            headerRow.appendChild(thDesc);
+            headerRow.appendChild(thCant);
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            // Cuerpo de la tabla
+            var tbody = document.createElement("tbody");
             dbItem.items.forEach(function(innerItem) {
-                var innerItemDiv = document.createElement("div");
-                innerItemDiv.style.marginBottom = "2px";
-                innerItemDiv.textContent = "• SKU: " + innerItem.sku + " | " + innerItem.description + " | Cant: " + innerItem.quantity;
-                comboContentDiv.appendChild(innerItemDiv);
+                var row = document.createElement("tr");
+                row.style.borderBottom = "1px solid rgba(0,0,0,0.05)";
+
+                var tdSku = document.createElement("td");
+                tdSku.style.padding = "4px 2px";
+                tdSku.style.fontWeight = "500";
+                tdSku.style.whiteSpace = "nowrap";
+                tdSku.textContent = innerItem.sku;
+
+                var tdDesc = document.createElement("td");
+                tdDesc.style.padding = "4px 2px";
+                tdDesc.textContent = innerItem.description;
+
+                var tdCant = document.createElement("td");
+                tdCant.style.padding = "4px 2px";
+                tdCant.style.textAlign = "center";
+                tdCant.textContent = innerItem.quantity;
+
+                row.appendChild(tdSku);
+                row.appendChild(tdDesc);
+                row.appendChild(tdCant);
+                tbody.appendChild(row);
             });
+            table.appendChild(tbody);
+            comboContentDiv.appendChild(table);
             skuLabel.appendChild(comboContentDiv);
         }
 
