@@ -219,7 +219,7 @@
             </div>
             <div class="row">
                 <div style="flex:1"><label class="required-label">Fecha de Venta</label><input type="date" id="fechaVenta"></div>
-                <div style="flex:1"><label>NIT</label><input id="nit" placeholder="NIT o CF"></div>
+                <div style="flex:1"><label id="label-nit">NIT o DPI</label><input id="nit" placeholder="NIT, DPI o CF"></div>
             </div>
         </div>
 
@@ -230,7 +230,7 @@
                 <div style="flex:1"><label>Número</label><input id="locNumero" placeholder="Casa/Lote"></div>
                 <div style="flex:1"><label>Avenida</label><input id="locAvenida"></div>
             </div>
-            <label>Referencia de dirección</label>
+            <label class="required-label">Referencia de dirección</label>
             <input id="locReferencia" placeholder="Ej: Frente a parque central...">
         </div>
 
@@ -425,6 +425,16 @@
             var r = g_rows[i]; var n = parseFloat(r.cant.value)||0; r.totalVal = r.precioVal * n; r.totalDisp.value = r.totalVal.toFixed(2); u += n; q += r.totalVal;
         }
         container.querySelector("#total-u").textContent = u; container.querySelector("#total-q").textContent = q.toFixed(2);
+
+        // Actualizar dinámicamente el indicador de obligatorio (*) para NIT o DPI
+        var labelNit = $("label-nit");
+        if (labelNit) {
+            if (q > 2500) {
+                labelNit.classList.add("required-label");
+            } else {
+                labelNit.classList.remove("required-label");
+            }
+        }
     }
 
     function g_add_p(skuStr) {
@@ -628,9 +638,40 @@
 
     function g_vld() {
         var ok = true;
-        var req = [{id:"nombre", msg:"Nombre es obligatorio"}, {id:"tel1", msg:"Teléfono 1 es obligatorio (8-11 dígitos)", min:8, max:11}, {id:"fechaVenta", msg:"Fecha de Venta es obligatoria"}, {id:"departamento", msg:"Departamento es obligatorio y debe ser válido", list:Object.keys(g_dm)}, {id:"municipio", msg:"Municipio es obligatorio y debe ser válido", munCheck:true}];
+
+        // 1. Validar que por lo menos un producto esté seleccionado
+        if (g_rows.length === 0) {
+            alert("Debe agregar al menos un producto antes de enviar el formulario.");
+            var searchInp = $("buscarSku");
+            if (searchInp) searchInp.focus();
+            return false;
+        }
+
+        // Calcular el total de la venta actual para la validación del NIT o DPI
+        var totalVenta = 0;
+        for (var idx = 0; idx < g_rows.length; idx++) {
+            var r = g_rows[idx];
+            var n = parseFloat(r.cant.value) || 0;
+            totalVenta += r.precioVal * n;
+        }
+
+        var req = [
+            {id:"nombre", msg:"Nombre es obligatorio"},
+            {id:"tel1", msg:"Teléfono 1 es obligatorio (8-11 dígitos)", min:8, max:11},
+            {id:"fechaVenta", msg:"Fecha de Venta es obligatoria"},
+            {id:"locReferencia", msg:"Referencia de dirección es obligatoria"},
+            {id:"departamento", msg:"Departamento es obligatorio y debe ser válido", list:Object.keys(g_dm)},
+            {id:"municipio", msg:"Municipio es obligatorio y debe ser válido", munCheck:true}
+        ];
+
+        // 2. Si el total supera Q2500, el NIT/DPI se vuelve obligatorio
+        if (totalVenta > 2500) {
+            req.push({id:"nit", msg:"El NIT o DPI es obligatorio para compras mayores a Q 2,500.00"});
+        }
+
         for(var i=0; i<req.length; i++) {
-            var el = $(req[i].id); var val = el.value.trim(); var vld = !!val;
+            var el = $(req[i].id); if(!el) continue;
+            var val = el.value.trim(); var vld = !!val;
             if(vld && req[i].min) vld = (val.length >= req[i].min);
             if(vld && req[i].max) vld = (vld && val.length <= req[i].max);
             if(vld && req[i].list) vld = (req[i].list.indexOf(val) !== -1);
@@ -853,17 +894,20 @@
             else if(ids[i] === "categoria") { el.onfocus = g_on_cat_foc; el.oninput = g_on_cat_inp; }
             else if(ids[i] === "buscarSku") { el.onfocus = g_on_sku_focus; el.oninput = g_on_sku_input; }
         }
-        document.addEventListener('mousedown', function(e) {
-            if(e.target.closest(".combo-item")) return;
-            var ls = container.querySelectorAll(".combo-list");
-            for(var i=0; i<ls.length; i++) { if(ls[i] !== e.target && ls[i].previousElementSibling !== e.target) ls[i].style.display = "none"; }
-        });
-        document.addEventListener('click', function(e) {
-            var btn = e.target.closest('button[type="submit"]');
-            if(btn && btn.classList.contains('button-element')) { if(!g_vld()) { e.preventDefault(); e.stopPropagation(); } }
-        }, true);
         g_sv();
     }
+
+    // Registrar los event listeners globales de forma síncrona de inmediato para evitar que el usuario se salte validaciones durante la carga lenta
+    document.addEventListener('mousedown', function(e) {
+        if(e.target.closest(".combo-item")) return;
+        var ls = container.querySelectorAll(".combo-list");
+        for(var i=0; i<ls.length; i++) { if(ls[i] !== e.target && ls[i].previousElementSibling !== e.target) ls[i].style.display = "none"; }
+    });
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('button[type="submit"]');
+        if(btn && btn.classList.contains('button-element')) { if(!g_vld()) { e.preventDefault(); e.stopPropagation(); } }
+    }, true);
+
     setTimeout(g_init, 100);
 })();
 </script>
