@@ -645,9 +645,27 @@
         container.appendChild(loadingOverlay);
         console.log("Iniciando carga de datos remotos...");
 
-        async function fetchCSV(url, label) {
+        function fetchWithTimeout(url, timeout = 3500, options = {}) {
+            return new Promise((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    reject(new Error("Timeout"));
+                }, timeout);
+
+                fetch(url, options)
+                    .then(res => {
+                        clearTimeout(timer);
+                        resolve(res);
+                    })
+                    .catch(err => {
+                        clearTimeout(timer);
+                        reject(err);
+                    });
+            });
+        }
+
+        async function fetchCSV(url, label, timeout = 4000) {
             try {
-                const res = await fetch(url);
+                const res = await fetchWithTimeout(url, timeout);
                 const text = await res.text();
 
                 // Verificación básica de que recibimos CSV y no HTML (error de permisos de Google)
@@ -670,29 +688,29 @@
             }
         }
 
-        try {
-            // 1. Cargar Productos y Combos desde la API
+        // Carga de productos y combos (API con fallbacks rápidos)
+        const loadProductsTask = (async () => {
             try {
                 console.log("Descargando combos y productos desde la API...");
                 let apiData = null;
                 let resApi = null;
                 try {
-                    resApi = await fetch(URL_API_PRODUCTOS);
+                    resApi = await fetchWithTimeout(URL_API_PRODUCTOS, 3500);
                     if (resApi.ok) {
                         apiData = await resApi.json();
                     } else {
                         console.warn("La API respondió con código de error " + resApi.status + ". Reintentando vía proxy AllOrigins...");
                     }
                 } catch (directErr) {
-                    console.warn("Fallo de red al conectar directamente con la API. Reintentando vía proxy AllOrigins...", directErr);
+                    console.warn("Fallo de red o timeout al conectar directamente con la API (3.5s). Reintentando vía proxy AllOrigins...", directErr);
                 }
 
                 if (!apiData) {
-                    // Reintentar vía allorigins proxy (CORS bypass)
+                    // Reintentar vía allorigins proxy (CORS bypass) con timeout de 3500ms
                     try {
                         const proxyUrl = "https://api.allorigins.win/get?url=" + encodeURIComponent(URL_API_PRODUCTOS);
                         console.log("Intentando descargar vía proxy AllOrigins: " + proxyUrl);
-                        const resProxy = await fetch(proxyUrl);
+                        const resProxy = await fetchWithTimeout(proxyUrl, 3500);
                         if (resProxy.ok) {
                             const proxyData = await resProxy.json();
                             if (proxyData && proxyData.contents) {
@@ -742,11 +760,11 @@
                         });
                     });
                 }
-                console.log("Total de productos y combos cargados:", g_db.length);
+                console.log("Total de productos y combos cargados de API:", g_db.length);
             } catch (apiErr) {
                 console.warn("Fallo al descargar combos y productos desde la API, usando Google Sheets como fallback:", apiErr);
                 if (URL_SHEET_PRODUCTOS.includes("/pub?")) {
-                    const dataProd = await fetchCSV(URL_SHEET_PRODUCTOS, "Productos (Fallback)");
+                    const dataProd = await fetchCSV(URL_SHEET_PRODUCTOS, "Productos (Fallback)", 4000);
                     if (dataProd && dataProd.length > 0) {
                         g_db = dataProd.map(function(parts) {
                             const cat = parts[0] || "";
@@ -762,14 +780,16 @@
                         });
                         console.log("Productos cargados desde Google Sheets (Fallback):", g_db.length);
                     } else {
-                        console.log("Manteniendo datos de fallback estáticos de productos debido a fallo de red.");
+                        console.log("Manteniendo datos de fallback estáticos de productos debido a fallo de red/timeout.");
                     }
                 }
             }
+        })();
 
-            // 2. Cargar Ubicaciones
+        // Carga de ubicaciones (Sheets)
+        const loadLocationsTask = (async () => {
             if (URL_SHEET_UBICACIONES.includes("/pub?")) {
-                const dataLoc = await fetchCSV(URL_SHEET_UBICACIONES, "Ubicaciones");
+                const dataLoc = await fetchCSV(URL_SHEET_UBICACIONES, "Ubicaciones", 4000);
                 if (dataLoc && dataLoc.length > 0) {
                     g_dm = {};
                     dataLoc.forEach(function(parts) {
@@ -782,11 +802,16 @@
                     });
                     console.log("Departamentos cargados:", Object.keys(g_dm).length);
                 } else {
-                    console.log("Manteniendo datos de fallback estáticos de ubicaciones debido a fallo de red.");
+                    console.log("Manteniendo datos de fallback estáticos de ubicaciones debido a fallo de red/timeout.");
                 }
             }
+        })();
+
+        try {
+            // Cargar ambos en paralelo para máxima velocidad
+            await Promise.all([loadProductsTask, loadLocationsTask]);
         } catch (e) {
-            console.error("Error general cargando datos remotos:", e);
+            console.error("Error general cargando datos en paralelo:", e);
         } finally {
             if (loadingOverlay.parentNode) loadingOverlay.parentNode.removeChild(loadingOverlay);
         }
