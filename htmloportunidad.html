@@ -474,7 +474,7 @@
             dbItem.items.forEach(function(innerItem) {
                 var innerItemDiv = document.createElement("div");
                 innerItemDiv.style.marginBottom = "2px";
-                innerItemDiv.textContent = "• Cant: " + innerItem.quantity + " | SKU: " + innerItem.sku + " | " + innerItem.description;
+                innerItemDiv.textContent = "• SKU: " + innerItem.sku + " | " + innerItem.description + " | Cant: " + innerItem.quantity;
                 comboContentDiv.appendChild(innerItemDiv);
             });
             skuLabel.appendChild(comboContentDiv);
