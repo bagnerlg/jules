@@ -364,10 +364,19 @@
     var g_rows = [];
     var g_h = "";
 
+    // Detectar dinámicamente el ID del campo oculto de datos
+    function obtenerHiddenInput() {
+        // Primero intentamos buscar por el atributo name="JsonData"
+        var h = document.querySelector('input[name="JsonData"]');
+        if (h) return h;
+        // Fallback al ID legacy si no se encuentra por name
+        return document.getElementById("FgGvPHLrkFnWEjyOrUC8");
+    }
+
     function g_sv() {
-        var h = $("FgGvPHLrkFnWEjyOrUC8") || document.querySelector('input[name="JsonData"]');
+        var h = obtenerHiddenInput();
         if(!h) {
-            console.error("No se encontró el campo oculto (ID: FgGvPHLrkFnWEjyOrUC8 o Name: JsonData)");
+            console.error("No se encontró el campo oculto (ID legacy: FgGvPHLrkFnWEjyOrUC8 o Atributo Name: JsonData)");
             return;
         }
         var fP = [];
@@ -409,7 +418,7 @@
             Total_General: (container.querySelector("#total-q") || {textContent:"0.00"}).textContent
         };
         h.value = JSON.stringify(data);
-        console.log("JSON Data updated:", h.value);
+        console.log("JSON Data updated (Input ID: " + h.id + "):", h.value);
 
         try {
             h.dispatchEvent(new Event("input", { bubbles: true }));
