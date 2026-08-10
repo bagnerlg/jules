@@ -688,43 +688,66 @@
             }
         }
 
-        // Carga de productos y combos (API con fallbacks rápidos)
+        // Carga de productos y combos (API con fallbacks rápidos e intentos robustos de bypass de CORS)
         const loadProductsTask = (async () => {
-            try {
-                console.log("Descargando combos y productos desde la API...");
-                let apiData = null;
-                let resApi = null;
+            let apiData = null;
+            const maxAttempts = 3;
+
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                 try {
-                    resApi = await fetchWithTimeout(URL_API_PRODUCTOS, 3500);
-                    if (resApi.ok) {
-                        apiData = await resApi.json();
-                    } else {
-                        console.warn("La API respondió con código de error " + resApi.status + ". Reintentando vía proxy AllOrigins...");
-                    }
-                } catch (directErr) {
-                    console.warn("Fallo de red o timeout al conectar directamente con la API (3.5s). Reintentando vía proxy AllOrigins...", directErr);
-                }
-
-                if (!apiData) {
-                    // Reintentar vía allorigins proxy (CORS bypass) con timeout de 3500ms
-                    try {
-                        const proxyUrl = "https://api.allorigins.win/get?url=" + encodeURIComponent(URL_API_PRODUCTOS);
-                        console.log("Intentando descargar vía proxy AllOrigins: " + proxyUrl);
-                        const resProxy = await fetchWithTimeout(proxyUrl, 3500);
-                        if (resProxy.ok) {
-                            const proxyData = await resProxy.json();
-                            if (proxyData && proxyData.contents) {
-                                apiData = JSON.parse(proxyData.contents);
-                                console.log("Descarga exitosa vía proxy AllOrigins!");
+                    if (attempt === 1) {
+                        console.log("Intento 1: Descargando combos y productos directamente desde la API...");
+                        const res = await fetchWithTimeout(URL_API_PRODUCTOS, 3000);
+                        if (res.ok) {
+                            const json = await res.json();
+                            if (json && (json.combos || json.products)) {
+                                apiData = json;
+                                console.log("Intento 1 exitoso!");
+                                break;
                             }
+                        } else {
+                            console.warn("Intento 1 respondió con error: " + res.status);
                         }
-                    } catch (proxyErr) {
-                        console.error("Fallo también el reintento vía proxy AllOrigins:", proxyErr);
+                    } else if (attempt === 2) {
+                        console.log("Intento 2: Descargando combos y productos vía AllOrigins proxy para bypass de CORS...");
+                        const proxyUrl = "https://api.allorigins.win/get?url=" + encodeURIComponent(URL_API_PRODUCTOS);
+                        const res = await fetchWithTimeout(proxyUrl, 3000);
+                        if (res.ok) {
+                            const proxyData = await res.json();
+                            if (proxyData && proxyData.contents) {
+                                const parsed = JSON.parse(proxyData.contents);
+                                if (parsed && (parsed.combos || parsed.products)) {
+                                    apiData = parsed;
+                                    console.log("Intento 2 exitoso vía AllOrigins!");
+                                    break;
+                                }
+                            }
+                        } else {
+                            console.warn("Intento 2 respondió con error: " + res.status);
+                        }
+                    } else if (attempt === 3) {
+                        console.log("Intento 3: Descargando combos y productos vía ThingProxy para bypass de CORS...");
+                        const proxyUrl = "https://thingproxy.freeboard.io/fetch/" + URL_API_PRODUCTOS;
+                        const res = await fetchWithTimeout(proxyUrl, 3500);
+                        if (res.ok) {
+                            const json = await res.json();
+                            if (json && (json.combos || json.products)) {
+                                apiData = json;
+                                console.log("Intento 3 exitoso vía ThingProxy!");
+                                break;
+                            }
+                        } else {
+                            console.warn("Intento 3 respondió con error: " + res.status);
+                        }
                     }
+                } catch (err) {
+                    console.warn("Intento " + attempt + " falló debido a error o timeout: ", err.message || err);
                 }
+            }
 
+            try {
                 if (!apiData) {
-                    throw new Error("No se pudo obtener datos de la API directamente ni vía proxy.");
+                    throw new Error("No se pudo obtener datos de la API en ninguno de los 3 intentos.");
                 }
 
                 g_db = [];
@@ -762,7 +785,7 @@
                 }
                 console.log("Total de productos y combos cargados de API:", g_db.length);
             } catch (apiErr) {
-                console.warn("Fallo al descargar combos y productos desde la API, usando Google Sheets como fallback:", apiErr);
+                console.warn("Fallo al descargar combos y productos desde la API en los 3 intentos, usando Google Sheets como fallback:", apiErr);
                 if (URL_SHEET_PRODUCTOS.includes("/pub?")) {
                     const dataProd = await fetchCSV(URL_SHEET_PRODUCTOS, "Productos (Fallback)", 4000);
                     if (dataProd && dataProd.length > 0) {
