@@ -641,8 +641,40 @@
             // 1. Cargar Productos y Combos desde la API
             try {
                 console.log("Descargando combos y productos desde la API...");
-                const resApi = await fetch(URL_API_PRODUCTOS);
-                const apiData = await resApi.json();
+                let apiData = null;
+                let resApi = null;
+                try {
+                    resApi = await fetch(URL_API_PRODUCTOS);
+                    if (resApi.ok) {
+                        apiData = await resApi.json();
+                    } else {
+                        console.warn("La API respondió con código de error " + resApi.status + ". Reintentando vía proxy AllOrigins...");
+                    }
+                } catch (directErr) {
+                    console.warn("Fallo de red al conectar directamente con la API. Reintentando vía proxy AllOrigins...", directErr);
+                }
+
+                if (!apiData) {
+                    // Reintentar vía allorigins proxy (CORS bypass)
+                    try {
+                        const proxyUrl = "https://api.allorigins.win/get?url=" + encodeURIComponent(URL_API_PRODUCTOS);
+                        console.log("Intentando descargar vía proxy AllOrigins: " + proxyUrl);
+                        const resProxy = await fetch(proxyUrl);
+                        if (resProxy.ok) {
+                            const proxyData = await resProxy.json();
+                            if (proxyData && proxyData.contents) {
+                                apiData = JSON.parse(proxyData.contents);
+                                console.log("Descarga exitosa vía proxy AllOrigins!");
+                            }
+                        }
+                    } catch (proxyErr) {
+                        console.error("Fallo también el reintento vía proxy AllOrigins:", proxyErr);
+                    }
+                }
+
+                if (!apiData) {
+                    throw new Error("No se pudo obtener datos de la API directamente ni vía proxy.");
+                }
 
                 g_db = [];
 
