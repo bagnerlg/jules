@@ -14,153 +14,107 @@
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body class="gci-app-body">
-    <div class="gci-layout">
-        <!-- Sidebar Futurista -->
-        <aside class="gci-sidebar" id="gci-sidebar">
-            <div class="sidebar-header">
-                <div class="brand-logo">
-                    <div class="logo-hexagon">
-                        <i class="fa-solid fa-cube"></i>
-                        <span class="pulse-ring"></span>
-                    </div>
-                    <div class="brand-text">
-                        <span class="brand-title">GCI<span class="brand-accent">ADMIN</span></span>
-                        <span class="brand-subtitle">v1.0 • Enterprise Core</span>
-                    </div>
+    <div class="gci-layout-topbar">
+        <!-- BARRA SUPERIOR HEADER Y LOGO -->
+        <header class="glossy-header">
+            <div class="header-brand-container">
+                <div class="glossy-logo-badge">
+                    <i class="fa-solid fa-cube"></i>
                 </div>
-                <button class="sidebar-toggle-btn" id="sidebar-toggle" title="Contraer/Expandir Menú">
-                    <i class="fa-solid fa-angles-left"></i>
-                </button>
-            </div>
-
-            <!-- Menú de Navegación -->
-            <nav class="sidebar-nav">
-                <div class="nav-section-label">MÓDULOS PRINCIPALES</div>
-                <ul class="nav-list">
-                    <li class="nav-item active" data-module="dashboard">
-                        <a href="#dashboard" class="nav-link">
-                            <div class="nav-icon"><i class="fa-solid fa-chart-pie"></i></div>
-                            <span class="nav-text">Dashboard</span>
-                            <span class="active-indicator"></span>
-                        </a>
-                    </li>
-                    <li class="nav-item" data-module="api-config">
-                        <a href="#api-config" class="nav-link">
-                            <div class="nav-icon"><i class="fa-solid fa-sliders"></i></div>
-                            <span class="nav-text">Conexiones & APIs</span>
-                            <span class="status-badge pulse-green" title="Estado Conexiones"></span>
-                        </a>
-                    </li>
-                    <li class="nav-item" data-module="file-manager">
-                        <a href="#file-manager" class="nav-link">
-                            <div class="nav-icon"><i class="fa-solid fa-folder-open"></i></div>
-                            <span class="nav-text">Archivos Locales</span>
-                        </a>
-                    </li>
-                </ul>
-
-                <div class="nav-section-label">INTEGRACIONES</div>
-                <ul class="nav-list">
-                    <li class="nav-item" data-module="supabase-view">
-                        <a href="#supabase-view" class="nav-link">
-                            <div class="nav-icon brand-icon supabase-color"><i class="fa-solid fa-database"></i></div>
-                            <span class="nav-text">Supabase DB</span>
-                            <span class="badge-tag">API</span>
-                        </a>
-                    </li>
-                    <li class="nav-item" data-module="sap-view">
-                        <a href="#sap-view" class="nav-link">
-                            <div class="nav-icon brand-icon sap-color"><i class="fa-solid fa-building-columns"></i></div>
-                            <span class="nav-text">SAP Business One</span>
-                            <span class="badge-tag">ERP</span>
-                        </a>
-                    </li>
-                    <li class="nav-item" data-module="google-sheets-view">
-                        <a href="#google-sheets-view" class="nav-link">
-                            <div class="nav-icon brand-icon sheets-color"><i class="fa-solid fa-file-excel"></i></div>
-                            <span class="nav-text">Google Sheets</span>
-                        </a>
-                    </li>
-                    <li class="nav-item" data-module="onedrive-view">
-                        <a href="#onedrive-view" class="nav-link">
-                            <div class="nav-icon brand-icon onedrive-color"><i class="fa-solid fa-cloud"></i></div>
-                            <span class="nav-text">OneDrive</span>
-                        </a>
-                    </li>
-                </ul>
-            </nav>
-
-            <!-- Widget de Estado del Sistema -->
-            <div class="sidebar-footer">
-                <div class="system-status-card">
-                    <div class="status-header">
-                        <span class="status-dot online"></span>
-                        <span class="status-title">Sistema Operativo</span>
-                    </div>
-                    <div class="status-bar-container">
-                        <div class="status-bar-fill" style="width: 100%;"></div>
-                    </div>
-                    <div class="status-detail">Conexiones Listas</div>
+                <div class="brand-text-block">
+                    <span class="brand-title">GCI <span class="brand-accent">ADMIN</span></span>
+                    <span class="brand-subtitle">Plataforma de Control Empresarial</span>
                 </div>
             </div>
-        </aside>
 
-        <!-- Contenedor Principal -->
-        <div class="gci-main-wrapper">
-            <!-- Header Superior Futurista -->
-            <header class="gci-top-header">
-                <div class="header-left">
-                    <button class="mobile-menu-btn" id="mobile-menu-toggle">
-                        <i class="fa-solid fa-bars"></i>
-                    </button>
-                    <div class="breadcrumb">
-                        <span class="breadcrumb-item"><i class="fa-solid fa-house"></i> Control</span>
-                        <i class="fa-solid fa-chevron-right breadcrumb-separator"></i>
-                        <span class="breadcrumb-item active" id="current-module-title">Dashboard</span>
-                    </div>
+            <!-- Badges de Estado Rápido -->
+            <div class="quick-status-pills">
+                <div class="status-pill" id="pill-supabase" title="Supabase API">
+                    <i class="fa-solid fa-circle pill-dot dot-inactive"></i>
+                    <span>Supabase</span>
                 </div>
-
-                <div class="header-right">
-                    <div class="quick-status-pills">
-                        <div class="status-pill" id="pill-supabase" title="Supabase API">
-                            <i class="fa-solid fa-circle pill-dot dot-inactive"></i>
-                            <span>Supabase</span>
-                        </div>
-                        <div class="status-pill" id="pill-sap" title="SAP B1">
-                            <i class="fa-solid fa-circle pill-dot dot-inactive"></i>
-                            <span>SAP B1</span>
-                        </div>
-                        <div class="status-pill" id="pill-sheets" title="Google Sheets / AppScript">
-                            <i class="fa-solid fa-circle pill-dot dot-inactive"></i>
-                            <span>Sheets</span>
-                        </div>
-                        <div class="status-pill" id="pill-onedrive" title="OneDrive Cloud">
-                            <i class="fa-solid fa-circle pill-dot dot-inactive"></i>
-                            <span>OneDrive</span>
-                        </div>
-                    </div>
-
-                    <div class="user-profile-badge">
-                        <div class="user-avatar">
-                            <i class="fa-solid fa-user-shield"></i>
-                        </div>
-                        <div class="user-info">
-                            <span class="user-name">Administrador GCI</span>
-                            <span class="user-role">Super Admin</span>
-                        </div>
-                    </div>
+                <div class="status-pill" id="pill-sap" title="SAP B1">
+                    <i class="fa-solid fa-circle pill-dot dot-inactive"></i>
+                    <span>SAP B1</span>
                 </div>
-            </header>
+                <div class="status-pill" id="pill-sheets" title="Google Sheets / AppScript">
+                    <i class="fa-solid fa-circle pill-dot dot-inactive"></i>
+                    <span>Sheets</span>
+                </div>
+                <div class="status-pill" id="pill-onedrive" title="OneDrive Cloud">
+                    <i class="fa-solid fa-circle pill-dot dot-inactive"></i>
+                    <span>OneDrive</span>
+                </div>
+            </div>
 
-            <!-- ÁREA DE CONTENIDO DINÁMICO (Cargado modularmente) -->
-            <main class="gci-content-area" id="gci-content-area">
-                <!-- Se inyecta dinámicamente mediante JS -->
+            <div class="user-profile-badge">
+                <div class="user-avatar-glossy">
+                    <i class="fa-solid fa-user-shield"></i>
+                </div>
+                <div class="user-info">
+                    <span class="user-name">Administrador GCI</span>
+                    <span class="user-role">Super Admin</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- NAVEGACIÓN HORIZONTAL GLOSSY (Pestañas estilo relieve / 3D) -->
+        <nav class="glossy-navbar">
+            <ul class="nav-tabs-container">
+                <li class="nav-tab-item active" data-module="dashboard">
+                    <a href="#dashboard" class="nav-tab-link tab-cyan">
+                        <i class="fa-solid fa-chart-pie"></i>
+                        <span>DASHBOARD</span>
+                    </a>
+                </li>
+                <li class="nav-tab-item" data-module="api-config">
+                    <a href="#api-config" class="nav-tab-link tab-blue">
+                        <i class="fa-solid fa-sliders"></i>
+                        <span>CONEXIONES & APIs</span>
+                    </a>
+                </li>
+                <li class="nav-tab-item" data-module="file-manager">
+                    <a href="#file-manager" class="nav-tab-link tab-sky">
+                        <i class="fa-solid fa-folder-open"></i>
+                        <span>ARCHIVOS LOCALES</span>
+                    </a>
+                </li>
+                <li class="nav-tab-item" data-module="supabase-view">
+                    <a href="#supabase-view" class="nav-tab-link tab-emerald">
+                        <i class="fa-solid fa-database"></i>
+                        <span>SUPABASE DB</span>
+                    </a>
+                </li>
+                <li class="nav-tab-item" data-module="sap-view">
+                    <a href="#sap-view" class="nav-link-item tab-deepblue">
+                        <i class="fa-solid fa-building-columns"></i>
+                        <span>SAP B1</span>
+                    </a>
+                </li>
+                <li class="nav-tab-item" data-module="google-sheets-view">
+                    <a href="#google-sheets-view" class="nav-tab-link tab-green">
+                        <i class="fa-solid fa-file-excel"></i>
+                        <span>GOOGLE SHEETS</span>
+                    </a>
+                </li>
+                <li class="nav-tab-item" data-module="onedrive-view">
+                    <a href="#onedrive-view" class="nav-tab-link tab-cloud">
+                        <i class="fa-solid fa-cloud"></i>
+                        <span>ONEDRIVE</span>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <!-- ÁREA DE CONTENIDO DINÁMICO CENTRAL -->
+        <main class="gci-content-wrapper">
+            <div id="gci-content-area" class="gci-content-area">
                 <div class="module-loader">
                     <i class="fa-solid fa-circle-notch fa-spin"></i>
                     <p>Cargando módulo...</p>
                 </div>
-            </main>
-        </div>
+            </div>
+        </main>
     </div>
 
     <!-- Script Principal JS Modular -->

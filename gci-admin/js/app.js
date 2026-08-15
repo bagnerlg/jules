@@ -1,5 +1,5 @@
 /**
- * GCI ADMIN - App Principal & Enrutador Modular
+ * GCI ADMIN - App Principal & Enrutador Modular (Versión Navbar Glossy)
  */
 
 import { renderDashboardModule } from './modules/dashboard.js';
@@ -15,15 +15,14 @@ export const GCIApp = {
         'dashboard': { title: 'Dashboard', render: renderDashboardModule },
         'api-config': { title: 'Conexiones & APIs', render: renderApiConfigModule },
         'file-manager': { title: 'Archivos Locales', render: renderFileManagerModule },
-        'supabase-view': { title: 'Supabase DB', render: () => renderPlaceholderModule('Supabase DB', 'fa-database', '3ecf8e') },
-        'sap-view': { title: 'SAP Business One', render: () => renderPlaceholderModule('SAP Business One', 'fa-building-columns', '008fd3') },
-        'google-sheets-view': { title: 'Google Sheets', render: () => renderPlaceholderModule('Google Sheets', 'fa-file-excel', '0f9d58') },
-        'onedrive-view': { title: 'OneDrive Cloud', render: () => renderPlaceholderModule('OneDrive Cloud', 'fa-cloud', '0078d4') }
+        'supabase-view': { title: 'Supabase DB', render: () => renderPlaceholderModule('Supabase DB', 'fa-database', '059669') },
+        'sap-view': { title: 'SAP Business One', render: () => renderPlaceholderModule('SAP Business One', 'fa-building-columns', '1e40af') },
+        'google-sheets-view': { title: 'Google Sheets', render: () => renderPlaceholderModule('Google Sheets', 'fa-file-excel', '166534') },
+        'onedrive-view': { title: 'OneDrive Cloud', render: () => renderPlaceholderModule('OneDrive Cloud', 'fa-cloud', '0284c7') }
     },
 
     init() {
-        console.log("🚀 Inicializando GCI Admin Core...");
-        this.setupSidebarEvents();
+        console.log("🚀 Inicializando GCI Admin Glossy Core...");
         this.setupNavigation();
         this.updatePillsStatus();
 
@@ -37,34 +36,15 @@ export const GCIApp = {
         });
     },
 
-    // Configurar colapsado e interacción del Sidebar
-    setupSidebarEvents() {
-        const sidebar = document.getElementById('gci-sidebar');
-        const toggleBtn = document.getElementById('sidebar-toggle');
-        const mobileToggleBtn = document.getElementById('mobile-menu-toggle');
-
-        if (toggleBtn) {
-            toggleBtn.addEventListener('click', () => {
-                sidebar.classList.toggle('collapsed');
-            });
-        }
-
-        if (mobileToggleBtn) {
-            mobileToggleBtn.addEventListener('click', () => {
-                sidebar.classList.toggle('mobile-open');
-            });
-        }
-    },
-
-    // Manejar clics de navegación
+    // Manejar clics de navegación en la barra horizontal de pestañas
     setupNavigation() {
-        const navItems = document.querySelectorAll('.nav-item');
+        const tabItems = document.querySelectorAll('.nav-tab-item');
 
-        navItems.forEach(item => {
-            item.addEventListener('click', (e) => {
+        tabItems.forEach(item => {
+            item.addEventListener('click', () => {
                 const targetModule = item.getAttribute('data-module');
                 if (targetModule) {
-                    navItems.forEach(i => i.classList.remove('active'));
+                    tabItems.forEach(t => t.classList.remove('active'));
                     item.classList.add('active');
                 }
             });
@@ -79,15 +59,9 @@ export const GCIApp = {
 
         this.currentModule = moduleName;
         const container = document.getElementById('gci-content-area');
-        const titleElem = document.getElementById('current-module-title');
 
-        // Actualizar Breadcrumb
-        if (titleElem) {
-            titleElem.textContent = this.modules[moduleName].title;
-        }
-
-        // Actualizar clase activa en Sidebar si cambia por hash directamente
-        document.querySelectorAll('.nav-item').forEach(item => {
+        // Actualizar pestaña activa en la barra superior si cambia por hash directo
+        document.querySelectorAll('.nav-tab-item').forEach(item => {
             if (item.getAttribute('data-module') === moduleName) {
                 item.classList.add('active');
             } else {
@@ -95,7 +69,7 @@ export const GCIApp = {
             }
         });
 
-        // Feedback de Carga
+        // Feedback de Carga Glossy
         container.innerHTML = `
             <div class="module-loader">
                 <i class="fa-solid fa-circle-notch fa-spin"></i>
@@ -111,9 +85,9 @@ export const GCIApp = {
                 console.error(`Error al cargar el módulo [${moduleName}]:`, error);
                 container.innerHTML = `
                     <div class="gci-card" style="border-left: 4px solid var(--status-danger);">
-                        <h3><i class="fa-solid fa-triangle-exclamation" style="color: var(--status-danger);"></i> Error al cargar módulo</h3>
-                        <p style="color: var(--text-secondary); margin-top: 8px;">Ocurrió un inconveniente al renderizar esta vista.</p>
-                        <pre style="background: #f1f5f9; padding: 12px; border-radius: 8px; margin-top: 12px; font-size: 0.8rem;">${error.message}</pre>
+                        <h3 style="color: var(--status-danger);"><i class="fa-solid fa-triangle-exclamation"></i> Error al cargar módulo</h3>
+                        <p style="color: var(--text-dark); margin-top: 8px;">Ocurrió un inconveniente al renderizar esta vista.</p>
+                        <pre style="background: #e2e8f0; padding: 12px; border-radius: 8px; margin-top: 12px; font-size: 0.8rem;">${error.message}</pre>
                     </div>
                 `;
             }
@@ -144,7 +118,7 @@ export const GCIApp = {
     }
 };
 
-// Render para Módulos Placeholder que se desarrollarán paso a paso
+// Render para Módulos Placeholder
 function renderPlaceholderModule(title, icon, colorHex) {
     const container = document.getElementById('gci-content-area');
     container.innerHTML = `
@@ -156,12 +130,12 @@ function renderPlaceholderModule(title, icon, colorHex) {
         </div>
 
         <div class="gci-card" style="text-align: center; padding: 50px 20px;">
-            <div style="width: 70px; height: 70px; background: #${colorHex}15; color: #${colorHex}; border-radius: 20px; display: flex; align-items: center; justify-content: center; font-size: 2rem; margin: 0 auto 20px;">
+            <div style="width: 70px; height: 70px; background: var(--glossy-blue); color: #ffffff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; margin: 0 auto 20px; box-shadow: 0 4px 10px rgba(37,99,235,0.3);">
                 <i class="fa-solid ${icon}"></i>
             </div>
             <h2>Módulo listo para conexión</h2>
-            <p style="color: var(--text-secondary); max-width: 500px; margin: 10px auto 24px;">
-                Las credenciales para este servicio pueden configurarse en la sección <a href="#api-config" style="color: var(--primary); font-weight: 600;">Conexiones & APIs</a>.
+            <p style="color: var(--text-muted); max-width: 500px; margin: 10px auto 24px;">
+                Las credenciales para este servicio pueden configurarse en la pestaña <a href="#api-config" style="color: #2563eb; font-weight: 700;">CONEXIONES & APIs</a>.
             </p>
             <a href="#api-config" class="btn-gci btn-primary"><i class="fa-solid fa-sliders"></i> Configurar Credenciales</a>
         </div>

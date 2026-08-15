@@ -1,5 +1,5 @@
 /**
- * GCI ADMIN - Módulo de Carga y Gestión de Archivos Locales
+ * GCI ADMIN - Módulo de Carga y Gestión de Archivos Locales (Edición Glossy)
  */
 
 export function renderFileManagerModule(container) {
@@ -8,7 +8,7 @@ export function renderFileManagerModule(container) {
     container.innerHTML = `
         <div class="module-header-block">
             <div>
-                <h1 class="module-title"><i class="fa-solid fa-folder-open" style="color: var(--primary);"></i> Gestor de Archivos Locales</h1>
+                <h1 class="module-title"><i class="fa-solid fa-folder-open" style="color: #0284c7;"></i> Gestor de Archivos Locales</h1>
                 <p class="module-subtitle">Carga, inspecciona y administra archivos locales para procesamiento o envío hacia las APIs conectadas.</p>
             </div>
             <div>
@@ -18,21 +18,25 @@ export function renderFileManagerModule(container) {
             </div>
         </div>
 
-        <!-- Zona Drag & Drop -->
-        <div class="gci-card" style="margin-bottom: 24px;">
+        <!-- Zona Drag & Drop Metallic -->
+        <div class="gci-card" style="margin-bottom: 28px; padding-top: 36px;">
+            <div class="gci-card-header-badge" style="background: var(--glossy-sky);">
+                <i class="fa-solid fa-cloud-arrow-up"></i>
+            </div>
+
             <div class="dropzone-area" id="gci-dropzone">
                 <div class="dropzone-icon">
-                    <i class="fa-solid fa-cloud-arrow-up"></i>
+                    <i class="fa-solid fa-file-circle-plus"></i>
                 </div>
-                <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary); margin-bottom: 6px;">
+                <h3 style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 6px;">
                     Arrastra y suelta tus archivos aquí
                 </h3>
-                <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 16px;">
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 18px;">
                     Soporta imágenes (PNG, JPG), documentos (PDF, CSV, XLSX, JSON) hasta 50MB.
                 </p>
                 <input type="file" id="file-input-hidden" multiple style="display: none;">
                 <button type="button" class="btn-gci btn-primary" id="btn-browse-files">
-                    <i class="fa-solid fa-file-circle-plus"></i> Seleccionar Archivos
+                    <i class="fa-solid fa-folder-open"></i> Seleccionar Archivos
                 </button>
             </div>
         </div>
@@ -40,11 +44,11 @@ export function renderFileManagerModule(container) {
         <!-- Lista / Tabla de Archivos Locales -->
         <div class="gci-card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px;">
-                <h3 style="font-size: 1.05rem; font-weight: 700;">
-                    <i class="fa-solid fa-list" style="color: var(--accent-cyan); margin-right: 8px;"></i>
+                <h3 style="font-size: 1.05rem; font-weight: 800; color: #0f172a;">
+                    <i class="fa-solid fa-list" style="color: #2563eb; margin-right: 8px;"></i>
                     Archivos Cargados (<span id="files-count">${localFiles.length}</span>)
                 </h3>
-                <span style="font-size: 0.78rem; color: var(--text-muted);">Almacenados en el navegador</span>
+                <span class="badge-tag">Almacenados Localmente</span>
             </div>
 
             <div class="gci-table-wrapper">
@@ -74,7 +78,7 @@ function renderFilesRows(files) {
         return `
             <tr>
                 <td colspan="5" style="text-align: center; padding: 40px; color: var(--text-muted);">
-                    <i class="fa-solid fa-folder-closed" style="font-size: 2rem; margin-bottom: 10px; display: block;"></i>
+                    <i class="fa-solid fa-folder-closed" style="font-size: 2.2rem; margin-bottom: 10px; display: block; color: #94a3b8;"></i>
                     No hay archivos cargados aún. Utiliza la zona superior para subir tus primeros archivos.
                 </td>
             </tr>
@@ -83,15 +87,15 @@ function renderFilesRows(files) {
 
     return files.map((file, index) => `
         <tr>
-            <td style="font-weight: 600;">
-                <i class="${getFileIcon(file.type)}" style="margin-right: 8px; color: var(--primary);"></i>
+            <td style="font-weight: 700;">
+                <i class="${getFileIcon(file.type)}" style="margin-right: 8px; color: #2563eb;"></i>
                 ${escapeHtml(file.name)}
             </td>
             <td><span class="badge-tag">${escapeHtml(file.type || 'Desconocido')}</span></td>
-            <td style="color: var(--text-secondary);">${formatBytes(file.size)}</td>
+            <td style="color: var(--text-muted); font-weight: 600;">${formatBytes(file.size)}</td>
             <td style="color: var(--text-muted); font-size: 0.8rem;">${new Date(file.uploadedAt).toLocaleString()}</td>
             <td style="text-align: right;">
-                <button class="btn-gci btn-secondary btn-delete-file" data-index="${index}" style="padding: 4px 10px; font-size: 0.75rem; color: var(--status-danger);">
+                <button class="btn-gci btn-secondary btn-delete-file" data-index="${index}" style="padding: 4px 12px; font-size: 0.75rem; color: var(--status-danger);">
                     <i class="fa-solid fa-trash"></i> Eliminar
                 </button>
             </td>
@@ -140,7 +144,6 @@ function setupFileEvents(container) {
         });
     }
 
-    // Delegación de eventos para eliminar individualmente
     container.addEventListener('click', (e) => {
         if (e.target.closest('.btn-delete-file')) {
             const idx = parseInt(e.target.closest('.btn-delete-file').getAttribute('data-index'), 10);
@@ -165,7 +168,6 @@ function handleFilesSelected(fileList) {
 
     localStorage.setItem('gci_uploaded_files', JSON.stringify(currentFiles));
 
-    // Re-renderizar módulo
     const container = document.getElementById('gci-content-area');
     renderFileManagerModule(container);
 }
