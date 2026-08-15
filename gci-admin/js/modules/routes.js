@@ -841,7 +841,8 @@ export class RoutesModule {
                 routeToModify.origin.lat, routeToModify.origin.lng, wp.lat, wp.lng
             );
             wp.distanceKm = parseFloat(dist.toFixed(2));
-            wp.wazeUrl = `https://www.waze.com/ul?ll=${wp.lat},${wp.lng}&navigate=yes&from=${routeToModify.origin.lat},${routeToModify.origin.lng}`;
+            wp.wazeUrl = `https://www.waze.com/live-map/directions?from=ll.${routeToModify.origin.lat}%2C${routeToModify.origin.lng}&to=ll.${wp.lat}%2C${wp.lng}`;
+            wp.wazeAppUrl = `https://www.waze.com/ul?ll=${wp.lat}%2C${wp.lng}&navigate=yes`;
             wp.mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${routeToModify.origin.lat},${routeToModify.origin.lng}&destination=${wp.lat},${wp.lng}&travelmode=driving`;
         });
 

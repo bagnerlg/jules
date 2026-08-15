@@ -500,7 +500,8 @@ export class RouteEngine {
         const routeWaypoints = candidates.map((item, index) => ({
             step: index + 1,
             ...item,
-            wazeUrl: `https://www.waze.com/ul?ll=${item.lat},${item.lng}&navigate=yes&from=${originCoords.lat},${originCoords.lng}`,
+            wazeUrl: `https://www.waze.com/live-map/directions?from=ll.${originCoords.lat}%2C${originCoords.lng}&to=ll.${item.lat}%2C${item.lng}`,
+            wazeAppUrl: `https://www.waze.com/ul?ll=${item.lat}%2C${item.lng}&navigate=yes`,
             mapsUrl: `https://www.google.com/maps/dir/?api=1&origin=${originCoords.lat},${originCoords.lng}&destination=${item.lat},${item.lng}&travelmode=driving`
         }));
 
