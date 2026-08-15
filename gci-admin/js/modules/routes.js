@@ -4,18 +4,20 @@
  * de rutas con mapa Leaflet / OpenStreetMap y alertas de Waze en tiempo real.
  */
 
-import { RouteEngine, GUATEMALA_REGIONS, DEFAULT_ORIGIN_LOCATION, GUATEMALA_DEPARTMENTS_MUNICIPALITIES } from './route-engine.js';
+import { RouteEngine, GUATEMALA_REGIONS, DEFAULT_ORIGIN_LOCATION, GUATEMALA_DEPARTMENTS_MUNICIPALITIES, parseGoogleMapsInput } from './route-engine.js';
 
 export class RoutesModule {
     constructor() {
         this.engine = new RouteEngine();
         this.selectedDate = new Date().toISOString().split('T')[0];
         this.selectedRegion = 'costa_sur';
-        this.originType = 'default'; // 'default', 'gps', 'muni'
+        this.originType = 'default'; // 'default', 'gps', 'muni', 'custom_link'
         this.selectedDept = 'Guatemala';
-        this.selectedMuni = 'Guatemala (Zona 12 - Sede GCI Central)';
+        this.selectedMuni = 'Guatemala (Sede GCI Central)';
+        this.customMapsUrl = '';
         this.currentGpsCoords = { lat: 14.5800, lng: -90.5400, label: 'Ubicación GPS Live' };
-        this.currentRoute = null;
+        this.routesByDate = {}; // { '2026-08-15': [ routeObj1, routeObj2 ] }
+        this.activeRouteIndex = 0;
         this.map = null;
     }
 
@@ -49,8 +51,8 @@ export class RoutesModule {
                 <!-- Panel de Parámetros de Ruta (Región & Ubicación Origen) -->
                 <div class="card p-3 mb-4 route-config-card">
                     <div class="row g-3 align-items-center">
-                        <div class="col-md-4">
-                            <label class="form-label extra-small fw-bold">1. Selección de Región / Corredor Vial</label>
+                        <div class="col-md-3">
+                            <label class="form-label extra-small fw-bold">1. Corredor Vial / Región</label>
                             <select id="route-region-select" class="form-select form-control-capsule">
                                 ${Object.keys(GUATEMALA_REGIONS).map(key => `
                                     <option value="${key}" ${key === this.selectedRegion ? 'selected' : ''}>
@@ -60,11 +62,11 @@ export class RoutesModule {
                             </select>
                         </div>
 
-                        <div class="col-md-5">
+                        <div class="col-md-6">
                             <label class="form-label extra-small fw-bold d-flex justify-content-between align-items-center">
-                                <span>2. Punto de Partida del Vendedor (Origen)</span>
+                                <span>2. Punto de Partida del Vendedor</span>
                                 <a href="${DEFAULT_ORIGIN_LOCATION.mapsUrl}" target="_blank" class="extra-small text-primary text-decoration-none" title="Ubicación base predeterminada">
-                                    <i class="fa-solid fa-location-dot me-1"></i> Sede Central GCI
+                                    <i class="fa-solid fa-location-dot me-1"></i> Enlace Base GCI
                                 </a>
                             </label>
                             <div class="row g-2">
@@ -79,19 +81,26 @@ export class RoutesModule {
                                     </button>
                                 </div>
                                 <div class="col-6 col-sm-3">
-                                    <select id="route-dept-select" class="form-select form-select-sm extra-small" title="Seleccionar Departamento de Salida">
+                                    <select id="route-dept-select" class="form-select form-select-sm extra-small" title="Departamento de Salida">
                                         ${Object.keys(GUATEMALA_DEPARTMENTS_MUNICIPALITIES).map(dept => `
                                             <option value="${dept}" ${dept === this.selectedDept ? 'selected' : ''}>${dept}</option>
                                         `).join('')}
                                     </select>
                                 </div>
                                 <div class="col-6 col-sm-3">
-                                    <select id="route-muni-select" class="form-select form-select-sm extra-small" title="Seleccionar Municipio de Salida">
+                                    <select id="route-muni-select" class="form-select form-select-sm extra-small" title="Municipio de Salida">
                                         ${(GUATEMALA_DEPARTMENTS_MUNICIPALITIES[this.selectedDept] || []).map(muni => `
                                             <option value="${muni.name}" ${muni.name === this.selectedMuni ? 'selected' : ''}>${muni.name}</option>
                                         `).join('')}
                                     </select>
                                 </div>
+                            </div>
+
+                            <!-- Pegar Enlace Personalizado Google Maps -->
+                            <div class="mt-2 input-group input-group-sm">
+                                <span class="input-group-text bg-light text-muted extra-small"><i class="fa-solid fa-link me-1"></i> Enlace / Maps:</span>
+                                <input type="text" id="custom-maps-url-input" class="form-control extra-small" placeholder="https://maps.app.goo.gl/... o coordenadas lat,lng" value="${this.customMapsUrl}">
+                                <button id="btn-apply-custom-url" class="btn btn-outline-primary extra-small" type="button">Usar Enlace</button>
                             </div>
                         </div>
 
@@ -128,14 +137,19 @@ export class RoutesModule {
                     <!-- Columna Derecha: Mapa & Detalle de Ruta Ordenada -->
                     <div class="col-lg-7">
                         <div class="card p-3 h-100 route-results-card">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
                                 <div>
                                     <h5 class="fw-bold m-0 text-dark"><i class="fa-solid fa-map-location-dot me-2 text-primary"></i>Hoja de Ruta & Navegación Waze</h5>
                                     <span class="extra-small text-muted" id="route-subtitle-info">Seleccione una fecha y presione "Planificar Ruta del Día".</span>
                                 </div>
-                                <div id="waze-badge-container">
+                                <div id="waze-badge-container" class="d-flex align-items-center gap-2">
                                     <span class="badge bg-info text-dark extra-small"><i class="fa-solid fa-traffic-light me-1"></i> Waze API Lista</span>
                                 </div>
+                            </div>
+
+                            <!-- Pestañas de Múltiples Rutas del Día -->
+                            <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom" id="route-tabs-container">
+                                ${this.renderRouteTabs()}
                             </div>
 
                             <!-- Contenedor del Mapa Leaflet -->
@@ -194,6 +208,34 @@ export class RoutesModule {
                 </div>
             </div>
         `;
+    }
+
+    renderRouteTabs() {
+        const routes = this.routesByDate[this.selectedDate] || [];
+        if (routes.length === 0) {
+            return `<span class="extra-small text-muted font-italic"><i class="fa-solid fa-circle-info me-1"></i> No se han generado rutas para hoy</span>`;
+        }
+
+        let tabsHtml = `<div class="btn-group btn-group-sm" role="group">`;
+        routes.forEach((r, idx) => {
+            const isActive = idx === this.activeRouteIndex;
+            tabsHtml += `
+                <button type="button" class="btn ${isActive ? 'btn-primary fw-bold' : 'btn-outline-primary'} route-tab-btn" data-index="${idx}" style="font-size: 0.72rem;">
+                    <i class="fa-solid fa-route me-1"></i> ${r.title || `Ruta #${idx + 1}`}
+                </button>
+            `;
+        });
+        tabsHtml += `</div>`;
+
+        tabsHtml += `
+            <div class="d-flex align-items-center gap-1">
+                <button id="btn-delete-active-route" class="btn btn-xs btn-outline-danger" style="font-size: 0.72rem; border-radius: 6px;" title="Eliminar la ruta seleccionada">
+                    <i class="fa-solid fa-trash-can me-1"></i> Eliminar Ruta
+                </button>
+            </div>
+        `;
+
+        return tabsHtml;
     }
 
     renderCalendarGrid() {
@@ -360,6 +402,20 @@ export class RoutesModule {
             });
         });
 
+        // Aplicar Enlace Personalizado de Google Maps
+        const btnCustomUrl = document.getElementById('btn-apply-custom-url');
+        if (btnCustomUrl) {
+            btnCustomUrl.addEventListener('click', () => {
+                const val = document.getElementById('custom-maps-url-input').value.trim();
+                if (val) {
+                    this.originType = 'custom_link';
+                    this.customMapsUrl = val;
+                    alert("Enlace de origen personalizado aplicado.");
+                    this.refreshUI();
+                }
+            });
+        }
+
         // Botón Planificar Ruta
         const btnPlan = document.getElementById('btn-plan-route-now');
         if (btnPlan) {
@@ -368,7 +424,48 @@ export class RoutesModule {
             });
         }
 
+        // Pestañas de Selección de Ruta
+        document.querySelectorAll('.route-tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.activeRouteIndex = parseInt(btn.dataset.index, 10);
+                this.renderWaypointsList();
+                this.renderMap();
+                this.refreshTabsUI();
+            });
+        });
+
+        // Eliminar Ruta Activa del Día
+        const btnDeleteRoute = document.getElementById('btn-delete-active-route');
+        if (btnDeleteRoute) {
+            btnDeleteRoute.addEventListener('click', () => {
+                this.deleteActiveRoute();
+            });
+        }
+
         this.loadLeafletAssets();
+    }
+
+    refreshTabsUI() {
+        const container = document.getElementById('route-tabs-container');
+        if (container) {
+            container.innerHTML = this.renderRouteTabs();
+            // Re-vincular eventos de pestañas
+            document.querySelectorAll('.route-tab-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    this.activeRouteIndex = parseInt(btn.dataset.index, 10);
+                    this.renderWaypointsList();
+                    this.renderMap();
+                    this.refreshTabsUI();
+                });
+            });
+
+            const btnDeleteRoute = document.getElementById('btn-delete-active-route');
+            if (btnDeleteRoute) {
+                btnDeleteRoute.addEventListener('click', () => {
+                    this.deleteActiveRoute();
+                });
+            }
+        }
     }
 
     loadLeafletAssets() {
@@ -393,7 +490,9 @@ export class RoutesModule {
     executeRoutePlanning() {
         let originCoords;
 
-        if (this.originType === 'default') {
+        if (this.originType === 'custom_link' && this.customMapsUrl) {
+            originCoords = parseGoogleMapsInput(this.customMapsUrl);
+        } else if (this.originType === 'default') {
             originCoords = {
                 lat: DEFAULT_ORIGIN_LOCATION.lat,
                 lng: DEFAULT_ORIGIN_LOCATION.lng,
@@ -416,42 +515,127 @@ export class RoutesModule {
             };
         }
 
-        this.currentRoute = this.engine.planRoute({
+        const newRoute = this.engine.planRoute({
             regionKey: this.selectedRegion,
             originCoords: originCoords,
             targetDateStr: this.selectedDate
         });
 
+        if (!this.routesByDate[this.selectedDate]) {
+            this.routesByDate[this.selectedDate] = [];
+        }
+
+        const routeNum = this.routesByDate[this.selectedDate].length + 1;
+        newRoute.title = `Ruta #${routeNum} (${newRoute.region.name.split('/')[0].trim()})`;
+        newRoute.isOriginal = true; // Ruta autogenerada del sistema
+
+        this.routesByDate[this.selectedDate].push(newRoute);
+        this.activeRouteIndex = this.routesByDate[this.selectedDate].length - 1;
+
+        this.refreshTabsUI();
+        this.renderWaypointsList();
+        this.renderMap();
+    }
+
+    getActiveRoute() {
+        const routes = this.routesByDate[this.selectedDate] || [];
+        if (routes.length === 0) return null;
+        if (this.activeRouteIndex >= routes.length) {
+            this.activeRouteIndex = routes.length - 1;
+        }
+        return routes[this.activeRouteIndex] || null;
+    }
+
+    deleteActiveRoute() {
+        const routes = this.routesByDate[this.selectedDate] || [];
+        if (routes.length === 0) return;
+
+        routes.splice(this.activeRouteIndex, 1);
+        if (this.activeRouteIndex >= routes.length) {
+            this.activeRouteIndex = Math.max(0, routes.length - 1);
+        }
+
+        this.refreshTabsUI();
+        this.renderWaypointsList();
+        this.renderMap();
+    }
+
+    removeClientFromActiveRoute(clientId) {
+        const activeRoute = this.getActiveRoute();
+        if (!activeRoute) return;
+
+        // Si es la ruta original autogenerada del sistema, creamos una copia de ruta editada para el vendedor
+        let routeToModify = activeRoute;
+        if (activeRoute.isOriginal) {
+            const routes = this.routesByDate[this.selectedDate];
+            const editedNum = routes.length + 1;
+            const routeCopy = JSON.parse(JSON.stringify(activeRoute));
+            routeCopy.title = `Ruta Personalizada #${editedNum}`;
+            routeCopy.isOriginal = false;
+
+            routes.push(routeCopy);
+            this.activeRouteIndex = routes.length - 1;
+            routeToModify = routeCopy;
+        }
+
+        // Filtrar el cliente quitado
+        routeToModify.waypoints = routeToModify.waypoints.filter(wp => wp.id !== clientId);
+
+        // Recalcular distancias y orden numerado de paradas en tiempo real
+        routeToModify.waypoints.forEach((wp, idx) => {
+            wp.step = idx + 1;
+            const dist = this.engine.calculateHaversineDistance(
+                routeToModify.origin.lat, routeToModify.origin.lng, wp.lat, wp.lng
+            );
+            wp.distanceKm = parseFloat(dist.toFixed(2));
+        });
+
+        routeToModify.totalWaypoints = routeToModify.waypoints.length;
+        routeToModify.totalEstimatedKm = parseFloat(
+            routeToModify.waypoints.reduce((sum, w) => sum + w.distanceKm, 0).toFixed(1)
+        );
+
+        this.refreshTabsUI();
         this.renderWaypointsList();
         this.renderMap();
     }
 
     renderWaypointsList() {
         const container = document.getElementById('waypoints-list-container');
-        if (!container || !this.currentRoute) return;
+        const activeRoute = this.getActiveRoute();
+        if (!container) return;
 
         const subInfo = document.getElementById('route-subtitle-info');
-        if (subInfo) {
-            subInfo.textContent = `Ruta calculada para ${this.currentRoute.region.name}: ${this.currentRoute.totalWaypoints} paradas, ~${this.currentRoute.totalEstimatedKm} KM estimados desde el punto de partida.`;
+
+        if (!activeRoute || activeRoute.waypoints.length === 0) {
+            if (subInfo) {
+                subInfo.textContent = 'Seleccione una fecha y presione "Planificar Ruta del Día".';
+            }
+            container.innerHTML = '<div class="text-center p-4 text-muted extra-small">No hay paradas en la ruta seleccionada.</div>';
+            return;
         }
 
-        if (this.currentRoute.waypoints.length === 0) {
-            container.innerHTML = '<div class="text-center p-4 text-muted extra-small">No hay clientes con criterios de visita para esta región y fecha.</div>';
-            return;
+        if (subInfo) {
+            subInfo.textContent = `${activeRoute.title}: ${activeRoute.totalWaypoints} paradas, ~${activeRoute.totalEstimatedKm} KM estimados desde el punto de partida.`;
         }
 
         container.innerHTML = `
             <div class="list-group extra-small">
-                ${this.currentRoute.waypoints.map(wp => `
+                ${activeRoute.waypoints.map(wp => `
                     <div class="list-group-item p-3 mb-2 rounded border ${wp.isAgreed ? 'bg-warning-soft border-warning' : 'bg-white'}">
                         <div class="d-flex justify-content-between align-items-start">
                             <div class="d-flex align-items-center gap-2">
                                 <span class="badge bg-primary rounded-circle" style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">${wp.step}</span>
                                 <h6 class="m-0 fw-bold text-dark">${wp.cliente}</h6>
                             </div>
-                            <a href="${wp.wazeUrl}" target="_blank" class="btn btn-xs btn-info text-white fw-bold" style="border-radius: 12px; background: #0284c7;">
-                                <i class="fa-solid fa-location-arrow me-1"></i> Navegar con Waze
-                            </a>
+                            <div class="d-flex align-items-center gap-1">
+                                <a href="${wp.wazeUrl}" target="_blank" class="btn btn-xs btn-info text-white fw-bold" style="border-radius: 12px; background: #0284c7;">
+                                    <i class="fa-solid fa-location-arrow me-1"></i> Waze
+                                </a>
+                                <button class="btn btn-xs btn-outline-danger btn-remove-client-from-route" data-client-id="${wp.id}" title="Quitar cliente de esta ruta">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
                         </div>
 
                         <div class="mt-2 text-muted">
@@ -466,20 +650,39 @@ export class RoutesModule {
                 `).join('')}
             </div>
         `;
+
+        // Eventos para botones de quitar cliente individual
+        container.querySelectorAll('.btn-remove-client-from-route').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const clientId = btn.dataset.clientId;
+                this.removeClientFromActiveRoute(clientId);
+            });
+        });
     }
 
     renderMap() {
         const mapContainer = document.getElementById('route-map');
-        if (!mapContainer || !window.L || !this.currentRoute) return;
+        const activeRoute = this.getActiveRoute();
 
         if (this.map) {
             this.map.remove();
             this.map = null;
         }
 
-        mapContainer.innerHTML = ''; // Limpiar contenedor
+        if (!mapContainer || !window.L) return;
 
-        const origin = this.currentRoute.origin;
+        mapContainer.innerHTML = ''; // Limpiar mapa
+
+        if (!activeRoute || activeRoute.waypoints.length === 0) {
+            mapContainer.innerHTML = `
+                <div class="d-flex align-items-center justify-content-center h-100 text-muted extra-small">
+                    <span>Mapa sin puntos trazados para la ruta seleccionada.</span>
+                </div>
+            `;
+            return;
+        }
+
+        const origin = activeRoute.origin;
         this.map = L.map('route-map').setView([origin.lat, origin.lng], 9);
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -495,7 +698,7 @@ export class RoutesModule {
         const latLngs = [[origin.lat, origin.lng]];
 
         // Marcadores numerados de Clientes
-        this.currentRoute.waypoints.forEach(wp => {
+        activeRoute.waypoints.forEach(wp => {
             latLngs.push([wp.lat, wp.lng]);
             L.marker([wp.lat, wp.lng])
                 .addTo(this.map)

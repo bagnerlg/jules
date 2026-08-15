@@ -16,17 +16,44 @@ export const GUATEMALA_REGIONS = {
 // Ubicación por Defecto Predeterminada (Sede GCI)
 export const DEFAULT_ORIGIN_LOCATION = {
     name: 'Sede Central GCI Guatemala',
-    mapsUrl: 'https://maps.app.goo.gl/mjkeypcDf567jVuD8',
+    mapsUrl: 'https://maps.app.goo.gl/TVUtjbZEseeTLVwu6',
     lat: 14.5800,
     lng: -90.5400,
     dept: 'Guatemala',
     muni: 'Guatemala'
 };
 
+// Helper para extraer latitud y longitud de un enlace o texto de Google Maps
+export function parseGoogleMapsInput(input) {
+    if (!input || typeof input !== 'string') return null;
+    const clean = input.trim();
+    if (!clean) return null;
+
+    // Buscar patrón @lat,lng
+    const atMatch = clean.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (atMatch) {
+        return { lat: parseFloat(atMatch[1]), lng: parseFloat(atMatch[2]), label: 'Ubicación Google Maps Personalizada' };
+    }
+
+    // Buscar patrón q=lat,lng o lat,lng directo
+    const coordMatch = clean.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+    if (coordMatch) {
+        return { lat: parseFloat(coordMatch[1]), lng: parseFloat(coordMatch[2]), label: 'Coordenadas Personalizadas' };
+    }
+
+    // Si es un enlace corto o dirección personalizada
+    return {
+        lat: DEFAULT_ORIGIN_LOCATION.lat,
+        lng: DEFAULT_ORIGIN_LOCATION.lng,
+        label: `Ubicación Vendedor: ${clean.length > 35 ? clean.substring(0, 35) + '...' : clean}`,
+        mapsUrl: clean
+    };
+}
+
 // Catálogo de Departamentos y Municipios de Guatemala con coordenadas para cálculo de origen
 export const GUATEMALA_DEPARTMENTS_MUNICIPALITIES = {
     'Guatemala': [
-        { name: 'Guatemala (Zona 12 - Sede GCI Central)', lat: 14.5800, lng: -90.5400, mapsUrl: 'https://maps.app.goo.gl/mjkeypcDf567jVuD8' },
+        { name: 'Guatemala (Sede GCI Central)', lat: 14.5800, lng: -90.5400, mapsUrl: 'https://maps.app.goo.gl/TVUtjbZEseeTLVwu6' },
         { name: 'Mixco', lat: 14.6300, lng: -90.5700 },
         { name: 'Villa Nueva', lat: 14.5269, lng: -90.5875 },
         { name: 'Santa Catarina Pinula', lat: 14.5667, lng: -90.4833 },
@@ -142,7 +169,7 @@ export const GUATEMALA_DEPARTMENTS_MUNICIPALITIES = {
 
 // Puntos de Referencia con Coordenadas para Ubicación de Inicio
 export const REFERENCE_LOCATIONS = [
-    { name: 'Sede Central GCI Guatemala (Zona 12)', lat: 14.5800, lng: -90.5400, dept: 'Guatemala', mapsUrl: 'https://maps.app.goo.gl/mjkeypcDf567jVuD8' },
+    { name: 'Sede Central GCI Guatemala', lat: 14.5800, lng: -90.5400, dept: 'Guatemala', mapsUrl: 'https://maps.app.goo.gl/TVUtjbZEseeTLVwu6' },
     { name: 'Mixco - Calzada Roosevelt', lat: 14.6300, lng: -90.5700, dept: 'Guatemala' },
     { name: 'Villa Nueva - Central', lat: 14.5269, lng: -90.5875, dept: 'Guatemala' },
     { name: 'Antigua Guatemala - Centro', lat: 14.5586, lng: -90.7295, dept: 'Sacatepéquez' },
