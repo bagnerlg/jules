@@ -219,7 +219,7 @@
             </div>
             <div class="row">
                 <div style="flex:1"><label class="required-label">Fecha de Venta</label><input type="date" id="fechaVenta"></div>
-                <div style="flex:1"><label>NIT</label><input id="nit" placeholder="NIT o CF"></div>
+                <div style="flex:1"><label id="label-nit">NIT o DPI</label><input id="nit" placeholder="NIT, DPI o CF"></div>
             </div>
         </div>
 
@@ -230,7 +230,7 @@
                 <div style="flex:1"><label>Número</label><input id="locNumero" placeholder="Casa/Lote"></div>
                 <div style="flex:1"><label>Avenida</label><input id="locAvenida"></div>
             </div>
-            <label>Referencia de dirección</label>
+            <label class="required-label">Referencia de dirección</label>
             <input id="locReferencia" placeholder="Ej: Frente a parque central...">
         </div>
 
@@ -312,13 +312,13 @@
 
 <script>
 (function() {
-    // --- CONFIGURACIÓN GOOGLE SHEETS ---
-    // Instrucciones:
-    // 1. En tu Google Sheet ve a Archivo > Compartir > Publicar en la Web.
-    // 2. Selecciona "Valores separados por comas (.csv)" y publica cada hoja por separado.
-    // 3. Pega las URLs resultantes aquí:
-    var URL_SHEET_PRODUCTOS = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR_l-VVACl7YT1Q6DEm2BSUpZZP-c8oZF0UBfIbPRQQmxz3KRiBfkuZ2ZwQwyhtSLJj5BtmIiZJsOHe/pub?gid=0&single=true&output=csv";
+    // --- CONFIGURACIÓN DE ORIGEN DE DATOS ---
+    // URL de la API de combos y productos:
+    var URL_API_PRODUCTOS = "https://api.zashome.dpdns.org/api/public/combos-generated?limit=500";
+    // URL de la Google Sheet de Ubicaciones (CSV):
     var URL_SHEET_UBICACIONES = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR_l-VVACl7YT1Q6DEm2BSUpZZP-c8oZF0UBfIbPRQQmxz3KRiBfkuZ2ZwQwyhtSLJj5BtmIiZJsOHe/pub?gid=1131031247&single=true&output=csv";
+    // Google Sheet de Productos original (usado como fallback si falla la API):
+    var URL_SHEET_PRODUCTOS = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR_l-VVACl7YT1Q6DEm2BSUpZZP-c8oZF0UBfIbPRQQmxz3KRiBfkuZ2ZwQwyhtSLJj5BtmIiZJsOHe/pub?gid=0&single=true&output=csv";
 
     var container = document.getElementById("form-oportunidad-container");
     var loadingOverlay = document.createElement("div");
@@ -330,17 +330,98 @@
         return el;
     }
 
-    // Variables globales de datos
-    var g_db = [];
-    var g_dm = {};
+    // Variables globales de datos con datos de fallback por si falla la red o CORS local (file://)
+    var g_db = [
+        {
+            cat: "Cama",
+            sku: "A1051A006|COMBO CAMA FIRE 2E QUEEN + R. 2C LISO WENGUE + CABECERA SUED M/Q + MESA DE 60|3999",
+            isCombo: true,
+            items: [
+                { description: "CAMA FIRE DOBLE EURO QUEEN", quantity: 1, sku: "B-2E-L-FR-0010" },
+                { description: "CABECERA SUED MATRI / QUEEN", quantity: 1, sku: "P-CS-L-B-0008" },
+                { description: "MESA DE 60 BLANCA MELAMINA LISO", quantity: 1, sku: "P-ME-L-B-0001" },
+                { description: "ROPERO 2 CUERPOS LISO  WENGUE CAJON BLANCO MELAMINA", quantity: 1, sku: "R-2C-L-W-0004" }
+            ]
+        },
+        {
+            cat: "Ropero",
+            sku: "R-2C-L-W-0004|ROPERO 2 CUERPOS LISO  WENGUE CAJON BLANCO MELAMINA|949",
+            isCombo: false,
+            items: []
+        },
+        {
+            cat: "Cocina",
+            sku: "C-RU-L-W-0002|COCINA RUBI LISA 60 WENGUE MELAMINA|2150",
+            isCombo: false,
+            items: []
+        }
+    ];
+    var g_dm = {
+        "GUATEMALA": ["Guatemala  Barcenas", "Villa Nueva", "Mixco"],
+        "SACATEPEQUEZ": ["Antigua Guatemala", "Jocotenango"]
+    };
 
     var g_rows = [];
     var g_h = "";
 
+    // Detectar dinámicamente el ID del campo oculto de datos de forma ultra robusta y 100% automática, incluyendo soporte multi-iframe en GoHighLevel
+    function obtenerHiddenInput() {
+        var h = null;
+
+        // 1. Intentar buscar en la ventana local (en el documento actual)
+        try {
+            h = document.querySelector('[data-q="jsondata"]') || document.querySelector('[data-q="JSONDATA"]');
+            if (h) return h;
+        } catch (e) {}
+
+        // 2. Intentar buscar en el documento padre (por si estamos dentro de un iframe en GoHighLevel)
+        try {
+            if (window.parent && window.parent !== window && window.parent.document) {
+                h = window.parent.document.querySelector('[data-q="jsondata"]') || window.parent.document.querySelector('[data-q="JSONDATA"]');
+                if (h) return h;
+            }
+        } catch (e) {}
+
+        // 3. Intentar buscar en el documento superior top
+        try {
+            if (window.top && window.top !== window && window.top.document) {
+                h = window.top.document.querySelector('[data-q="jsondata"]') || window.top.document.querySelector('[data-q="JSONDATA"]');
+                if (h) return h;
+            }
+        } catch (e) {}
+
+        if (!container) return document.getElementById("FgGvPHLrkFnWEjyOrUC8");
+
+        // 4. Buscar por atributo name="JsonData" en el documento local
+        try {
+            h = document.querySelector('input[name="JsonData"]');
+            if (h) return h;
+        } catch (e) {}
+
+        // 5. Buscar el primer input de tipo "hidden" dentro de nuestro contenedor
+        try {
+            h = container.querySelector('input[type="hidden"]');
+            if (h) return h;
+        } catch (e) {}
+
+        // 6. Buscar cualquier input con id de 20 caracteres (formato clásico de campos personalizados de GHL)
+        try {
+            var inputs = container.querySelectorAll("input");
+            for (var i = 0; i < inputs.length; i++) {
+                if (inputs[i].id && inputs[i].id.length === 20) {
+                    return inputs[i];
+                }
+            }
+        } catch (e) {}
+
+        // 7. Fallback clásico al ID inicial
+        return document.getElementById("FgGvPHLrkFnWEjyOrUC8");
+    }
+
     function g_sv() {
-        var h = $("FgGvPHLrkFnWEjyOrUC8") || document.querySelector('input[name="JsonData"]');
+        var h = obtenerHiddenInput();
         if(!h) {
-            console.error("No se encontró el campo oculto (ID: FgGvPHLrkFnWEjyOrUC8 o Name: JsonData)");
+            console.error("No se encontró el campo oculto (ID legacy: FgGvPHLrkFnWEjyOrUC8 o Atributo Name: JsonData)");
             return;
         }
         var fP = [];
@@ -382,7 +463,7 @@
             Total_General: (container.querySelector("#total-q") || {textContent:"0.00"}).textContent
         };
         h.value = JSON.stringify(data);
-        console.log("JSON Data updated:", h.value);
+        console.log("JSON Data updated (Input ID: " + h.id + "):", h.value);
 
         try {
             h.dispatchEvent(new Event("input", { bubbles: true }));
@@ -398,6 +479,16 @@
             var r = g_rows[i]; var n = parseFloat(r.cant.value)||0; r.totalVal = r.precioVal * n; r.totalDisp.value = r.totalVal.toFixed(2); u += n; q += r.totalVal;
         }
         container.querySelector("#total-u").textContent = u; container.querySelector("#total-q").textContent = q.toFixed(2);
+
+        // Actualizar dinámicamente el indicador de obligatorio (*) para NIT o DPI
+        var labelNit = $("label-nit");
+        if (labelNit) {
+            if (q > 2500) {
+                labelNit.classList.add("required-label");
+            } else {
+                labelNit.classList.remove("required-label");
+            }
+        }
     }
 
     function g_add_p(skuStr) {
@@ -418,6 +509,99 @@
         var descB = document.createElement("b"); descB.textContent = "DESC: ";
         skuLabel.appendChild(descB);
         skuLabel.appendChild(document.createTextNode(desc));
+
+        // Buscar si es un combo en g_db para mostrar su contenido
+        var dbItem = null;
+        for (var k = 0; k < g_db.length; k++) {
+            if (g_db[k].sku === skuStr) {
+                dbItem = g_db[k];
+                break;
+            }
+        }
+        if (dbItem && dbItem.isCombo && dbItem.items && dbItem.items.length > 0) {
+            var comboContentDiv = document.createElement("div");
+            comboContentDiv.style.marginTop = "8px";
+            comboContentDiv.style.padding = "8px";
+            comboContentDiv.style.background = "var(--foc-bg)";
+            comboContentDiv.style.borderRadius = "6px";
+            comboContentDiv.style.fontSize = "11px";
+            comboContentDiv.style.lineHeight = "1.3";
+            comboContentDiv.style.color = "var(--foc-text-main)";
+
+            var comboHeader = document.createElement("div");
+            comboHeader.style.fontWeight = "bold";
+            comboHeader.style.marginBottom = "6px";
+            comboHeader.style.color = "var(--foc-primary)";
+            comboHeader.textContent = "Contenido del Combo:";
+            comboContentDiv.appendChild(comboHeader);
+
+            // Crear mini tabla
+            var table = document.createElement("table");
+            table.style.width = "100%";
+            table.style.borderCollapse = "collapse";
+            table.style.fontSize = "10px";
+            table.style.textAlign = "left";
+
+            // Encabezado de la tabla
+            var thead = document.createElement("thead");
+            var headerRow = document.createElement("tr");
+            headerRow.style.borderBottom = "1px solid var(--foc-primary-light)";
+
+            var thSku = document.createElement("th");
+            thSku.style.padding = "4px 2px";
+            thSku.style.fontWeight = "bold";
+            thSku.style.color = "var(--foc-primary)";
+            thSku.textContent = "SKU";
+
+            var thDesc = document.createElement("th");
+            thDesc.style.padding = "4px 2px";
+            thDesc.style.fontWeight = "bold";
+            thDesc.style.color = "var(--foc-primary)";
+            thDesc.textContent = "Descripción";
+
+            var thCant = document.createElement("th");
+            thCant.style.padding = "4px 2px";
+            thCant.style.fontWeight = "bold";
+            thCant.style.color = "var(--foc-primary)";
+            thCant.style.textAlign = "center";
+            thCant.textContent = "Cant.";
+
+            headerRow.appendChild(thSku);
+            headerRow.appendChild(thDesc);
+            headerRow.appendChild(thCant);
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            // Cuerpo de la tabla
+            var tbody = document.createElement("tbody");
+            dbItem.items.forEach(function(innerItem) {
+                var row = document.createElement("tr");
+                row.style.borderBottom = "1px solid rgba(0,0,0,0.05)";
+
+                var tdSku = document.createElement("td");
+                tdSku.style.padding = "4px 2px";
+                tdSku.style.fontWeight = "500";
+                tdSku.style.whiteSpace = "nowrap";
+                tdSku.textContent = innerItem.sku;
+
+                var tdDesc = document.createElement("td");
+                tdDesc.style.padding = "4px 2px";
+                tdDesc.textContent = innerItem.description;
+
+                var tdCant = document.createElement("td");
+                tdCant.style.padding = "4px 2px";
+                tdCant.style.textAlign = "center";
+                tdCant.textContent = innerItem.quantity;
+
+                row.appendChild(tdSku);
+                row.appendChild(tdDesc);
+                row.appendChild(tdCant);
+                tbody.appendChild(row);
+            });
+            table.appendChild(tbody);
+            comboContentDiv.appendChild(table);
+            skuLabel.appendChild(comboContentDiv);
+        }
 
         var row = document.createElement("div"); row.className = "fila-producto-row";
 
@@ -441,7 +625,8 @@
         var idx = g_rows.length; d.setAttribute("data-idx", idx);
 
         f.appendChild(skuLabel); f.appendChild(row); f.appendChild(d); ptn.appendChild(f);
-        var c = {skuVal:skuStr, precioVal:price, cant:nInp, totalDisp:tInp, totalVal:price, fila:f, del:d}; g_rows.push(c);
+        var itemCat = (dbItem && dbItem.cat) ? dbItem.cat : "";
+        var c = {skuVal:skuStr, precioVal:price, cant:nInp, totalDisp:tInp, totalVal:price, catVal:itemCat, fila:f, del:d}; g_rows.push(c);
         nInp.oninput = function() { g_ts(); g_sv(); }; d.onclick = function(e) {
             var idx = parseInt(e.target.getAttribute("data-idx")); var c = g_rows[idx]; if(!c) return;
             g_rows.splice(idx, 1); c.fila.parentNode.removeChild(c.fila);
@@ -452,28 +637,37 @@
     }
 
     function g_item_click(e) {
-        var v = e.target.getAttribute("data-val"); var type = e.target.getAttribute("data-type");
+        var target = e.target.closest(".combo-item");
+        if (!target) return;
+        var v = target.getAttribute("data-val"); var type = target.getAttribute("data-type");
         if(type === "sku") { g_add_p(v); $("buscarSku").value = ""; }
         else if(type === "dep") { $("departamento").value = v; $("municipio").value = ""; g_sv(); }
         else if(type === "mun") { $("municipio").value = v; g_sv(); }
         else if(type === "cat") { $("categoria").value = v; }
-        e.target.parentNode.style.display = "none";
+        target.parentNode.style.display = "none";
     }
 
     function g_rd(id, items, type) {
         var l = container.querySelector("#" + id); if(!l) return; l.innerHTML = "";
         for(var i=0; i<(items||[]).length; i++) {
             var d = document.createElement("div"); d.className = "combo-item";
+            d.setAttribute("data-val", items[i]);
+            d.setAttribute("data-type", type);
+            d.onclick = g_item_click;
 
-            var displayText = items[i];
-            if (type === "sku" && displayText.includes("|")) {
-                var p = displayText.split("|");
-                // Mostrar SKU - Descripción - Precio para mayor claridad
-                displayText = p[0] + " - " + p[1] + " (Q " + p[2] + ")";
+            if (type === "sku" && items[i].includes("|")) {
+                var p = items[i].split("|");
+                var displayTitle = p[0] + " - " + p[1] + " (Q " + p[2] + ")";
+
+                var titleDiv = document.createElement("div");
+                titleDiv.style.fontWeight = "500";
+                titleDiv.textContent = displayTitle;
+                d.appendChild(titleDiv);
+            } else {
+                d.textContent = items[i];
             }
 
-            d.textContent = displayText;
-            d.setAttribute("data-val", items[i]); d.setAttribute("data-type", type); d.onclick = g_item_click; l.appendChild(d);
+            l.appendChild(d);
         }
         l.style.display = (items||[]).length ? "block" : "none";
     }
@@ -499,9 +693,67 @@
 
     function g_vld() {
         var ok = true;
-        var req = [{id:"nombre", msg:"Nombre es obligatorio"}, {id:"tel1", msg:"Teléfono 1 es obligatorio (8-11 dígitos)", min:8, max:11}, {id:"fechaVenta", msg:"Fecha de Venta es obligatoria"}, {id:"departamento", msg:"Departamento es obligatorio y debe ser válido", list:Object.keys(g_dm)}, {id:"municipio", msg:"Municipio es obligatorio y debe ser válido", munCheck:true}];
+
+        // 1. Validar que por lo menos un producto esté seleccionado
+        if (g_rows.length === 0) {
+            alert("Debe agregar al menos un producto antes de enviar el formulario.");
+            var searchInp = $("buscarSku");
+            if (searchInp) searchInp.focus();
+            return false;
+        }
+
+        // 2. Regla de negocio: Si hay un solo producto en la orden y vale menos de Q 1,999.00
+        if (g_rows.length === 1) {
+            var singleItem = g_rows[0];
+            if (singleItem.precioVal < 1999) {
+                alert("No se puede enviar un solo producto si su precio es menor a Q 1,999.00. Debe agregar otro producto a la orden.");
+                var searchInp = $("buscarSku");
+                if (searchInp) searchInp.focus();
+                return false;
+            }
+        }
+
+        // 3. Regla de negocio: Si todos los productos agregados son de la categoría "Promocionales", no se puede enviar solo esa categoría
+        var tieneCategoriaNoPromocional = false;
+        for (var i = 0; i < g_rows.length; i++) {
+            var cat = (g_rows[i].catVal || "").toLowerCase().trim();
+            if (cat !== "promocionales" && cat !== "promocional" && cat !== "promocion") {
+                tieneCategoriaNoPromocional = true;
+                break;
+            }
+        }
+        if (!tieneCategoriaNoPromocional) {
+            alert("Los productos de la categoría 'Promocionales' no pueden enviarse solos. Debe incluir al menos un producto de otra categoría en la orden.");
+            var searchInp = $("buscarSku");
+            if (searchInp) searchInp.focus();
+            return false;
+        }
+
+        // Calcular el total de la venta actual para la validación del NIT o DPI
+        var totalVenta = 0;
+        for (var idx = 0; idx < g_rows.length; idx++) {
+            var r = g_rows[idx];
+            var n = parseFloat(r.cant.value) || 0;
+            totalVenta += r.precioVal * n;
+        }
+
+        var req = [
+            {id:"nombre", msg:"Nombre es obligatorio"},
+            {id:"tel1", msg:"Teléfono 1 es obligatorio (8-11 dígitos)", min:8, max:11},
+            {id:"fechaVenta", msg:"Fecha de Venta es obligatoria"},
+            {id:"locReferencia", msg:"Referencia de dirección es obligatoria"},
+            {id:"departamento", msg:"Departamento es obligatorio y debe ser válido", list:Object.keys(g_dm)},
+            {id:"municipio", msg:"Municipio es obligatorio y debe ser válido", munCheck:true}
+        ];
+
+        // 2. Si el total supera Q2500, el NIT/DPI se vuelve obligatorio
+        if (totalVenta > 2500) {
+            req.push({id:"nit", msg:"El NIT o DPI es obligatorio para compras mayores a Q 2,500.00"});
+        }
+
         for(var i=0; i<req.length; i++) {
-            var el = $(req[i].id); var val = el.value.trim(); var vld = !!val;
+            var el = $(req[i].id); if(!el) continue;
+            var val = el.value.trim(); var vld = !!val;
             if(vld && req[i].min) vld = (val.length >= req[i].min);
             if(vld && req[i].max) vld = (vld && val.length <= req[i].max);
             if(vld && req[i].list) vld = (req[i].list.indexOf(val) !== -1);
@@ -514,11 +766,29 @@
     async function loadRemoteData() {
         container.style.position = "relative";
         container.appendChild(loadingOverlay);
-        console.log("Iniciando carga de datos desde Google Sheets...");
+        console.log("Iniciando carga de datos remotos...");
 
-        async function fetchCSV(url, label) {
+        function fetchWithTimeout(url, timeout = 3500, options = {}) {
+            return new Promise((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    reject(new Error("Timeout"));
+                }, timeout);
+
+                fetch(url, options)
+                    .then(res => {
+                        clearTimeout(timer);
+                        resolve(res);
+                    })
+                    .catch(err => {
+                        clearTimeout(timer);
+                        reject(err);
+                    });
+            });
+        }
+
+        async function fetchCSV(url, label, timeout = 4000) {
             try {
-                const res = await fetch(url);
+                const res = await fetchWithTimeout(url, timeout);
                 const text = await res.text();
 
                 // Verificación básica de que recibimos CSV y no HTML (error de permisos de Google)
@@ -541,37 +811,153 @@
             }
         }
 
-        try {
-            // 1. Cargar Productos
-            if (URL_SHEET_PRODUCTOS.includes("/pub?")) {
-                const dataProd = await fetchCSV(URL_SHEET_PRODUCTOS, "Productos");
-                g_db = dataProd.map(parts => {
-                    const cat = parts[0] || "";
-                    const sku = parts[1] || "";
-                    const desc = parts[2] || "";
-                    const precio = parts[3] || "0";
-                    // Formato interno robusto usando pipes
-                    return { cat: cat, sku: sku + "|" + desc + "|" + precio };
-                });
-                console.log("Productos cargados:", g_db.length);
+        // Carga de productos y combos (API con fallbacks rápidos e intentos robustos de bypass de CORS)
+        const loadProductsTask = (async () => {
+            let apiData = null;
+            const maxAttempts = 3;
+
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                    if (attempt === 1) {
+                        console.log("Intento 1: Descargando combos y productos directamente desde la API...");
+                        const res = await fetchWithTimeout(URL_API_PRODUCTOS, 3000);
+                        if (res.ok) {
+                            const json = await res.json();
+                            if (json && (json.combos || json.products)) {
+                                apiData = json;
+                                console.log("Intento 1 exitoso!");
+                                break;
+                            }
+                        } else {
+                            console.warn("Intento 1 respondió con error: " + res.status);
+                        }
+                    } else if (attempt === 2) {
+                        console.log("Intento 2: Descargando combos y productos vía AllOrigins proxy para bypass de CORS...");
+                        const proxyUrl = "https://api.allorigins.win/get?url=" + encodeURIComponent(URL_API_PRODUCTOS);
+                        const res = await fetchWithTimeout(proxyUrl, 3000);
+                        if (res.ok) {
+                            const proxyData = await res.json();
+                            if (proxyData && proxyData.contents) {
+                                const parsed = JSON.parse(proxyData.contents);
+                                if (parsed && (parsed.combos || parsed.products)) {
+                                    apiData = parsed;
+                                    console.log("Intento 2 exitoso vía AllOrigins!");
+                                    break;
+                                }
+                            }
+                        } else {
+                            console.warn("Intento 2 respondió con error: " + res.status);
+                        }
+                    } else if (attempt === 3) {
+                        console.log("Intento 3: Descargando combos y productos vía ThingProxy para bypass de CORS...");
+                        const proxyUrl = "https://thingproxy.freeboard.io/fetch/" + URL_API_PRODUCTOS;
+                        const res = await fetchWithTimeout(proxyUrl, 3500);
+                        if (res.ok) {
+                            const json = await res.json();
+                            if (json && (json.combos || json.products)) {
+                                apiData = json;
+                                console.log("Intento 3 exitoso vía ThingProxy!");
+                                break;
+                            }
+                        } else {
+                            console.warn("Intento 3 respondió con error: " + res.status);
+                        }
+                    }
+                } catch (err) {
+                    console.warn("Intento " + attempt + " falló debido a error o timeout: ", err.message || err);
+                }
             }
 
-            // 2. Cargar Ubicaciones
-            if (URL_SHEET_UBICACIONES.includes("/pub?")) {
-                const dataLoc = await fetchCSV(URL_SHEET_UBICACIONES, "Ubicaciones");
-                g_dm = {};
-                dataLoc.forEach(parts => {
-                    const dep = (parts[0] || "").toUpperCase();
-                    const mun = parts[1] || "";
-                    if (dep && mun) {
-                        if (!g_dm[dep]) g_dm[dep] = [];
-                        g_dm[dep].push(mun);
+            try {
+                if (!apiData) {
+                    throw new Error("No se pudo obtener datos de la API en ninguno de los 3 intentos.");
+                }
+
+                g_db = [];
+
+                // Cargar combos
+                if (apiData.combos && Array.isArray(apiData.combos)) {
+                    apiData.combos.forEach(function(combo) {
+                        const cat = combo.category || "";
+                        const sku = combo.sku || "";
+                        const desc = combo.description || "";
+                        const precio = combo.salePrice || 0;
+                        g_db.push({
+                            cat: cat,
+                            sku: sku + "|" + desc + "|" + precio,
+                            isCombo: true,
+                            items: combo.items || []
+                        });
+                    });
+                }
+
+                // Cargar productos
+                if (apiData.products && Array.isArray(apiData.products)) {
+                    apiData.products.forEach(function(prod) {
+                        const cat = prod.category || "";
+                        const sku = prod.sku || "";
+                        const desc = prod.description || "";
+                        const precio = prod.salePrice || 0;
+                        g_db.push({
+                            cat: cat,
+                            sku: sku + "|" + desc + "|" + precio,
+                            isCombo: false,
+                            items: []
+                        });
+                    });
+                }
+                console.log("Total de productos y combos cargados de API:", g_db.length);
+            } catch (apiErr) {
+                console.warn("Fallo al descargar combos y productos desde la API en los 3 intentos, usando Google Sheets como fallback:", apiErr);
+                if (URL_SHEET_PRODUCTOS.includes("/pub?")) {
+                    const dataProd = await fetchCSV(URL_SHEET_PRODUCTOS, "Productos (Fallback)", 4000);
+                    if (dataProd && dataProd.length > 0) {
+                        g_db = dataProd.map(function(parts) {
+                            const cat = parts[0] || "";
+                            const sku = parts[1] || "";
+                            const desc = parts[2] || "";
+                            const precio = parts[3] || "0";
+                            return {
+                                cat: cat,
+                                sku: sku + "|" + desc + "|" + precio,
+                                isCombo: false,
+                                items: []
+                            };
+                        });
+                        console.log("Productos cargados desde Google Sheets (Fallback):", g_db.length);
+                    } else {
+                        console.log("Manteniendo datos de fallback estáticos de productos debido a fallo de red/timeout.");
                     }
-                });
-                console.log("Departamentos cargados:", Object.keys(g_dm).length);
+                }
             }
+        })();
+
+        // Carga de ubicaciones (Sheets)
+        const loadLocationsTask = (async () => {
+            if (URL_SHEET_UBICACIONES.includes("/pub?")) {
+                const dataLoc = await fetchCSV(URL_SHEET_UBICACIONES, "Ubicaciones", 4000);
+                if (dataLoc && dataLoc.length > 0) {
+                    g_dm = {};
+                    dataLoc.forEach(function(parts) {
+                        const dep = (parts[0] || "").toUpperCase();
+                        const mun = parts[1] || "";
+                        if (dep && mun) {
+                            if (!g_dm[dep]) g_dm[dep] = [];
+                            g_dm[dep].push(mun);
+                        }
+                    });
+                    console.log("Departamentos cargados:", Object.keys(g_dm).length);
+                } else {
+                    console.log("Manteniendo datos de fallback estáticos de ubicaciones debido a fallo de red/timeout.");
+                }
+            }
+        })();
+
+        try {
+            // Cargar ambos en paralelo para máxima velocidad
+            await Promise.all([loadProductsTask, loadLocationsTask]);
         } catch (e) {
-            console.error("Error general cargando datos remotos:", e);
+            console.error("Error general cargando datos en paralelo:", e);
         } finally {
             if (loadingOverlay.parentNode) loadingOverlay.parentNode.removeChild(loadingOverlay);
         }
@@ -590,17 +976,20 @@
             else if(ids[i] === "categoria") { el.onfocus = g_on_cat_foc; el.oninput = g_on_cat_inp; }
             else if(ids[i] === "buscarSku") { el.onfocus = g_on_sku_focus; el.oninput = g_on_sku_input; }
         }
-        document.addEventListener('mousedown', function(e) {
-            if(e.target.className === "combo-item") return;
-            var ls = container.querySelectorAll(".combo-list");
-            for(var i=0; i<ls.length; i++) { if(ls[i] !== e.target && ls[i].previousElementSibling !== e.target) ls[i].style.display = "none"; }
-        });
-        document.addEventListener('click', function(e) {
-            var btn = e.target.closest('button[type="submit"]');
-            if(btn && btn.classList.contains('button-element')) { if(!g_vld()) { e.preventDefault(); e.stopPropagation(); } }
-        }, true);
         g_sv();
     }
+
+    // Registrar los event listeners globales de forma síncrona de inmediato para evitar que el usuario se salte validaciones durante la carga lenta
+    document.addEventListener('mousedown', function(e) {
+        if(e.target.closest(".combo-item")) return;
+        var ls = container.querySelectorAll(".combo-list");
+        for(var i=0; i<ls.length; i++) { if(ls[i] !== e.target && ls[i].previousElementSibling !== e.target) ls[i].style.display = "none"; }
+    });
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('button[type="submit"]');
+        if(btn && btn.classList.contains('button-element')) { if(!g_vld()) { e.preventDefault(); e.stopPropagation(); } }
+    }, true);
+
     setTimeout(g_init, 100);
 })();
 </script>
