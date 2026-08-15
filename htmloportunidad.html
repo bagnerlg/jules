@@ -625,7 +625,8 @@
         var idx = g_rows.length; d.setAttribute("data-idx", idx);
 
         f.appendChild(skuLabel); f.appendChild(row); f.appendChild(d); ptn.appendChild(f);
-        var c = {skuVal:skuStr, precioVal:price, cant:nInp, totalDisp:tInp, totalVal:price, fila:f, del:d}; g_rows.push(c);
+        var itemCat = (dbItem && dbItem.cat) ? dbItem.cat : "";
+        var c = {skuVal:skuStr, precioVal:price, cant:nInp, totalDisp:tInp, totalVal:price, catVal:itemCat, fila:f, del:d}; g_rows.push(c);
         nInp.oninput = function() { g_ts(); g_sv(); }; d.onclick = function(e) {
             var idx = parseInt(e.target.getAttribute("data-idx")); var c = g_rows[idx]; if(!c) return;
             g_rows.splice(idx, 1); c.fila.parentNode.removeChild(c.fila);
@@ -696,6 +697,33 @@
         // 1. Validar que por lo menos un producto esté seleccionado
         if (g_rows.length === 0) {
             alert("Debe agregar al menos un producto antes de enviar el formulario.");
+            var searchInp = $("buscarSku");
+            if (searchInp) searchInp.focus();
+            return false;
+        }
+
+        // 2. Regla de negocio: Si hay un solo producto en la orden y vale menos de Q 1,999.00
+        if (g_rows.length === 1) {
+            var singleItem = g_rows[0];
+            if (singleItem.precioVal < 1999) {
+                alert("No se puede enviar un solo producto si su precio es menor a Q 1,999.00. Debe agregar otro producto a la orden.");
+                var searchInp = $("buscarSku");
+                if (searchInp) searchInp.focus();
+                return false;
+            }
+        }
+
+        // 3. Regla de negocio: Si todos los productos agregados son de la categoría "Promocionales", no se puede enviar solo esa categoría
+        var tieneCategoriaNoPromocional = false;
+        for (var i = 0; i < g_rows.length; i++) {
+            var cat = (g_rows[i].catVal || "").toLowerCase().trim();
+            if (cat !== "promocionales" && cat !== "promocional" && cat !== "promocion") {
+                tieneCategoriaNoPromocional = true;
+                break;
+            }
+        }
+        if (!tieneCategoriaNoPromocional) {
+            alert("Los productos de la categoría 'Promocionales' no pueden enviarse solos. Debe incluir al menos un producto de otra categoría en la orden.");
             var searchInp = $("buscarSku");
             if (searchInp) searchInp.focus();
             return false;
