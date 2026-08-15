@@ -4,16 +4,17 @@
  * de rutas con mapa Leaflet / OpenStreetMap y alertas de Waze en tiempo real.
  */
 
-import { RouteEngine, GUATEMALA_REGIONS, REFERENCE_LOCATIONS } from './route-engine.js';
+import { RouteEngine, GUATEMALA_REGIONS, DEFAULT_ORIGIN_LOCATION, GUATEMALA_DEPARTMENTS_MUNICIPALITIES } from './route-engine.js';
 
 export class RoutesModule {
     constructor() {
         this.engine = new RouteEngine();
         this.selectedDate = new Date().toISOString().split('T')[0];
         this.selectedRegion = 'costa_sur';
-        this.originType = 'gps'; // 'gps' o 'manual'
-        this.manualOrigin = REFERENCE_LOCATIONS[0];
-        this.currentGpsCoords = { lat: 14.5800, lng: -90.5400, label: 'Ubicación GPS (Sede Central)' };
+        this.originType = 'default'; // 'default', 'gps', 'muni'
+        this.selectedDept = 'Guatemala';
+        this.selectedMuni = 'Guatemala (Zona 12 - Sede GCI Central)';
+        this.currentGpsCoords = { lat: 14.5800, lng: -90.5400, label: 'Ubicación GPS Live' };
         this.currentRoute = null;
         this.map = null;
     }
@@ -60,16 +61,37 @@ export class RoutesModule {
                         </div>
 
                         <div class="col-md-5">
-                            <label class="form-label extra-small fw-bold">2. Punto de Partida del Vendedor (Origen)</label>
-                            <div class="input-group input-group-sm">
-                                <button id="btn-use-gps" class="btn ${this.originType === 'gps' ? 'btn-primary' : 'btn-outline-secondary'}" style="border-radius: 6px 0 0 6px;">
-                                    <i class="fa-solid fa-location-crosshairs me-1"></i> Mi Ubicación (GPS)
-                                </button>
-                                <select id="route-manual-origin" class="form-select extra-small" ${this.originType === 'gps' ? 'disabled' : ''}>
-                                    ${REFERENCE_LOCATIONS.map((loc, idx) => `
-                                        <option value="${idx}">${loc.name} (${loc.dept})</option>
-                                    `).join('')}
-                                </select>
+                            <label class="form-label extra-small fw-bold d-flex justify-content-between align-items-center">
+                                <span>2. Punto de Partida del Vendedor (Origen)</span>
+                                <a href="${DEFAULT_ORIGIN_LOCATION.mapsUrl}" target="_blank" class="extra-small text-primary text-decoration-none" title="Ubicación base predeterminada">
+                                    <i class="fa-solid fa-location-dot me-1"></i> Sede Central GCI
+                                </a>
+                            </label>
+                            <div class="row g-2">
+                                <div class="col-6 col-sm-3">
+                                    <button id="btn-use-default-origin" class="btn btn-sm w-100 ${this.originType === 'default' ? 'btn-primary' : 'btn-outline-secondary'}" style="border-radius: 6px; font-size: 0.72rem;">
+                                        <i class="fa-solid fa-building me-1"></i> Sede GCI
+                                    </button>
+                                </div>
+                                <div class="col-6 col-sm-3">
+                                    <button id="btn-use-gps" class="btn btn-sm w-100 ${this.originType === 'gps' ? 'btn-primary' : 'btn-outline-secondary'}" style="border-radius: 6px; font-size: 0.72rem;">
+                                        <i class="fa-solid fa-location-crosshairs me-1"></i> GPS Live
+                                    </button>
+                                </div>
+                                <div class="col-6 col-sm-3">
+                                    <select id="route-dept-select" class="form-select form-select-sm extra-small" title="Seleccionar Departamento de Salida">
+                                        ${Object.keys(GUATEMALA_DEPARTMENTS_MUNICIPALITIES).map(dept => `
+                                            <option value="${dept}" ${dept === this.selectedDept ? 'selected' : ''}>${dept}</option>
+                                        `).join('')}
+                                    </select>
+                                </div>
+                                <div class="col-6 col-sm-3">
+                                    <select id="route-muni-select" class="form-select form-select-sm extra-small" title="Seleccionar Municipio de Salida">
+                                        ${(GUATEMALA_DEPARTMENTS_MUNICIPALITIES[this.selectedDept] || []).map(muni => `
+                                            <option value="${muni.name}" ${muni.name === this.selectedMuni ? 'selected' : ''}>${muni.name}</option>
+                                        `).join('')}
+                                    </select>
+                                </div>
                             </div>
                         </div>
 
@@ -264,10 +286,17 @@ export class RoutesModule {
             });
         }
 
-        // Cambio de GPS / Manual
-        const btnGps = document.getElementById('btn-use-gps');
-        const manualSelect = document.getElementById('route-manual-origin');
+        // Selección de Origen por Defecto Sede GCI
+        const btnDefault = document.getElementById('btn-use-default-origin');
+        if (btnDefault) {
+            btnDefault.addEventListener('click', () => {
+                this.originType = 'default';
+                this.refreshUI();
+            });
+        }
 
+        // Selección de Origen GPS Live
+        const btnGps = document.getElementById('btn-use-gps');
         if (btnGps) {
             btnGps.addEventListener('click', () => {
                 this.originType = 'gps';
@@ -277,24 +306,41 @@ export class RoutesModule {
                             this.currentGpsCoords = {
                                 lat: pos.coords.latitude,
                                 lng: pos.coords.longitude,
-                                label: 'Mi Ubicación Actual (GPS Live)'
+                                label: `Mi Ubicación Actual (GPS Live: ${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)})`
                             };
                             alert(`Ubicación GPS obtenida: ${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`);
                             this.refreshUI();
                         },
                         () => {
-                            alert("No se pudo obtener la ubicación GPS. Usando ubicación base predeterminada.");
+                            alert(`No se pudo obtener el GPS. Se utilizará la ubicación por defecto Sede Central GCI (${DEFAULT_ORIGIN_LOCATION.mapsUrl}).`);
+                            this.originType = 'default';
+                            this.refreshUI();
                         }
                     );
+                } else {
+                    this.refreshUI();
                 }
             });
         }
 
-        if (manualSelect) {
-            manualSelect.addEventListener('change', (e) => {
-                this.originType = 'manual';
-                const idx = parseInt(e.target.value, 10);
-                this.manualOrigin = REFERENCE_LOCATIONS[idx];
+        // Selección de Origen por Departamento y Municipio
+        const deptSelect = document.getElementById('route-dept-select');
+        const muniSelect = document.getElementById('route-muni-select');
+
+        if (deptSelect) {
+            deptSelect.addEventListener('change', (e) => {
+                this.originType = 'muni';
+                this.selectedDept = e.target.value;
+                const munis = GUATEMALA_DEPARTMENTS_MUNICIPALITIES[this.selectedDept] || [];
+                this.selectedMuni = munis.length > 0 ? munis[0].name : '';
+                this.refreshUI();
+            });
+        }
+
+        if (muniSelect) {
+            muniSelect.addEventListener('change', (e) => {
+                this.originType = 'muni';
+                this.selectedMuni = e.target.value;
             });
         }
 
@@ -345,9 +391,30 @@ export class RoutesModule {
     }
 
     executeRoutePlanning() {
-        const originCoords = this.originType === 'gps'
-            ? { lat: this.currentGpsCoords.lat, lng: this.currentGpsCoords.lng, label: this.currentGpsCoords.label }
-            : { lat: this.manualOrigin.lat, lng: this.manualOrigin.lng, label: this.manualOrigin.name };
+        let originCoords;
+
+        if (this.originType === 'default') {
+            originCoords = {
+                lat: DEFAULT_ORIGIN_LOCATION.lat,
+                lng: DEFAULT_ORIGIN_LOCATION.lng,
+                label: `${DEFAULT_ORIGIN_LOCATION.name} (${DEFAULT_ORIGIN_LOCATION.mapsUrl})`,
+                mapsUrl: DEFAULT_ORIGIN_LOCATION.mapsUrl
+            };
+        } else if (this.originType === 'gps') {
+            originCoords = {
+                lat: this.currentGpsCoords.lat,
+                lng: this.currentGpsCoords.lng,
+                label: this.currentGpsCoords.label
+            };
+        } else {
+            const munis = GUATEMALA_DEPARTMENTS_MUNICIPALITIES[this.selectedDept] || [];
+            const foundMuni = munis.find(m => m.name === this.selectedMuni) || munis[0] || DEFAULT_ORIGIN_LOCATION;
+            originCoords = {
+                lat: foundMuni.lat,
+                lng: foundMuni.lng,
+                label: `Municipio de Salida: ${foundMuni.name}, ${this.selectedDept}`
+            };
+        }
 
         this.currentRoute = this.engine.planRoute({
             regionKey: this.selectedRegion,

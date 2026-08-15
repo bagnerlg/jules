@@ -13,9 +13,136 @@ export const GUATEMALA_REGIONS = {
     'verapaces_peten': { name: 'Ruta Verapaces - Petén (CA-14 & CA-13)', departments: ['Baja Verapaz', 'Alta Verapaz', 'Petén'], lat: 15.4667, lng: -90.3667 }
 };
 
+// Ubicación por Defecto Predeterminada (Sede GCI)
+export const DEFAULT_ORIGIN_LOCATION = {
+    name: 'Sede Central GCI Guatemala',
+    mapsUrl: 'https://maps.app.goo.gl/mjkeypcDf567jVuD8',
+    lat: 14.5800,
+    lng: -90.5400,
+    dept: 'Guatemala',
+    muni: 'Guatemala'
+};
+
+// Catálogo de Departamentos y Municipios de Guatemala con coordenadas para cálculo de origen
+export const GUATEMALA_DEPARTMENTS_MUNICIPALITIES = {
+    'Guatemala': [
+        { name: 'Guatemala (Zona 12 - Sede GCI Central)', lat: 14.5800, lng: -90.5400, mapsUrl: 'https://maps.app.goo.gl/mjkeypcDf567jVuD8' },
+        { name: 'Mixco', lat: 14.6300, lng: -90.5700 },
+        { name: 'Villa Nueva', lat: 14.5269, lng: -90.5875 },
+        { name: 'Santa Catarina Pinula', lat: 14.5667, lng: -90.4833 },
+        { name: 'San Miguel Petapa', lat: 14.5000, lng: -90.5500 },
+        { name: 'Chinautla', lat: 14.7000, lng: -90.5000 },
+        { name: 'Amatitlán', lat: 14.4833, lng: -90.6167 },
+        { name: 'San José Pinula', lat: 14.5458, lng: -90.4131 },
+        { name: 'Fraijanes', lat: 14.4639, lng: -90.4403 }
+    ],
+    'Sacatepéquez': [
+        { name: 'Antigua Guatemala', lat: 14.5586, lng: -90.7295 },
+        { name: 'Ciudad Vieja', lat: 14.5242, lng: -90.7625 },
+        { name: 'Jocotenango', lat: 14.5739, lng: -90.7389 },
+        { name: 'Sumpango', lat: 14.6467, lng: -90.7350 }
+    ],
+    'Chimaltenango': [
+        { name: 'Chimaltenango', lat: 14.6611, lng: -90.8194 },
+        { name: 'Tecpán Guatemala', lat: 14.7619, lng: -90.9942 },
+        { name: 'Patzún', lat: 14.6819, lng: -91.0142 }
+    ],
+    'Escuintla': [
+        { name: 'Escuintla', lat: 14.3000, lng: -90.7833 },
+        { name: 'Santa Lucía Cotzumalguapa', lat: 14.3333, lng: -91.0167 },
+        { name: 'Tiquisate', lat: 14.2833, lng: -91.3667 },
+        { name: 'Puerto San José', lat: 13.9269, lng: -90.8208 }
+    ],
+    'Suchitepéquez': [
+        { name: 'Mazatenango', lat: 14.5342, lng: -91.5033 },
+        { name: 'Cuyotenango', lat: 14.5381, lng: -91.5722 },
+        { name: 'San Antonio Suchitepéquez', lat: 14.5333, lng: -91.4167 }
+    ],
+    'Retalhuleu': [
+        { name: 'Retalhuleu', lat: 14.5361, lng: -91.6778 },
+        { name: 'San Sebastián', lat: 14.5625, lng: -91.6508 },
+        { name: 'Champerico', lat: 14.2953, lng: -91.9133 }
+    ],
+    'Quetzaltenango': [
+        { name: 'Quetzaltenango (Xela)', lat: 14.8347, lng: -91.5181 },
+        { name: 'Coatepeque', lat: 14.7028, lng: -91.8617 },
+        { name: 'Salcajá', lat: 14.8833, lng: -91.4500 },
+        { name: 'Esperanza', lat: 14.8694, lng: -91.5622 }
+    ],
+    'San Marcos': [
+        { name: 'San Marcos', lat: 14.9639, lng: -91.7944 },
+        { name: 'San Pedro Sacatepéquez', lat: 14.9625, lng: -91.7778 },
+        { name: 'Malacatán', lat: 14.9083, lng: -92.0583 }
+    ],
+    'Huehuetenango': [
+        { name: 'Huehuetenango', lat: 15.3197, lng: -91.4708 },
+        { name: 'Chiantla', lat: 15.3550, lng: -91.4589 },
+        { name: 'Santa Cruz Barillas', lat: 15.8039, lng: -91.3158 }
+    ],
+    'Sololá': [
+        { name: 'Sololá', lat: 14.7725, lng: -91.1833 },
+        { name: 'Panajachel', lat: 14.7408, lng: -91.1569 },
+        { name: 'San Lucas Tolimán', lat: 14.6300, lng: -91.1350 }
+    ],
+    'Totonicapán': [
+        { name: 'Totonicapán', lat: 14.9111, lng: -91.3611 },
+        { name: 'San Cristóbal Totonicapán', lat: 14.9167, lng: -91.4333 }
+    ],
+    'Quiché': [
+        { name: 'Santa Cruz del Quiché', lat: 15.0306, lng: -91.1481 },
+        { name: 'Chichicastenango', lat: 14.9439, lng: -91.1111 },
+        { name: 'Santa María Nebaj', lat: 15.2972, lng: -91.1472 }
+    ],
+    'Alta Verapaz': [
+        { name: 'Cobán', lat: 15.4667, lng: -90.3667 },
+        { name: 'San Pedro Carchá', lat: 15.4764, lng: -90.3111 },
+        { name: 'Chisec', lat: 15.8167, lng: -90.3000 }
+    ],
+    'Baja Verapaz': [
+        { name: 'Salamá', lat: 15.1028, lng: -90.3181 },
+        { name: 'Rabinal', lat: 15.1014, lng: -90.4903 }
+    ],
+    'Petén': [
+        { name: 'Flores / Santa Elena', lat: 16.9297, lng: -89.8925 },
+        { name: 'San Benito', lat: 16.9167, lng: -89.9000 },
+        { name: 'Poptún', lat: 16.3319, lng: -89.4181 }
+    ],
+    'Izabal': [
+        { name: 'Puerto Barrios', lat: 15.7278, lng: -88.5944 },
+        { name: 'Morales', lat: 15.4833, lng: -88.8167 },
+        { name: 'Los Amates', lat: 15.2583, lng: -89.0972 }
+    ],
+    'Zacapa': [
+        { name: 'Zacapa', lat: 14.9722, lng: -89.5306 },
+        { name: 'Teculután', lat: 14.9819, lng: -89.7189 },
+        { name: 'Estanzuela', lat: 14.9972, lng: -89.5764 }
+    ],
+    'Chiquimula': [
+        { name: 'Chiquimula', lat: 14.7833, lng: -89.5500 },
+        { name: 'Esquipulas', lat: 14.5658, lng: -89.3519 },
+        { name: 'Jocotán', lat: 14.8219, lng: -89.3889 }
+    ],
+    'Jalapa': [
+        { name: 'Jalapa', lat: 14.6347, lng: -89.9889 },
+        { name: 'San Pedro Pinula', lat: 14.6667, lng: -89.8500 }
+    ],
+    'Jutiapa': [
+        { name: 'Jutiapa', lat: 14.2819, lng: -89.8958 },
+        { name: 'Asunción Mita', lat: 14.3308, lng: -89.7108 }
+    ],
+    'El Progreso': [
+        { name: 'Guastatoya', lat: 14.8539, lng: -90.0689 },
+        { name: 'Sanarate', lat: 14.7819, lng: -90.1989 }
+    ],
+    'Santa Rosa': [
+        { name: 'Cuilapa', lat: 14.2764, lng: -90.2989 },
+        { name: 'Barberena', lat: 14.3083, lng: -90.3619 }
+    ]
+};
+
 // Puntos de Referencia con Coordenadas para Ubicación de Inicio
 export const REFERENCE_LOCATIONS = [
-    { name: 'Sede Central Guatemala (Zona 12)', lat: 14.5800, lng: -90.5400, dept: 'Guatemala' },
+    { name: 'Sede Central GCI Guatemala (Zona 12)', lat: 14.5800, lng: -90.5400, dept: 'Guatemala', mapsUrl: 'https://maps.app.goo.gl/mjkeypcDf567jVuD8' },
     { name: 'Mixco - Calzada Roosevelt', lat: 14.6300, lng: -90.5700, dept: 'Guatemala' },
     { name: 'Villa Nueva - Central', lat: 14.5269, lng: -90.5875, dept: 'Guatemala' },
     { name: 'Antigua Guatemala - Centro', lat: 14.5586, lng: -90.7295, dept: 'Sacatepéquez' },
