@@ -517,6 +517,41 @@ export class RouteEngine {
     }
 
     /**
+     * Consulta tiempo estimado de viaje, distancia y alertas de ruta desde OpenWebNinja Waze API (/driving-directions)
+     * Utiliza source_coordinates (origen) y destination_coordinates (destino)
+     */
+    async fetchWazeDrivingDirections(sourceCoords, destCoords) {
+        const configData = JSON.parse(localStorage.getItem('gci_api_config') || '{}');
+        const apiKey = configData.wazeApiKey;
+
+        if (!apiKey) {
+            console.warn("Waze API Key no configurada.");
+            return { status: 'NO_KEY', routes: [] };
+        }
+
+        try {
+            const sourceStr = `${sourceCoords.lat},${sourceCoords.lng}`;
+            const destStr = `${destCoords.lat},${destCoords.lng}`;
+            const url = `https://api.openwebninja.com/waze/driving-directions?source_coordinates=${encodeURIComponent(sourceStr)}&destination_coordinates=${encodeURIComponent(destStr)}`;
+
+            const response = await fetch(url, {
+                headers: { 'x-api-key': apiKey }
+            });
+
+            if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
+            const json = await response.json();
+            return {
+                status: 'OK',
+                routes: json.data || [],
+                requestParams: { source: sourceStr, destination: destStr }
+            };
+        } catch (err) {
+            console.error("Error al consultar Waze Driving Directions API:", err);
+            return { status: 'ERROR', message: err.message, routes: [] };
+        }
+    }
+
+    /**
      * Consulta información de tráfico / alertas desde la API de Waze (OpenWebNinja)
      */
     async fetchWazeTrafficAlerts(bottomLeft, topRight) {

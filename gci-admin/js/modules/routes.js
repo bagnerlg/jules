@@ -903,6 +903,9 @@ export class RoutesModule {
                             <div class="mt-2 text-muted">
                                 <i class="fa-solid fa-location-dot text-danger me-1"></i> ${wp.direccion}, ${wp.municipio}, ${wp.departamento}
                                 <span class="ms-2 font-mono fw-bold text-dark">(${wp.distanceKm} KM desde origen)</span>
+                                <div class="extra-small text-info mt-1 font-mono">
+                                    <i class="fa-solid fa-route me-1"></i> Origen Waze: <code>${activeRoute.origin.lat.toFixed(4)},${activeRoute.origin.lng.toFixed(4)}</code> &rarr; Destino Waze: <code>${wp.lat.toFixed(4)},${wp.lng.toFixed(4)}</code>
+                                </div>
                             </div>
 
                             ${isCompleted && compData ? `
