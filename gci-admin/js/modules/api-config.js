@@ -177,6 +177,30 @@ export function renderApiConfigModule(container) {
                         <i class="fa-solid fa-vial"></i> Probar Token Graph API
                     </button>
                 </div>
+
+                <!-- WAZE TRAFFIC API CONFIG -->
+                <div class="gci-card" style="padding-top: 36px; grid-column: span 2;">
+                    <div class="gci-card-header-badge" style="background: linear-gradient(180deg, #38bdf8 0%, #0284c7 100%);">
+                        <i class="fa-solid fa-location-arrow"></i>
+                    </div>
+
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; border-bottom: 1px solid #cbd5e1; padding-bottom: 10px;">
+                        <h3 style="font-size: 1.1rem; font-weight: 800; color: #0f172a;">Waze Live Traffic & Routing (OpenWebNinja API)</h3>
+                        <span class="badge-tag">X-API-Key</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="wazeApiKey">Clave API de Waze / OpenWebNinja (X-API-Key)</label>
+                        <div class="input-capsule-wrapper">
+                            <i class="fa-solid fa-key input-icon-left"></i>
+                            <input type="password" id="wazeApiKey" class="gci-input-capsule" placeholder="QUxMIFlPVVIgQkFTRSBBUk..." value="${savedConfig.wazeApiKey || ''}">
+                        </div>
+                    </div>
+
+                    <button type="button" class="btn-gci btn-secondary test-btn" data-target="waze" style="width: 100%;">
+                        <i class="fa-solid fa-vial"></i> Validar Clave Waze API
+                    </button>
+                </div>
             </div>
         </form>
     `;
@@ -206,6 +230,7 @@ function saveConfiguration() {
         onedriveTenantId: document.getElementById('onedriveTenantId').value.trim(),
         onedriveClientId: document.getElementById('onedriveClientId').value.trim(),
         onedriveClientSecret: document.getElementById('onedriveClientSecret').value.trim(),
+        wazeApiKey: document.getElementById('wazeApiKey').value.trim(),
         lastUpdated: new Date().toISOString()
     };
 

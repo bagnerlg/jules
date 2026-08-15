@@ -6,9 +6,11 @@ import { ClientsModule } from './modules/clients.js';
 import { renderDashboardModule } from './modules/dashboard.js';
 import { renderApiConfigModule } from './modules/api-config.js';
 import { renderFileManagerModule } from './modules/file-manager.js';
+import { RoutesModule } from './modules/routes.js';
 
-// Instancia única del módulo de Clientes
+// Instancias únicas de los módulos orientados a objetos
 const clientsInstance = new ClientsModule();
+const routesInstance = new RoutesModule();
 
 // Módulo App Global
 export const GCIApp = {
@@ -19,6 +21,7 @@ export const GCIApp = {
         'clientes': { title: 'Clientes', render: (container) => { container.innerHTML = clientsInstance.render(); clientsInstance.initEvents(); } },
         'dashboard': { title: 'Dashboard', render: renderDashboardModule },
         'file-manager': { title: 'Archivos Locales', render: renderFileManagerModule },
+        'agenda-rutas': { title: 'Agenda de Rutas', render: (container) => { container.innerHTML = routesInstance.render(); routesInstance.initEvents(); } },
         'api-config': { title: 'Conexiones & APIs', render: renderApiConfigModule },
         'supabase-view': { title: 'Supabase DB', render: () => renderPlaceholderModule('Supabase DB', 'fa-database', '059669') },
         'sap-view': { title: 'SAP Business One', render: () => renderPlaceholderModule('SAP Business One', 'fa-building-columns', '1e40af') },
@@ -143,6 +146,7 @@ export const GCIApp = {
         this.setPillState('pill-sap', !!configData.sapServiceLayerUrl && !!configData.sapCompanyDb);
         this.setPillState('pill-sheets', !!configData.googleSheetsUrl || !!configData.appscriptUrl);
         this.setPillState('pill-onedrive', !!configData.onedriveClientId && !!configData.onedriveTenantId);
+        this.setPillState('pill-waze', !!configData.wazeApiKey);
     },
 
     setPillState(pillId, isConfigured) {

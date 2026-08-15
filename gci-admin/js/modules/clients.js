@@ -1220,6 +1220,7 @@ export class ClientsModule {
         const btnAddContact = document.getElementById('btn-add-contact');
         if (btnAddContact) {
             btnAddContact.addEventListener('click', () => {
+                this.collectFormData();
                 const client = this.getSelectedClient();
                 if (!client) return;
                 client.contactos = client.contactos || [];
@@ -1239,6 +1240,7 @@ export class ClientsModule {
         const btnAddAddress = document.getElementById('btn-add-address');
         if (btnAddAddress) {
             btnAddAddress.addEventListener('click', () => {
+                this.collectFormData();
                 const client = this.getSelectedClient();
                 if (!client) return;
                 client.direcciones = client.direcciones || [];
