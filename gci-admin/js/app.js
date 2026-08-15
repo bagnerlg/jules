@@ -52,6 +52,7 @@ export const GCIApp = {
                 if (targetModule) {
                     tabItems.forEach(t => t.classList.remove('active'));
                     item.classList.add('active');
+                    this.navigateTo(targetModule);
                 }
             });
         });
@@ -131,7 +132,7 @@ export const GCIApp = {
                     </div>
                 `;
             }
-        }, 150);
+        }, 50);
     },
 
     // Actualizar Pills de estado general en el Header superior
@@ -182,7 +183,9 @@ function renderPlaceholderModule(title, icon, colorHex) {
     `;
 }
 
-// Iniciar aplicación al cargar el DOM
-document.addEventListener('DOMContentLoaded', () => {
+// Iniciar aplicación al cargar el DOM o si ya está listo
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => GCIApp.init());
+} else {
     GCIApp.init();
-});
+}

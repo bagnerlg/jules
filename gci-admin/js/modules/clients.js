@@ -1,12 +1,24 @@
 /**
  * Módulo de Clientes (Socios de Negocios - SAP Business One / Supabase)
  * Gestiona la información completa de clientes, contactos, direcciones,
- * condiciones de pago, datos bancarios y finanzas.
+ * condiciones de pago, datos bancarios, finanzas y configuración de campos personalizados.
  */
+
+import { FieldConfigEngine } from './field-config.js';
 
 const STORAGE_KEY = 'gci_clients';
 
-// Datos de ejemplo iniciales si no existen registros
+// Listas de autocompletado y opciones para campos conectados a otros apartados
+const CATALOGS = {
+    'listasPrecios': ['Lista de precios 01', 'Lista Mayorista', 'Lista Minorista / Cliente Final', 'Lista Distribuidores', 'Lista Empleados GCI'],
+    'deudoresCuenta': ['11201001-00-00 (Clientes locales)', '11201002-00-00 (Clientes del exterior)', '11201003-00-00 (Cuentas por cobrar relacionadas)', '11201004-00-00 (Anticipos de Clientes)'],
+    'grupoCanal': ['CLAN 1', 'MAYOREO', 'RETAIL', 'DISTRIBUIDOR', 'PROYECTOS ESPECIALES'],
+    'municipios': ['Guatemala', 'Villa Nueva', 'Mixco', 'Santa Catarina Pinula', 'San Miguel Petapa', 'Quetzaltenango', 'Antigua Guatemala', 'Escuintla', 'Cobán'],
+    'departamentos': ['Guatemala', 'Sacatepéquez', 'Quetzaltenango', 'Escuintla', 'Alta Verapaz', 'Chimaltenango', 'Izabal', 'San Marcos'],
+    'vendedores': ['PAOLA SOLIS', 'CARLOS LÓPEZ', 'MARÍA PÉREZ', 'JORGE MARTÍNEZ', 'ANA GÓMEZ'],
+    'condicionesPago': ['EFECTIVO', 'CREDITO 15 DIAS', 'CREDITO 30 DIAS', 'CREDITO 60 DIAS', 'CREDITO 90 DIAS']
+};
+
 const INITIAL_CLIENTS = [
     {
         id: 'CLI-72436190',
@@ -87,21 +99,6 @@ const INITIAL_CLIENTS = [
                 estado: 'Guatemala',
                 pais: 'Guatemala',
                 esEstandar: true
-            },
-            {
-                id: 'DIR-02',
-                tipo: 'Destino',
-                nombreDireccion: 'Villa Nueva - Entrega',
-                municipio: 'Villa Nueva',
-                direccion2: 'Bodega 3',
-                direccion3: '',
-                direccionFel: '2da. Calle 5-69 zona 6, Villa Nueva',
-                colonia: 'Zona 6',
-                codigoPostal: '01064',
-                condado: 'Guatemala',
-                estado: 'Guatemala',
-                pais: 'Guatemala',
-                esEstandar: false
             }
         ],
         condicionesPago: {
@@ -147,7 +144,7 @@ const INITIAL_CLIENTS = [
         },
         finanzas: {
             consolidador: 'Consolidación de pagos',
-            deudoresCuenta: '11201001-00-00',
+            deudoresCuenta: '11201001-00-00 (Clientes locales)',
             deudoresNombre: 'Clientes locales',
             cuentaCompensacionAntic: '',
             cuentaProvisionalAntic: '',
@@ -174,11 +171,13 @@ const INITIAL_CLIENTS = [
 
 export class ClientsModule {
     constructor() {
+        this.fieldConfigEngine = new FieldConfigEngine();
         this.clients = this.loadClients();
         this.selectedClientId = this.clients.length > 0 ? this.clients[0].id : null;
         this.activeTab = 'general';
         this.activeContactIndex = 0;
         this.activeAddressIndex = 0;
+        this.fieldsSearchFilter = '';
     }
 
     loadClients() {
@@ -226,17 +225,17 @@ export class ClientsModule {
                         </div>
 
                         <div class="d-flex align-items-center gap-2">
+                            <button id="btn-open-fields-config" class="btn btn-capsule btn-outline-secondary" style="border-radius: 6px; padding: 8px 14px;">
+                                <i class="fa-solid fa-sliders me-1"></i> Configurar Campos
+                            </button>
                             <button id="btn-new-client" class="btn btn-capsule btn-primary-gradient">
-                                <svg width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16"><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/></svg>
-                                Nuevo Cliente
+                                <i class="fa-solid fa-plus me-1"></i> Nuevo Cliente
                             </button>
                             <button id="btn-save-client" class="btn btn-capsule btn-success-gradient">
-                                <svg width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16"><path d="M2 1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H2zm12 1v12H2V2h12z"/><path d="M10.5 4a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 1 0v-3a.5.5 0 0 0-.5-.5z"/><path d="M5.5 4a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 1 0v-3a.5.5 0 0 0-.5-.5z"/></svg>
-                                Guardar
+                                <i class="fa-solid fa-floppy-disk me-1"></i> Guardar
                             </button>
                             <button id="btn-sync-supabase" class="btn btn-capsule btn-accent-gradient" title="Sincronizar con Supabase API">
-                                <svg width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16"><path d="M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a.25.25 0 0 1-.384 0l-1.966-2.36a.25.25 0 0 1 .192-.41zm-11 2h3.932a.25.25 0 0 0 .192-.41L2.692 6.23a.25.25 0 0 0-.384 0L.342 8.59A.25.25 0 0 0 .534 9z"/><path fill-rule="evenodd" d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A6.002 6.002 0 0 1 13.917 7H12.9A5.002 5.002 0 0 0 8 3zM3.1 9a5.002 5.002 0 0 0 8.9 4c1.552 0 2.94-.707 3.857-1.818a.5.5 0 1 1 .771.636A6.002 6.002 0 0 1 2.083 9H3.1z"/></svg>
-                                Sync Supabase
+                                <i class="fa-solid fa-rotate me-1"></i> Sync Supabase
                             </button>
                             <button id="btn-delete-client" class="btn btn-capsule btn-outline-danger">
                                 Eliminar
@@ -289,61 +288,109 @@ export class ClientsModule {
         `).join('');
     }
 
+    renderFieldLabel(fieldId, fallbackLabel) {
+        const field = this.fieldConfigEngine.getField(fieldId);
+        const labelText = field.label || fallbackLabel;
+        const connectionBadge = field.hasConnection ? `<span class="badge bg-info text-dark ms-1 extra-small" title="Conectado a ${field.connectionSource || 'lista externa'}"><i class="fa-solid fa-link"></i></span>` : '';
+        return `<label class="form-label extra-small fw-bold d-flex align-items-center">${labelText} ${connectionBadge}</label>`;
+    }
+
+    isFieldVisible(fieldId) {
+        return this.fieldConfigEngine.getField(fieldId).visible;
+    }
+
+    renderSmartInput(fieldId, value, options = [], datalistId = '') {
+        const field = this.fieldConfigEngine.getField(fieldId);
+        if (!field.visible) return '';
+
+        const searchAttr = field.searchEnabled && datalistId ? `list="${datalistId}" autocomplete="off"` : '';
+
+        if (field.hasConnection && options.length > 0) {
+            return `
+                <div class="smart-input-container">
+                    <input type="text" id="${fieldId}" class="form-control form-control-capsule" value="${value || ''}" ${searchAttr} placeholder="Buscar o seleccionar ${field.label}...">
+                    ${datalistId ? `
+                        <datalist id="${datalistId}">
+                            ${options.map(opt => `<option value="${opt}">`).join('')}
+                        </datalist>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        return `<input type="text" id="${fieldId}" class="form-control form-control-capsule" value="${value || ''}">`;
+    }
+
     renderClientForm(client) {
         return `
             <div class="card p-4 master-client-card">
                 <!-- Cabecera de Datos Maestros (SAP Business One) -->
                 <div class="sap-header-grid mb-4 pb-3 border-bottom">
                     <div class="row g-2">
-                        <div class="col-md-2">
-                            <label class="form-label extra-small fw-bold">Código</label>
-                            <div class="input-group input-group-sm">
-                                <select id="hdr-tipoCodigo" class="form-select form-control-capsule extra-small" style="max-width: 80px;">
-                                    <option value="Manual" ${client.tipoCodigo === 'Manual' ? 'selected' : ''}>Manual</option>
-                                    <option value="Auto" ${client.tipoCodigo === 'Auto' ? 'selected' : ''}>Auto</option>
-                                </select>
-                                <input type="text" id="hdr-codigo" class="form-control form-control-capsule font-mono" value="${client.codigo || ''}">
+                        ${this.isFieldVisible('hdr-codigo') ? `
+                            <div class="col-md-2">
+                                ${this.renderFieldLabel('hdr-codigo', 'Código')}
+                                <div class="input-group input-group-sm">
+                                    <select id="hdr-tipoCodigo" class="form-select form-control-capsule extra-small" style="max-width: 80px;">
+                                        <option value="Manual" ${client.tipoCodigo === 'Manual' ? 'selected' : ''}>Manual</option>
+                                        <option value="Auto" ${client.tipoCodigo === 'Auto' ? 'selected' : ''}>Auto</option>
+                                    </select>
+                                    <input type="text" id="hdr-codigo" class="form-control form-control-capsule font-mono" value="${client.codigo || ''}">
+                                </div>
                             </div>
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label extra-small fw-bold">Tipo SN</label>
-                            <select id="hdr-tipoSN" class="form-select form-select-sm form-control-capsule">
-                                <option value="Cliente" ${client.tipoSN === 'Cliente' ? 'selected' : ''}>Cliente</option>
-                                <option value="Proveedor" ${client.tipoSN === 'Proveedor' ? 'selected' : ''}>Proveedor</option>
-                                <option value="Lead" ${client.tipoSN === 'Lead' ? 'selected' : ''}>Lead</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label extra-small fw-bold">Nombre</label>
-                            <input type="text" id="hdr-nombre" class="form-control form-control-capsule fw-bold text-primary" value="${client.nombre || ''}">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label extra-small fw-bold">Nombre extranjero</label>
-                            <input type="text" id="hdr-nombreExtranjero" class="form-control form-control-capsule" value="${client.nombreExtranjero || ''}">
-                        </div>
+                        ` : ''}
 
-                        <div class="col-md-3">
-                            <label class="form-label extra-small fw-bold">Grupo - Canales</label>
-                            <select id="hdr-grupoCanal" class="form-select form-select-sm form-control-capsule">
-                                <option value="CLAN 1" ${client.grupoCanal === 'CLAN 1' ? 'selected' : ''}>CLAN 1</option>
-                                <option value="MAYOREO" ${client.grupoCanal === 'MAYOREO' ? 'selected' : ''}>MAYOREO</option>
-                                <option value="RETAIL" ${client.grupoCanal === 'RETAIL' ? 'selected' : ''}>RETAIL</option>
-                                <option value="DISTRIBUIDOR" ${client.grupoCanal === 'DISTRIBUIDOR' ? 'selected' : ''}>DISTRIBUIDOR</option>
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label extra-small fw-bold">Moneda</label>
-                            <select id="hdr-moneda" class="form-select form-select-sm form-control-capsule">
-                                <option value="Quetzales" ${client.moneda === 'Quetzales' ? 'selected' : ''}>Quetzales</option>
-                                <option value="USD" ${client.moneda === 'USD' ? 'selected' : ''}>USD ($)</option>
-                                <option value="Moneda local" ${client.moneda === 'Moneda local' ? 'selected' : ''}>Moneda local</option>
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label extra-small fw-bold">RFC / ID Fiscal</label>
-                            <input type="text" id="hdr-rfc" class="form-control form-control-capsule font-mono" value="${client.rfc || '000000000000'}">
-                        </div>
-                        <div class="col-md-4 d-flex align-items-center justify-content-end gap-3 pt-3">
+                        ${this.isFieldVisible('hdr-tipoSN') ? `
+                            <div class="col-md-2">
+                                ${this.renderFieldLabel('hdr-tipoSN', 'Tipo SN')}
+                                <select id="hdr-tipoSN" class="form-select form-select-sm form-control-capsule">
+                                    <option value="Cliente" ${client.tipoSN === 'Cliente' ? 'selected' : ''}>Cliente</option>
+                                    <option value="Proveedor" ${client.tipoSN === 'Proveedor' ? 'selected' : ''}>Proveedor</option>
+                                    <option value="Lead" ${client.tipoSN === 'Lead' ? 'selected' : ''}>Lead</option>
+                                </select>
+                            </div>
+                        ` : ''}
+
+                        ${this.isFieldVisible('hdr-nombre') ? `
+                            <div class="col-md-4">
+                                ${this.renderFieldLabel('hdr-nombre', 'Nombre')}
+                                <input type="text" id="hdr-nombre" class="form-control form-control-capsule fw-bold text-primary" value="${client.nombre || ''}">
+                            </div>
+                        ` : ''}
+
+                        ${this.isFieldVisible('hdr-nombreExtranjero') ? `
+                            <div class="col-md-4">
+                                ${this.renderFieldLabel('hdr-nombreExtranjero', 'Nombre extranjero')}
+                                <input type="text" id="hdr-nombreExtranjero" class="form-control form-control-capsule" value="${client.nombreExtranjero || ''}">
+                            </div>
+                        ` : ''}
+
+                        ${this.isFieldVisible('hdr-grupoCanal') ? `
+                            <div class="col-md-3">
+                                ${this.renderFieldLabel('hdr-grupoCanal', 'Grupo - Canales')}
+                                ${this.renderSmartInput('hdr-grupoCanal', client.grupoCanal, CATALOGS.grupoCanal, 'dl-grupoCanal')}
+                            </div>
+                        ` : ''}
+
+                        ${this.isFieldVisible('hdr-moneda') ? `
+                            <div class="col-md-2">
+                                ${this.renderFieldLabel('hdr-moneda', 'Moneda')}
+                                <select id="hdr-moneda" class="form-select form-select-sm form-control-capsule">
+                                    <option value="Quetzales" ${client.moneda === 'Quetzales' ? 'selected' : ''}>Quetzales</option>
+                                    <option value="USD" ${client.moneda === 'USD' ? 'selected' : ''}>USD ($)</option>
+                                    <option value="Moneda local" ${client.moneda === 'Moneda local' ? 'selected' : ''}>Moneda local</option>
+                                </select>
+                            </div>
+                        ` : ''}
+
+                        ${this.isFieldVisible('hdr-rfc') ? `
+                            <div class="col-md-3">
+                                ${this.renderFieldLabel('hdr-rfc', 'RFC / ID Fiscal')}
+                                <input type="text" id="hdr-rfc" class="form-control form-control-capsule font-mono" value="${client.rfc || '000000000000'}">
+                            </div>
+                        ` : ''}
+
+                        <div class="col-md-4 d-flex align-items-center justify-content-end gap-3 pt-3 ms-auto">
                             <div class="text-end">
                                 <span class="extra-small text-muted d-block">Saldo de cuenta</span>
                                 <span class="fw-bold text-dark font-mono">Q${client.saldoCuenta || '0.00'}</span>
@@ -412,42 +459,58 @@ export class ClientsModule {
                     <div class="p-3 bg-light-gradient rounded-3 h-100">
                         <h6 class="fw-bold text-primary mb-3">Información de Contacto & Ubicación</h6>
                         <div class="row g-2">
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Teléfono 1</label>
-                                <input type="text" id="gen-telefono1" class="form-control form-control-capsule" value="${gen.telefono1 || ''}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Teléfono 2</label>
-                                <input type="text" id="gen-telefono2" class="form-control form-control-capsule" value="${gen.telefono2 || ''}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Teléfono móvil</label>
-                                <input type="text" id="gen-telefonoMovil" class="form-control form-control-capsule" value="${gen.telefonoMovil || ''}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Fax</label>
-                                <input type="text" id="gen-fax" class="form-control form-control-capsule" value="${gen.fax || ''}">
-                            </div>
-                            <div class="col-md-12">
-                                <label class="form-label extra-small fw-bold">Correo electrónico</label>
-                                <input type="email" id="gen-email" class="form-control form-control-capsule" value="${gen.email || ''}">
-                            </div>
-                            <div class="col-md-12">
-                                <label class="form-label extra-small fw-bold">Sitio Web</label>
-                                <input type="text" id="gen-sitioWeb" class="form-control form-control-capsule" value="${gen.sitioWeb || ''}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">CENTRO DISTRIBUCIÓN</label>
-                                <select id="gen-centroDistribucion" class="form-select form-control-capsule">
-                                    <option value="CENTRAL" ${gen.centroDistribucion === 'CENTRAL' ? 'selected' : ''}>CENTRAL</option>
-                                    <option value="NORTE" ${gen.centroDistribucion === 'NORTE' ? 'selected' : ''}>NORTE</option>
-                                    <option value="SUR" ${gen.centroDistribucion === 'SUR' ? 'selected' : ''}>SUR</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Clave de acceso</label>
-                                <input type="text" id="gen-claveAcceso" class="form-control form-control-capsule bg-warning-soft" value="${gen.claveAcceso || ''}">
-                            </div>
+                            ${this.isFieldVisible('gen-telefono1') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('gen-telefono1', 'Teléfono 1')}
+                                    <input type="text" id="gen-telefono1" class="form-control form-control-capsule" value="${gen.telefono1 || ''}">
+                                </div>
+                            ` : ''}
+                            ${this.isFieldVisible('gen-telefono2') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('gen-telefono2', 'Teléfono 2')}
+                                    <input type="text" id="gen-telefono2" class="form-control form-control-capsule" value="${gen.telefono2 || ''}">
+                                </div>
+                            ` : ''}
+                            ${this.isFieldVisible('gen-telefonoMovil') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('gen-telefonoMovil', 'Teléfono móvil')}
+                                    <input type="text" id="gen-telefonoMovil" class="form-control form-control-capsule" value="${gen.telefonoMovil || ''}">
+                                </div>
+                            ` : ''}
+                            ${this.isFieldVisible('gen-fax') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('gen-fax', 'Fax')}
+                                    <input type="text" id="gen-fax" class="form-control form-control-capsule" value="${gen.fax || ''}">
+                                </div>
+                            ` : ''}
+                            ${this.isFieldVisible('gen-email') ? `
+                                <div class="col-md-12">
+                                    ${this.renderFieldLabel('gen-email', 'Correo electrónico')}
+                                    <input type="email" id="gen-email" class="form-control form-control-capsule" value="${gen.email || ''}">
+                                </div>
+                            ` : ''}
+                            ${this.isFieldVisible('gen-sitioWeb') ? `
+                                <div class="col-md-12">
+                                    ${this.renderFieldLabel('gen-sitioWeb', 'Sitio Web')}
+                                    <input type="text" id="gen-sitioWeb" class="form-control form-control-capsule" value="${gen.sitioWeb || ''}">
+                                </div>
+                            ` : ''}
+                            ${this.isFieldVisible('gen-centroDistribucion') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('gen-centroDistribucion', 'Centro Distribución')}
+                                    <select id="gen-centroDistribucion" class="form-select form-control-capsule">
+                                        <option value="CENTRAL" ${gen.centroDistribucion === 'CENTRAL' ? 'selected' : ''}>CENTRAL</option>
+                                        <option value="NORTE" ${gen.centroDistribucion === 'NORTE' ? 'selected' : ''}>NORTE</option>
+                                        <option value="SUR" ${gen.centroDistribucion === 'SUR' ? 'selected' : ''}>SUR</option>
+                                    </select>
+                                </div>
+                            ` : ''}
+                            ${this.isFieldVisible('gen-claveAcceso') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('gen-claveAcceso', 'Clave de acceso')}
+                                    <input type="text" id="gen-claveAcceso" class="form-control form-control-capsule bg-warning-soft" value="${gen.claveAcceso || ''}">
+                                </div>
+                            ` : ''}
                         </div>
                     </div>
                 </div>
@@ -456,38 +519,48 @@ export class ClientsModule {
                     <div class="p-3 bg-light-gradient rounded-3 h-100">
                         <h6 class="fw-bold text-primary mb-3">Datos Fiscales & Asignación</h6>
                         <div class="row g-2">
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Persona de contacto</label>
-                                <input type="text" id="gen-personaContacto" class="form-control form-control-capsule" value="${gen.personaContacto || ''}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">DPI</label>
-                                <input type="text" id="gen-dpi" class="form-control form-control-capsule font-mono" value="${gen.dpi || ''}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">NIT PARA FACTURAS</label>
-                                <input type="text" id="gen-nitParaFacturas" class="form-control form-control-capsule font-mono fw-bold" value="${gen.nitParaFacturas || ''}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Vendedor</label>
-                                <select id="gen-vendedor" class="form-select form-control-capsule">
-                                    <option value="PAOLA SOLIS" ${gen.vendedor === 'PAOLA SOLIS' ? 'selected' : ''}>PAOLA SOLIS</option>
-                                    <option value="CARLOS LÓPEZ" ${gen.vendedor === 'CARLOS LÓPEZ' ? 'selected' : ''}>CARLOS LÓPEZ</option>
-                                    <option value="MARÍA PÉREZ" ${gen.vendedor === 'MARÍA PÉREZ' ? 'selected' : ''}>MARÍA PÉREZ</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Territorio</label>
-                                <input type="text" id="gen-territorio" class="form-control form-control-capsule" value="${gen.territorio || ''}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Tipo socio negocios</label>
-                                <input type="text" id="gen-tipoSocioNegocios" class="form-control form-control-capsule" value="${gen.tipoSocioNegocios || 'Sociedades'}">
-                            </div>
-                            <div class="col-md-12">
-                                <label class="form-label extra-small fw-bold">Nombre alias</label>
-                                <input type="text" id="gen-nombreAlias" class="form-control form-control-capsule" value="${gen.nombreAlias || ''}">
-                            </div>
+                            ${this.isFieldVisible('gen-personaContacto') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('gen-personaContacto', 'Persona de contacto')}
+                                    <input type="text" id="gen-personaContacto" class="form-control form-control-capsule" value="${gen.personaContacto || ''}">
+                                </div>
+                            ` : ''}
+                            ${this.isFieldVisible('gen-dpi') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('gen-dpi', 'DPI')}
+                                    <input type="text" id="gen-dpi" class="form-control form-control-capsule font-mono" value="${gen.dpi || ''}">
+                                </div>
+                            ` : ''}
+                            ${this.isFieldVisible('gen-nitParaFacturas') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('gen-nitParaFacturas', 'NIT para Facturas')}
+                                    <input type="text" id="gen-nitParaFacturas" class="form-control form-control-capsule font-mono fw-bold" value="${gen.nitParaFacturas || ''}">
+                                </div>
+                            ` : ''}
+                            ${this.isFieldVisible('gen-vendedor') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('gen-vendedor', 'Vendedor')}
+                                    ${this.renderSmartInput('gen-vendedor', gen.vendedor, CATALOGS.vendedores, 'dl-vendedor')}
+                                </div>
+                            ` : ''}
+                            ${this.isFieldVisible('gen-territorio') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('gen-territorio', 'Territorio')}
+                                    <input type="text" id="gen-territorio" class="form-control form-control-capsule" value="${gen.territorio || ''}">
+                                </div>
+                            ` : ''}
+                            ${this.isFieldVisible('gen-tipoSocioNegocios') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('gen-tipoSocioNegocios', 'Tipo socio negocios')}
+                                    <input type="text" id="gen-tipoSocioNegocios" class="form-control form-control-capsule" value="${gen.tipoSocioNegocios || 'Sociedades'}">
+                                </div>
+                            ` : ''}
+                            ${this.isFieldVisible('gen-nombreAlias') ? `
+                                <div class="col-md-12">
+                                    ${this.renderFieldLabel('gen-nombreAlias', 'Nombre alias')}
+                                    <input type="text" id="gen-nombreAlias" class="form-control form-control-capsule" value="${gen.nombreAlias || ''}">
+                                </div>
+                            ` : ''}
                             <div class="col-md-12 pt-2">
                                 <div class="form-check form-check-inline">
                                     <input class="form-check-input" type="radio" name="estadoCliente" id="st-activo" value="Activo" ${gen.estadoCliente !== 'Inactivo' ? 'checked' : ''}>
@@ -622,52 +695,71 @@ export class ClientsModule {
                         <div class="d-flex justify-content-between align-items-center mb-3">
                             <h6 class="fw-bold text-primary m-0">Detalle de la Dirección</h6>
                             <a href="https://maps.google.com" target="_blank" class="extra-small text-primary text-decoration-none">
-                                <svg width="14" height="14" fill="currentColor" class="me-1" viewBox="0 0 16 16"><path d="M8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10zm0-7a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"/></svg>
+                                <i class="fa-solid fa-map-location-dot me-1"></i>
                                 Mostrar ubicación en explorador web
                             </a>
                         </div>
                         <div class="row g-2">
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Tipo de Dirección</label>
-                                <select id="dir-tipo" class="form-select form-control-capsule">
-                                    <option value="Destinatario de factura" ${activeDir.tipo === 'Destinatario de factura' ? 'selected' : ''}>Destinatario de factura</option>
-                                    <option value="Destino" ${activeDir.tipo === 'Destino' ? 'selected' : ''}>Destino</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Nombre de Dirección</label>
-                                <input type="text" id="dir-nombreDireccion" class="form-control form-control-capsule" value="${activeDir.nombreDireccion || ''}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">MUNICIPIO</label>
-                                <input type="text" id="dir-municipio" class="form-control form-control-capsule" value="${activeDir.municipio || 'Villa Nueva'}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Colonia</label>
-                                <input type="text" id="dir-colonia" class="form-control form-control-capsule" value="${activeDir.colonia || ''}">
-                            </div>
-                            <div class="col-md-12">
-                                <label class="form-label extra-small fw-bold">DIRECCION FEL</label>
-                                <input type="text" id="dir-direccionFel" class="form-control form-control-capsule fw-bold" value="${activeDir.direccionFel || ''}">
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label extra-small fw-bold">Código Postal</label>
-                                <input type="text" id="dir-codigoPostal" class="form-control form-control-capsule font-mono" value="${activeDir.codigoPostal || ''}">
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label extra-small fw-bold">Estado / Departamento</label>
-                                <select id="dir-estado" class="form-select form-control-capsule">
-                                    <option value="Guatemala" ${activeDir.estado === 'Guatemala' ? 'selected' : ''}>Guatemala</option>
-                                    <option value="Sacatepéquez" ${activeDir.estado === 'Sacatepéquez' ? 'selected' : ''}>Sacatepéquez</option>
-                                    <option value="Quetzaltenango" ${activeDir.estado === 'Quetzaltenango' ? 'selected' : ''}>Quetzaltenango</option>
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label extra-small fw-bold">País</label>
-                                <select id="dir-pais" class="form-select form-control-capsule">
-                                    <option value="Guatemala" ${activeDir.pais === 'Guatemala' ? 'selected' : ''}>Guatemala</option>
-                                </select>
-                            </div>
+                            ${this.isFieldVisible('dir-tipo') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('dir-tipo', 'Tipo de Dirección')}
+                                    <select id="dir-tipo" class="form-select form-control-capsule">
+                                        <option value="Destinatario de factura" ${activeDir.tipo === 'Destinatario de factura' ? 'selected' : ''}>Destinatario de factura</option>
+                                        <option value="Destino" ${activeDir.tipo === 'Destino' ? 'selected' : ''}>Destino</option>
+                                    </select>
+                                </div>
+                            ` : ''}
+
+                            ${this.isFieldVisible('dir-nombreDireccion') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('dir-nombreDireccion', 'Nombre de Dirección')}
+                                    <input type="text" id="dir-nombreDireccion" class="form-control form-control-capsule" value="${activeDir.nombreDireccion || ''}">
+                                </div>
+                            ` : ''}
+
+                            ${this.isFieldVisible('dir-municipio') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('dir-municipio', 'MUNICIPIO')}
+                                    ${this.renderSmartInput('dir-municipio', activeDir.municipio, CATALOGS.municipios, 'dl-municipios')}
+                                </div>
+                            ` : ''}
+
+                            ${this.isFieldVisible('dir-colonia') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('dir-colonia', 'Colonia')}
+                                    <input type="text" id="dir-colonia" class="form-control form-control-capsule" value="${activeDir.colonia || ''}">
+                                </div>
+                            ` : ''}
+
+                            ${this.isFieldVisible('dir-direccionFel') ? `
+                                <div class="col-md-12">
+                                    ${this.renderFieldLabel('dir-direccionFel', 'DIRECCION FEL')}
+                                    <input type="text" id="dir-direccionFel" class="form-control form-control-capsule fw-bold" value="${activeDir.direccionFel || ''}">
+                                </div>
+                            ` : ''}
+
+                            ${this.isFieldVisible('dir-codigoPostal') ? `
+                                <div class="col-md-4">
+                                    ${this.renderFieldLabel('dir-codigoPostal', 'Código Postal')}
+                                    <input type="text" id="dir-codigoPostal" class="form-control form-control-capsule font-mono" value="${activeDir.codigoPostal || ''}">
+                                </div>
+                            ` : ''}
+
+                            ${this.isFieldVisible('dir-estado') ? `
+                                <div class="col-md-4">
+                                    ${this.renderFieldLabel('dir-estado', 'Estado / Departamento')}
+                                    ${this.renderSmartInput('dir-estado', activeDir.estado, CATALOGS.departamentos, 'dl-departamentos')}
+                                </div>
+                            ` : ''}
+
+                            ${this.isFieldVisible('dir-pais') ? `
+                                <div class="col-md-4">
+                                    ${this.renderFieldLabel('dir-pais', 'País')}
+                                    <select id="dir-pais" class="form-select form-control-capsule">
+                                        <option value="Guatemala" ${activeDir.pais === 'Guatemala' ? 'selected' : ''}>Guatemala</option>
+                                    </select>
+                                </div>
+                            ` : ''}
                         </div>
                     </div>
                 </div>
@@ -682,43 +774,33 @@ export class ClientsModule {
                     <div class="p-3 bg-light-gradient rounded-3 h-100">
                         <h6 class="fw-bold text-primary mb-3">Términos Comerciales</h6>
                         <div class="row g-2">
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Condiciones de pago</label>
-                                <select id="cnd-condicionesPago" class="form-select form-control-capsule">
-                                    <option value="EFECTIVO" ${cond.condicionesPago === 'EFECTIVO' ? 'selected' : ''}>EFECTIVO</option>
-                                    <option value="CREDITO 30 DIAS" ${cond.condicionesPago === 'CREDITO 30 DIAS' ? 'selected' : ''}>CREDITO 30 DIAS</option>
-                                    <option value="CREDITO 60 DIAS" ${cond.condicionesPago === 'CREDITO 60 DIAS' ? 'selected' : ''}>CREDITO 60 DIAS</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Lista de precios</label>
-                                <select id="cnd-listaPrecios" class="form-select form-control-capsule">
-                                    <option value="Lista de precios 01" ${cond.listaPrecios === 'Lista de precios 01' ? 'selected' : ''}>Lista de precios 01</option>
-                                    <option value="Lista Mayorista" ${cond.listaPrecios === 'Lista Mayorista' ? 'selected' : ''}>Lista Mayorista</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Límite de crédito (Q)</label>
-                                <input type="text" id="cnd-limiteCredito" class="form-control form-control-capsule font-mono" value="${cond.limiteCredito || '0.00'}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Límite comprometido (Q)</label>
-                                <input type="text" id="cnd-limiteComprometido" class="form-control form-control-capsule font-mono" value="${cond.limiteComprometido || '0.00'}">
-                            </div>
-                            <div class="col-md-12 pt-2">
-                                <div class="form-check mb-1">
-                                    <input class="form-check-input" type="checkbox" id="cnd-permitirEntregaParcial" ${cond.permitirEntregaParcial ? 'checked' : ''}>
-                                    <label class="form-check-label extra-small" for="cnd-permitirEntregaParcial">Permitir entrega parcial del pedido</label>
+                            ${this.isFieldVisible('cnd-condicionesPago') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('cnd-condicionesPago', 'Condiciones de pago')}
+                                    ${this.renderSmartInput('cnd-condicionesPago', cond.condicionesPago, CATALOGS.condicionesPago, 'dl-condiciones')}
                                 </div>
-                                <div class="form-check mb-1">
-                                    <input class="form-check-input" type="checkbox" id="cnd-permitirEntregaParcialFilas" ${cond.permitirEntregaParcialFilas ? 'checked' : ''}>
-                                    <label class="form-check-label extra-small" for="cnd-permitirEntregaParcialFilas">Permitir entrega parcial por filas</label>
+                            ` : ''}
+
+                            ${this.isFieldVisible('cnd-listaPrecios') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('cnd-listaPrecios', 'Listas de precios')}
+                                    ${this.renderSmartInput('cnd-listaPrecios', cond.listaPrecios, CATALOGS.listasPrecios, 'dl-listasPrecios')}
                                 </div>
-                                <div class="form-check mb-1">
-                                    <input class="form-check-input" type="checkbox" id="cnd-chequesEndosar" ${cond.chequesEndosar ? 'checked' : ''}>
-                                    <label class="form-check-label extra-small" for="cnd-chequesEndosar">Cheques que se pueden endosar desde este SN</label>
+                            ` : ''}
+
+                            ${this.isFieldVisible('cnd-limiteCredito') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('cnd-limiteCredito', 'Límite de crédito (Q)')}
+                                    <input type="text" id="cnd-limiteCredito" class="form-control form-control-capsule font-mono" value="${cond.limiteCredito || '0.00'}">
                                 </div>
-                            </div>
+                            ` : ''}
+
+                            ${this.isFieldVisible('cnd-limiteComprometido') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('cnd-limiteComprometido', 'Límite comprometido (Q)')}
+                                    <input type="text" id="cnd-limiteComprometido" class="form-control form-control-capsule font-mono" value="${cond.limiteComprometido || '0.00'}">
+                                </div>
+                            ` : ''}
                         </div>
                     </div>
                 </div>
@@ -727,30 +809,18 @@ export class ClientsModule {
                     <div class="p-3 bg-light-gradient rounded-3 h-100">
                         <h6 class="fw-bold text-primary mb-3">Banco del Socio de Negocios</h6>
                         <div class="row g-2">
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">País del banco</label>
-                                <input type="text" id="cnd-paisBanco" class="form-control form-control-capsule" value="${cond.paisBanco || 'Guatemala'}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Nombre del banco</label>
-                                <input type="text" id="cnd-nombreBanco" class="form-control form-control-capsule" value="${cond.nombreBanco || ''}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Código bancario</label>
-                                <input type="text" id="cnd-codigoBancario" class="form-control form-control-capsule" value="${cond.codigoBancario || ''}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Cuenta bancaria</label>
-                                <input type="text" id="cnd-cuentaBanco" class="form-control form-control-capsule font-mono" value="${cond.cuentaBanco || ''}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">BIC / SWIFT</label>
-                                <input type="text" id="cnd-bicSwift" class="form-control form-control-capsule font-mono" value="${cond.bicSwift || ''}">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label extra-small fw-bold">Sucursal</label>
-                                <input type="text" id="cnd-sucursal" class="form-control form-control-capsule" value="${cond.sucursal || ''}">
-                            </div>
+                            ${this.isFieldVisible('cnd-paisBanco') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('cnd-paisBanco', 'País del banco')}
+                                    <input type="text" id="cnd-paisBanco" class="form-control form-control-capsule" value="${cond.paisBanco || 'Guatemala'}">
+                                </div>
+                            ` : ''}
+                            ${this.isFieldVisible('cnd-nombreBanco') ? `
+                                <div class="col-md-6">
+                                    ${this.renderFieldLabel('cnd-nombreBanco', 'Nombre del banco')}
+                                    <input type="text" id="cnd-nombreBanco" class="form-control form-control-capsule" value="${cond.nombreBanco || ''}">
+                                </div>
+                            ` : ''}
                         </div>
                     </div>
                 </div>
@@ -819,10 +889,6 @@ export class ClientsModule {
                                 `).join('')}
                             </tbody>
                         </table>
-                        <div class="d-flex justify-content-end gap-2 mt-2">
-                            <button class="btn btn-xs btn-outline-secondary">Borrar estándar</button>
-                            <button class="btn btn-xs btn-primary-gradient">Fijar como estándar</button>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -836,21 +902,26 @@ export class ClientsModule {
                     <div class="p-3 bg-light-gradient rounded-3 h-100">
                         <h6 class="fw-bold text-primary mb-3">Cuentas Asociadas</h6>
                         <div class="row g-2">
-                            <div class="col-md-12">
-                                <label class="form-label extra-small fw-bold">Deudores (Cuenta SAP)</label>
-                                <div class="input-group input-group-sm">
-                                    <input type="text" id="fin-deudoresCuenta" class="form-control form-control-capsule font-mono fw-bold" value="${fin.deudoresCuenta || '11201001-00-00'}">
-                                    <input type="text" id="fin-deudoresNombre" class="form-control form-control-capsule" value="${fin.deudoresNombre || 'Clientes locales'}">
+                            ${this.isFieldVisible('fin-deudoresCuenta') ? `
+                                <div class="col-md-12">
+                                    ${this.renderFieldLabel('fin-deudoresCuenta', 'Deudores (Cuenta SAP)')}
+                                    ${this.renderSmartInput('fin-deudoresCuenta', fin.deudoresCuenta, CATALOGS.deudoresCuenta, 'dl-deudoresCuenta')}
                                 </div>
-                            </div>
-                            <div class="col-md-12">
-                                <label class="form-label extra-small fw-bold">Cuenta compensación anticipos</label>
-                                <input type="text" id="fin-cuentaCompensacionAntic" class="form-control form-control-capsule font-mono" value="${fin.cuentaCompensacionAntic || ''}">
-                            </div>
-                            <div class="col-md-12">
-                                <label class="form-label extra-small fw-bold">Cuenta provisional anticipos</label>
-                                <input type="text" id="fin-cuentaProvisionalAntic" class="form-control form-control-capsule font-mono" value="${fin.cuentaProvisionalAntic || ''}">
-                            </div>
+                            ` : ''}
+
+                            ${this.isFieldVisible('fin-cuentaCompensacionAntic') ? `
+                                <div class="col-md-12">
+                                    ${this.renderFieldLabel('fin-cuentaCompensacionAntic', 'Cuenta compensación anticipos')}
+                                    <input type="text" id="fin-cuentaCompensacionAntic" class="form-control form-control-capsule font-mono" value="${fin.cuentaCompensacionAntic || ''}">
+                                </div>
+                            ` : ''}
+
+                            ${this.isFieldVisible('fin-cuentaProvisionalAntic') ? `
+                                <div class="col-md-12">
+                                    ${this.renderFieldLabel('fin-cuentaProvisionalAntic', 'Cuenta provisional anticipos')}
+                                    <input type="text" id="fin-cuentaProvisionalAntic" class="form-control form-control-capsule font-mono" value="${fin.cuentaProvisionalAntic || ''}">
+                                </div>
+                            ` : ''}
                         </div>
                     </div>
                 </div>
@@ -870,12 +941,6 @@ export class ClientsModule {
                                         <input class="form-check-input" type="radio" name="consolidador" id="cn-entregas" value="Consolidación de entregas" ${fin.consolidador === 'Consolidación de entregas' ? 'checked' : ''}>
                                         <label class="form-check-label extra-small" for="cn-entregas">Consolidación de entregas</label>
                                     </div>
-                                </div>
-                            </div>
-                            <div class="col-md-12 pt-2">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="fin-bloquearReclamaciones" ${fin.bloquearReclamaciones ? 'checked' : ''}>
-                                    <label class="form-check-label extra-small" for="fin-bloquearReclamaciones">Bloquear reclamaciones</label>
                                 </div>
                             </div>
                         </div>
@@ -916,7 +981,7 @@ export class ClientsModule {
         `;
     }
 
-    renderTabAnexos(anexos) {
+    renderTabAnexos() {
         return `
             <div class="p-3 bg-light-gradient rounded-3">
                 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -953,7 +1018,99 @@ export class ClientsModule {
         `;
     }
 
+    renderFieldsConfigModal() {
+        const config = this.fieldConfigEngine.config;
+        const keys = Object.keys(config).filter(k => {
+            if (!this.fieldsSearchFilter) return true;
+            const f = config[k];
+            return f.label.toLowerCase().includes(this.fieldsSearchFilter.toLowerCase()) ||
+                   f.section.toLowerCase().includes(this.fieldsSearchFilter.toLowerCase()) ||
+                   (f.connectionSource || '').toLowerCase().includes(this.fieldsSearchFilter.toLowerCase());
+        });
+
+        return `
+            <div>
+                <p class="text-muted small mb-3">
+                    Personalice la visibilidad de los campos, renombre etiquetas y configure conexiones a módulos o listados externos con buscador.
+                </p>
+
+                <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
+                    <div class="input-group input-group-sm style="max-width: 350px;">
+                        <span class="input-group-text bg-white"><i class="fa-solid fa-magnifying-glass"></i></span>
+                        <input type="text" id="cfg-field-search" class="form-control" placeholder="Buscar campo por nombre o sección..." value="${this.fieldsSearchFilter}">
+                    </div>
+                    <div>
+                        <button id="btn-reset-fields-config" class="btn btn-xs btn-outline-danger me-2">Restablecer por Defecto</button>
+                        <button id="btn-save-fields-config" class="btn btn-xs btn-primary-gradient">Guardar Cambios</button>
+                    </div>
+                </div>
+
+                <div class="table-responsive" style="max-height: 480px; overflow-y: auto;">
+                    <table class="table table-sm extra-small align-middle table-hover">
+                        <thead>
+                            <tr class="table-light">
+                                <th style="width: 50px;">Mostrar</th>
+                                <th>Campo / ID</th>
+                                <th>Etiqueta Personalizada</th>
+                                <th>Sección</th>
+                                <th class="text-center">Conexión Externa</th>
+                                <th class="text-center">Buscador / Autocompletar</th>
+                                <th>Origen de Datos Conectado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${keys.map(k => {
+                                const f = config[k];
+                                return `
+                                    <tr data-key="${k}">
+                                        <td class="text-center">
+                                            <input type="checkbox" class="cfg-visible-chk" ${f.visible ? 'checked' : ''}>
+                                        </td>
+                                        <td class="font-mono text-muted">${f.id}</td>
+                                        <td>
+                                            <input type="text" class="form-control form-control-sm cfg-label-input" value="${f.label}">
+                                        </td>
+                                        <td><span class="badge bg-secondary">${f.section}</span></td>
+                                        <td class="text-center">
+                                            <input type="checkbox" class="cfg-conn-chk" ${f.hasConnection ? 'checked' : ''}>
+                                        </td>
+                                        <td class="text-center">
+                                            <input type="checkbox" class="cfg-search-chk" ${f.searchEnabled ? 'checked' : ''}>
+                                        </td>
+                                        <td>
+                                            <input type="text" class="form-control form-control-sm cfg-source-input" value="${f.connectionSource || ''}" placeholder="Ej: SAP B1 / Tabla...">
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+
     initEvents() {
+        // Modal de Configuración de Campos
+        const btnOpenConfig = document.getElementById('btn-open-fields-config');
+        const modalConfig = document.getElementById('fields-config-modal');
+        const modalBodyConfig = document.getElementById('fields-modal-body');
+        const btnCloseConfig = document.getElementById('btn-close-fields-modal');
+
+        if (btnOpenConfig && modalConfig && modalBodyConfig) {
+            btnOpenConfig.addEventListener('click', () => {
+                modalBodyConfig.innerHTML = this.renderFieldsConfigModal();
+                modalConfig.style.display = 'flex';
+                this.initFieldsModalEvents();
+            });
+        }
+
+        if (btnCloseConfig && modalConfig) {
+            btnCloseConfig.addEventListener('click', () => {
+                modalConfig.style.display = 'none';
+            });
+        }
+
         // Búsqueda de Clientes
         const searchInput = document.getElementById('client-search');
         if (searchInput) {
@@ -1024,7 +1181,7 @@ export class ClientsModule {
             btnSave.addEventListener('click', () => {
                 this.collectFormData();
                 this.saveClients();
-                alert('¡Cliente guardado exitosamente en almacenamiento local!');
+                alert('¡Cliente guardado exitosamente!');
                 this.refreshUI();
             });
         }
@@ -1042,22 +1199,9 @@ export class ClientsModule {
             });
         }
 
-        // Botón Sync Supabase
-        const btnSync = document.getElementById('btn-sync-supabase');
-        if (btnSync) {
-            btnSync.addEventListener('click', () => {
-                const config = JSON.parse(localStorage.getItem('gci_api_config') || '{}');
-                if (!config.supabaseUrl || !config.supabaseKey) {
-                    alert('Supabase no está configurado. Por favor, configure la URL y API Key en el modal de "Configuración de Conexiones".');
-                } else {
-                    alert(`Simulando sincronización hacia Supabase REST API (${config.supabaseUrl})...\n¡Sincronización completada!`);
-                }
-            });
-        }
-
         // Botones de Contactos y Direcciones
         document.querySelectorAll('.contact-item-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            btn.addEventListener('click', () => {
                 this.collectFormData();
                 this.activeContactIndex = parseInt(btn.dataset.index, 10);
                 this.refreshUI();
@@ -1065,7 +1209,7 @@ export class ClientsModule {
         });
 
         document.querySelectorAll('.address-item-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            btn.addEventListener('click', () => {
                 this.collectFormData();
                 this.activeAddressIndex = parseInt(btn.dataset.index, 10);
                 this.refreshUI();
@@ -1080,24 +1224,11 @@ export class ClientsModule {
                 if (!client) return;
                 client.contactos = client.contactos || [];
                 const newContactNum = client.contactos.length + 1;
-                const newContact = {
+                client.contactos.push({
                     idContacto: `CONT-0${newContactNum}`,
                     nombre: `Contacto ${newContactNum}`,
-                    segundoNombre: '',
-                    apellido: '',
-                    titulo: '',
-                    posicion: 'Contacto General',
-                    direccion: '',
-                    telefono1: '',
-                    telefono2: '',
-                    telefonoMovil: '',
-                    fax: '',
-                    email: '',
-                    ciudadNacimiento: '',
-                    bloquearMarketing: false,
-                    activo: true
-                };
-                client.contactos.push(newContact);
+                    posicion: 'Contacto General'
+                });
                 this.activeContactIndex = client.contactos.length - 1;
                 this.saveClients();
                 this.refreshUI();
@@ -1112,21 +1243,67 @@ export class ClientsModule {
                 if (!client) return;
                 client.direcciones = client.direcciones || [];
                 const newDirNum = client.direcciones.length + 1;
-                const newAddress = {
+                client.direcciones.push({
                     id: `DIR-0${newDirNum}`,
                     tipo: newDirNum % 2 === 0 ? 'Destino' : 'Destinatario de factura',
                     nombreDireccion: `Sucursal ${newDirNum}`,
                     municipio: 'Guatemala',
-                    direccionFel: '',
-                    colonia: '',
-                    codigoPostal: '01001',
-                    estado: 'Guatemala',
                     pais: 'Guatemala'
-                };
-                client.direcciones.push(newAddress);
+                });
                 this.activeAddressIndex = client.direcciones.length - 1;
                 this.saveClients();
                 this.refreshUI();
+            });
+        }
+    }
+
+    initFieldsModalEvents() {
+        const modalBody = document.getElementById('fields-modal-body');
+        if (!modalBody) return;
+
+        // Filtro de búsqueda dentro del modal
+        const searchInput = document.getElementById('cfg-field-search');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                this.fieldsSearchFilter = e.target.value;
+                modalBody.innerHTML = this.renderFieldsConfigModal();
+                this.initFieldsModalEvents();
+            });
+        }
+
+        // Botón Guardar Configuración de Campos
+        const btnSave = document.getElementById('btn-save-fields-config');
+        if (btnSave) {
+            btnSave.addEventListener('click', () => {
+                const rows = modalBody.querySelectorAll('tbody tr');
+                const newConfig = { ...this.fieldConfigEngine.config };
+
+                rows.forEach(tr => {
+                    const key = tr.dataset.key;
+                    if (newConfig[key]) {
+                        newConfig[key].visible = tr.querySelector('.cfg-visible-chk').checked;
+                        newConfig[key].label = tr.querySelector('.cfg-label-input').value;
+                        newConfig[key].hasConnection = tr.querySelector('.cfg-conn-chk').checked;
+                        newConfig[key].searchEnabled = tr.querySelector('.cfg-search-chk').checked;
+                        newConfig[key].connectionSource = tr.querySelector('.cfg-source-input').value;
+                    }
+                });
+
+                this.fieldConfigEngine.saveConfig(newConfig);
+                document.getElementById('fields-config-modal').style.display = 'none';
+                this.refreshUI();
+            });
+        }
+
+        // Botón Restablecer
+        const btnReset = document.getElementById('btn-reset-fields-config');
+        if (btnReset) {
+            btnReset.addEventListener('click', () => {
+                if (confirm('¿Desea restablecer todos los campos a su configuración original?')) {
+                    this.fieldConfigEngine.resetToDefaults();
+                    document.getElementById('fields-config-modal').style.display = 'none';
+                    this.refreshUI();
+                }
             });
         }
     }
@@ -1135,7 +1312,6 @@ export class ClientsModule {
         const client = this.getSelectedClient();
         if (!client) return;
 
-        // Recolectar datos de Cabecera
         const getVal = (id) => {
             const el = document.getElementById(id);
             return el ? el.value : '';
@@ -1150,7 +1326,6 @@ export class ClientsModule {
         client.moneda = getVal('hdr-moneda') || client.moneda;
         client.rfc = getVal('hdr-rfc') || client.rfc;
 
-        // Recolectar según sub-pestaña
         if (this.activeTab === 'general') {
             client.general = client.general || {};
             client.general.telefono1 = getVal('gen-telefono1');
@@ -1206,23 +1381,9 @@ export class ClientsModule {
             client.condicionesPago.limiteComprometido = getVal('cnd-limiteComprometido');
             client.condicionesPago.paisBanco = getVal('cnd-paisBanco');
             client.condicionesPago.nombreBanco = getVal('cnd-nombreBanco');
-            client.condicionesPago.codigoBancario = getVal('cnd-codigoBancario');
-            client.condicionesPago.cuentaBanco = getVal('cnd-cuentaBanco');
-            client.condicionesPago.bicSwift = getVal('cnd-bicSwift');
-            client.condicionesPago.sucursal = getVal('cnd-sucursal');
-        } else if (this.activeTab === 'ejecucion') {
-            client.ejecucionPago = client.ejecucionPago || {};
-            client.ejecucionPago.paisBancoPropio = getVal('ejc-paisBancoPropio');
-            client.ejecucionPago.bancoPropio = getVal('ejc-bancoPropio');
-            client.ejecucionPago.cuentaPropia = getVal('ejc-cuentaPropia');
-            client.ejecucionPago.numeroControl = getVal('ejc-numeroControl');
-            client.ejecucionPago.infoReferencia = getVal('ejc-infoReferencia');
         } else if (this.activeTab === 'finanzas') {
             client.finanzas = client.finanzas || {};
             client.finanzas.deudoresCuenta = getVal('fin-deudoresCuenta');
-            client.finanzas.deudoresNombre = getVal('fin-deudoresNombre');
-            client.finanzas.cuentaCompensacionAntic = getVal('fin-cuentaCompensacionAntic');
-            client.finanzas.cuentaProvisionalAntic = getVal('fin-cuentaProvisionalAntic');
         } else if (this.activeTab === 'comentarios') {
             const txt = document.getElementById('txt-comentarios');
             if (txt) client.comentarios = txt.value;
