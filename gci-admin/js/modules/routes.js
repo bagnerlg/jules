@@ -731,7 +731,7 @@ export class RoutesModule {
         }
     }
 
-    executeRoutePlanning() {
+    async executeRoutePlanning() {
         let originCoords;
 
         if (this.originType === 'custom_link' && this.customMapsUrl) {
@@ -772,6 +772,15 @@ export class RoutesModule {
         const routeNum = this.routesByDate[this.selectedDate].length + 1;
         newRoute.title = `Ruta #${routeNum} (${newRoute.region.name.split('/')[0].trim()})`;
         newRoute.isOriginal = true; // Ruta autogenerada del sistema
+
+        // Consultar Waze API Driving Directions para la primera parada o segmento
+        if (newRoute.waypoints.length > 0) {
+            const firstWp = newRoute.waypoints[0];
+            const wazeRes = await this.engine.fetchWazeDrivingDirections(newRoute.origin, firstWp);
+            if (wazeRes.status === 'OK' && wazeRes.routes.length > 0) {
+                newRoute.wazeApiData = wazeRes.routes[0];
+            }
+        }
 
         this.routesByDate[this.selectedDate].push(newRoute);
         this.activeRouteIndex = this.routesByDate[this.selectedDate].length - 1;
@@ -862,7 +871,12 @@ export class RoutesModule {
         }
 
         if (subInfo) {
-            subInfo.textContent = `${activeRoute.title}: ${activeRoute.totalWaypoints} paradas, ~${activeRoute.totalEstimatedKm} KM estimados desde el punto de partida.`;
+            let wazeTxt = '';
+            if (activeRoute.wazeApiData) {
+                const durMin = activeRoute.wazeApiData.duration ? Math.round(activeRoute.wazeApiData.duration / 60) : null;
+                if (durMin) wazeTxt = ` | Waze API Tiempo Est. Parada 1: ~${durMin} min`;
+            }
+            subInfo.textContent = `${activeRoute.title}: ${activeRoute.totalWaypoints} paradas, ~${activeRoute.totalEstimatedKm} KM estimados desde origen.${wazeTxt}`;
         }
 
         const completions = this.engine.getCompletions();

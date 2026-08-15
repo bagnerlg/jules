@@ -517,63 +517,129 @@ export class RouteEngine {
     }
 
     /**
-     * Consulta tiempo estimado de viaje, distancia y alertas de ruta desde OpenWebNinja Waze API (/driving-directions)
-     * Utiliza source_coordinates (origen) y destination_coordinates (destino)
+     * Helper genérico para realizar peticiones a la API de Waze OpenWebNinja.
+     * Intenta llamada directa primero; si ocurre un error de CORS o de red, utiliza un proxy CORS.
      */
-    async fetchWazeDrivingDirections(sourceCoords, destCoords) {
+    async executeWazeApiFetch(targetUrl) {
         const configData = JSON.parse(localStorage.getItem('gci_api_config') || '{}');
         const apiKey = configData.wazeApiKey;
 
         if (!apiKey) {
             console.warn("Waze API Key no configurada.");
-            return { status: 'NO_KEY', routes: [] };
+            return { status: 'NO_KEY', message: 'Clave API de Waze (x-api-key) no configurada en Conexiones' };
         }
 
+        const headers = {
+            'x-api-key': apiKey,
+            'Accept': 'application/json'
+        };
+
+        // Intento 1: Fetch directo
         try {
-            const sourceStr = `${sourceCoords.lat},${sourceCoords.lng}`;
-            const destStr = `${destCoords.lat},${destCoords.lng}`;
-            const url = `https://api.openwebninja.com/waze/driving-directions?source_coordinates=${encodeURIComponent(sourceStr)}&destination_coordinates=${encodeURIComponent(destStr)}`;
-
-            const response = await fetch(url, {
-                headers: { 'x-api-key': apiKey }
-            });
-
-            if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
-            const json = await response.json();
-            return {
-                status: 'OK',
-                routes: json.data || [],
-                requestParams: { source: sourceStr, destination: destStr }
-            };
-        } catch (err) {
-            console.error("Error al consultar Waze Driving Directions API:", err);
-            return { status: 'ERROR', message: err.message, routes: [] };
+            const response = await fetch(targetUrl, { method: 'GET', headers });
+            if (response.ok) {
+                const json = await response.json();
+                return { status: 'OK', data: json.data || json };
+            }
+        } catch (directErr) {
+            console.warn("Fetch directo a Waze API bloqueado o falló (posible bloqueo CORS). Intentando proxy CORS...", directErr);
         }
+
+        // Intento 2: Fallback con Proxy CORS
+        try {
+            const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+            const response = await fetch(proxyUrl, { method: 'GET', headers });
+            if (response.ok) {
+                const json = await response.json();
+                return { status: 'OK', data: json.data || json };
+            }
+        } catch (proxyErr) {
+            console.warn("Fallback con corsproxy.io falló. Intentando allorigins...", proxyErr);
+        }
+
+        // Intento 3: Fallback alternativo con AllOrigins
+        try {
+            const allOriginsUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+            const response = await fetch(allOriginsUrl);
+            if (response.ok) {
+                const wrapperJson = await response.json();
+                const json = JSON.parse(wrapperJson.contents);
+                return { status: 'OK', data: json.data || json };
+            }
+        } catch (aoErr) {
+            console.error("Error final en todos los intentos de conexión a Waze API:", aoErr);
+        }
+
+        return { status: 'ERROR', message: 'No se pudo conectar a la API de Waze. Verifique conexión o la API Key.' };
     }
 
     /**
-     * Consulta información de tráfico / alertas desde la API de Waze (OpenWebNinja)
+     * 1. Driving Directions (/waze/driving-directions)
+     * Parámetros requeridos: source_coordinates, destination_coordinates
      */
-    async fetchWazeTrafficAlerts(bottomLeft, topRight) {
-        const configData = JSON.parse(localStorage.getItem('gci_api_config') || '{}');
-        const apiKey = configData.wazeApiKey;
+    async fetchWazeDrivingDirections(sourceCoords, destCoords) {
+        const sourceStr = `${sourceCoords.lat},${sourceCoords.lng}`;
+        const destStr = `${destCoords.lat},${destCoords.lng}`;
+        const url = `https://api.openwebninja.com/waze/driving-directions?source_coordinates=${encodeURIComponent(sourceStr)}&destination_coordinates=${encodeURIComponent(destStr)}`;
 
-        if (!apiKey) {
-            console.warn("Waze API Key no configurada.");
-            return { status: 'NO_KEY', alerts: [] };
+        const res = await this.executeWazeApiFetch(url);
+        if (res.status === 'OK') {
+            return {
+                status: 'OK',
+                routes: Array.isArray(res.data) ? res.data : (res.data?.routes || [res.data]),
+                requestParams: { source: sourceStr, destination: destStr }
+            };
         }
+        return { status: res.status, message: res.message, routes: [] };
+    }
 
-        try {
-            const url = `https://api.openwebninja.com/waze/alerts-and-jams?bottom_left=${bottomLeft}&top_right=${topRight}`;
-            const response = await fetch(url, {
-                headers: { 'x-api-key': apiKey }
-            });
-            if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
-            const json = await response.json();
-            return { status: 'OK', alerts: json.data?.alerts || [], jams: json.data?.jams || [] };
-        } catch (err) {
-            console.error("Error al consultar Waze Traffic API:", err);
-            return { status: 'ERROR', message: err.message, alerts: [] };
+    /**
+     * 2. Alerts and Jams (/waze/alerts-and-jams)
+     * Parámetros requeridos: bottom_left, top_right
+     */
+    async fetchWazeTrafficAlerts(bottomLeftStr, topRightStr) {
+        const url = `https://api.openwebninja.com/waze/alerts-and-jams?bottom_left=${encodeURIComponent(bottomLeftStr)}&top_right=${encodeURIComponent(topRightStr)}`;
+        const res = await this.executeWazeApiFetch(url);
+        if (res.status === 'OK') {
+            return {
+                status: 'OK',
+                alerts: res.data?.alerts || [],
+                jams: res.data?.jams || []
+            };
         }
+        return { status: res.status, message: res.message, alerts: [], jams: [] };
+    }
+
+    /**
+     * 3. Autocomplete (/waze/autocomplete)
+     * Parámetros requeridos: q, coordinates
+     */
+    async fetchWazeAutocomplete(queryStr, coordsObj) {
+        const coordsStr = `${coordsObj.lat},${coordsObj.lng}`;
+        const url = `https://api.openwebninja.com/waze/autocomplete?q=${encodeURIComponent(queryStr)}&coordinates=${encodeURIComponent(coordsStr)}`;
+        const res = await this.executeWazeApiFetch(url);
+        if (res.status === 'OK') {
+            return {
+                status: 'OK',
+                suggestions: res.data?.results || res.data || []
+            };
+        }
+        return { status: res.status, message: res.message, suggestions: [] };
+    }
+
+    /**
+     * 4. Venues (/waze/venues)
+     * Parámetros requeridos: bottom_left, top_right
+     */
+    async fetchWazeVenues(bottomLeftStr, topRightStr) {
+        const url = `https://api.openwebninja.com/waze/venues?bottom_left=${encodeURIComponent(bottomLeftStr)}&top_right=${encodeURIComponent(topRightStr)}`;
+        const res = await this.executeWazeApiFetch(url);
+        if (res.status === 'OK') {
+            return {
+                status: 'OK',
+                venues: res.data?.venues || res.data || []
+            };
+        }
+        return { status: res.status, message: res.message, venues: [] };
     }
 }
