@@ -977,6 +977,7 @@ export class ClientsModule {
         // Cambio de Sub-pestañas
         document.querySelectorAll('.subtab-btn').forEach(btn => {
             btn.addEventListener('click', () => {
+                this.collectFormData();
                 this.activeTab = btn.dataset.tab;
                 this.refreshUI();
             });
@@ -1057,6 +1058,7 @@ export class ClientsModule {
         // Botones de Contactos y Direcciones
         document.querySelectorAll('.contact-item-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
+                this.collectFormData();
                 this.activeContactIndex = parseInt(btn.dataset.index, 10);
                 this.refreshUI();
             });
@@ -1064,10 +1066,69 @@ export class ClientsModule {
 
         document.querySelectorAll('.address-item-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
+                this.collectFormData();
                 this.activeAddressIndex = parseInt(btn.dataset.index, 10);
                 this.refreshUI();
             });
         });
+
+        // Botón Agregar Contacto
+        const btnAddContact = document.getElementById('btn-add-contact');
+        if (btnAddContact) {
+            btnAddContact.addEventListener('click', () => {
+                const client = this.getSelectedClient();
+                if (!client) return;
+                client.contactos = client.contactos || [];
+                const newContactNum = client.contactos.length + 1;
+                const newContact = {
+                    idContacto: `CONT-0${newContactNum}`,
+                    nombre: `Contacto ${newContactNum}`,
+                    segundoNombre: '',
+                    apellido: '',
+                    titulo: '',
+                    posicion: 'Contacto General',
+                    direccion: '',
+                    telefono1: '',
+                    telefono2: '',
+                    telefonoMovil: '',
+                    fax: '',
+                    email: '',
+                    ciudadNacimiento: '',
+                    bloquearMarketing: false,
+                    activo: true
+                };
+                client.contactos.push(newContact);
+                this.activeContactIndex = client.contactos.length - 1;
+                this.saveClients();
+                this.refreshUI();
+            });
+        }
+
+        // Botón Agregar Dirección
+        const btnAddAddress = document.getElementById('btn-add-address');
+        if (btnAddAddress) {
+            btnAddAddress.addEventListener('click', () => {
+                const client = this.getSelectedClient();
+                if (!client) return;
+                client.direcciones = client.direcciones || [];
+                const newDirNum = client.direcciones.length + 1;
+                const newAddress = {
+                    id: `DIR-0${newDirNum}`,
+                    tipo: newDirNum % 2 === 0 ? 'Destino' : 'Destinatario de factura',
+                    nombreDireccion: `Sucursal ${newDirNum}`,
+                    municipio: 'Guatemala',
+                    direccionFel: '',
+                    colonia: '',
+                    codigoPostal: '01001',
+                    estado: 'Guatemala',
+                    pais: 'Guatemala'
+                };
+                client.direcciones.push(newAddress);
+                this.activeAddressIndex = client.direcciones.length - 1;
+                this.saveClients();
+                this.refreshUI();
+            });
+        }
     }
 
     collectFormData() {
@@ -1107,6 +1168,61 @@ export class ClientsModule {
             client.general.territorio = getVal('gen-territorio');
             client.general.tipoSocioNegocios = getVal('gen-tipoSocioNegocios');
             client.general.nombreAlias = getVal('gen-nombreAlias');
+        } else if (this.activeTab === 'contactos') {
+            client.contactos = client.contactos || [];
+            if (client.contactos[this.activeContactIndex]) {
+                const c = client.contactos[this.activeContactIndex];
+                c.idContacto = getVal('cnt-idContacto') || c.idContacto;
+                c.titulo = getVal('cnt-titulo');
+                c.nombre = getVal('cnt-nombre') || c.nombre;
+                c.segundoNombre = getVal('cnt-segundoNombre');
+                c.apellido = getVal('cnt-apellido');
+                c.posicion = getVal('cnt-posicion');
+                c.direccion = getVal('cnt-direccion');
+                c.telefono1 = getVal('cnt-telefono1');
+                c.telefono2 = getVal('cnt-telefono2');
+                c.telefonoMovil = getVal('cnt-telefonoMovil');
+                c.email = getVal('cnt-email');
+                c.ciudadNacimiento = getVal('cnt-ciudadNacimiento');
+            }
+        } else if (this.activeTab === 'direcciones') {
+            client.direcciones = client.direcciones || [];
+            if (client.direcciones[this.activeAddressIndex]) {
+                const d = client.direcciones[this.activeAddressIndex];
+                d.tipo = getVal('dir-tipo') || d.tipo;
+                d.nombreDireccion = getVal('dir-nombreDireccion') || d.nombreDireccion;
+                d.municipio = getVal('dir-municipio');
+                d.colonia = getVal('dir-colonia');
+                d.direccionFel = getVal('dir-direccionFel');
+                d.codigoPostal = getVal('dir-codigoPostal');
+                d.estado = getVal('dir-estado');
+                d.pais = getVal('dir-pais');
+            }
+        } else if (this.activeTab === 'condiciones') {
+            client.condicionesPago = client.condicionesPago || {};
+            client.condicionesPago.condicionesPago = getVal('cnd-condicionesPago');
+            client.condicionesPago.listaPrecios = getVal('cnd-listaPrecios');
+            client.condicionesPago.limiteCredito = getVal('cnd-limiteCredito');
+            client.condicionesPago.limiteComprometido = getVal('cnd-limiteComprometido');
+            client.condicionesPago.paisBanco = getVal('cnd-paisBanco');
+            client.condicionesPago.nombreBanco = getVal('cnd-nombreBanco');
+            client.condicionesPago.codigoBancario = getVal('cnd-codigoBancario');
+            client.condicionesPago.cuentaBanco = getVal('cnd-cuentaBanco');
+            client.condicionesPago.bicSwift = getVal('cnd-bicSwift');
+            client.condicionesPago.sucursal = getVal('cnd-sucursal');
+        } else if (this.activeTab === 'ejecucion') {
+            client.ejecucionPago = client.ejecucionPago || {};
+            client.ejecucionPago.paisBancoPropio = getVal('ejc-paisBancoPropio');
+            client.ejecucionPago.bancoPropio = getVal('ejc-bancoPropio');
+            client.ejecucionPago.cuentaPropia = getVal('ejc-cuentaPropia');
+            client.ejecucionPago.numeroControl = getVal('ejc-numeroControl');
+            client.ejecucionPago.infoReferencia = getVal('ejc-infoReferencia');
+        } else if (this.activeTab === 'finanzas') {
+            client.finanzas = client.finanzas || {};
+            client.finanzas.deudoresCuenta = getVal('fin-deudoresCuenta');
+            client.finanzas.deudoresNombre = getVal('fin-deudoresNombre');
+            client.finanzas.cuentaCompensacionAntic = getVal('fin-cuentaCompensacionAntic');
+            client.finanzas.cuentaProvisionalAntic = getVal('fin-cuentaProvisionalAntic');
         } else if (this.activeTab === 'comentarios') {
             const txt = document.getElementById('txt-comentarios');
             if (txt) client.comentarios = txt.value;

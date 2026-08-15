@@ -32,9 +32,10 @@
     --status-danger: #ef4444;
     --status-inactive: #94a3b8;
 
-    /* Dimensiones */
-    --radius-capsule: 9999px;
-    --radius-card: 20px;
+    /* Dimensiones Material Design */
+    --radius-capsule: 6px;
+    --radius-card: 8px;
+    --radius-btn: 6px;
 }
 
 /* Reset Base */
@@ -150,12 +151,12 @@ code, pre, .font-mono {
     gap: 6px;
     background: linear-gradient(180deg, #ffffff 0%, #e2e8f0 100%);
     border: var(--border-metallic);
-    padding: 6px 14px;
+    padding: 6px 12px;
     border-radius: var(--radius-capsule);
     font-size: 0.75rem;
     font-weight: 700;
     color: var(--text-dark);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 2px 4px rgba(0, 0, 0, 0.05);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .pill-dot.dot-active { color: var(--status-success); }
@@ -224,7 +225,7 @@ code, pre, .font-mono {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 12px 22px;
+    padding: 10px 18px;
     text-decoration: none;
     font-size: 0.82rem;
     font-weight: 800;
@@ -233,9 +234,9 @@ code, pre, .font-mono {
     background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%);
     border: var(--border-metallic);
     border-bottom: none;
-    border-radius: 12px 12px 0 0;
+    border-radius: 6px 6px 0 0;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 -2px 5px rgba(0, 0, 0, 0.04);
-    transition: all 0.2s ease;
+    transition: all 0.15s ease-in-out;
     position: relative;
     white-space: nowrap;
 }
@@ -330,13 +331,13 @@ code, pre, .font-mono {
     overflow-x: auto;
     background: #e2e8f0;
     padding: 6px;
-    border-radius: 12px;
+    border-radius: 6px;
     border: var(--border-metallic);
 }
 
 .subtab-btn {
     padding: 8px 14px;
-    border-radius: 8px;
+    border-radius: 4px;
     border: none;
     background: transparent;
     font-size: 0.78rem;
@@ -358,27 +359,28 @@ code, pre, .font-mono {
     box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
 }
 
-/* Ficha y Formulario Cápsula */
+/* Ficha y Formulario Cápsula (Material Design - Cuadrado) */
 .form-control-capsule, .form-select-capsule {
     background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
     border: var(--border-metallic);
-    border-radius: var(--radius-capsule);
+    border-radius: 6px;
     font-size: 0.82rem;
     box-shadow: var(--shadow-inset-input);
-    padding: 6px 14px;
+    padding: 6px 12px;
 }
 
-.form-control-capsule:focus {
+.form-control-capsule:focus, .form-select-capsule:focus {
     border-color: #0284c7;
     box-shadow: inset 0 2px 4px rgba(2, 132, 199, 0.15), 0 0 0 3px rgba(56, 189, 248, 0.25);
+    outline: none;
 }
 
-/* Botones de Cápsula Gradient */
-.btn-capsule {
-    border-radius: var(--radius-capsule);
+/* Botones Estilo Material Design (Cuadrados con Bordes Suaves) */
+.btn-capsule, .btn-gci {
+    border-radius: 6px !important;
     font-size: 0.8rem;
     font-weight: 800;
-    padding: 8px 18px;
+    padding: 8px 16px;
     border: none;
     cursor: pointer;
 }
@@ -413,7 +415,7 @@ code, pre, .font-mono {
 .client-item-card {
     background: #ffffff;
     border: 1px solid #cbd5e1;
-    border-radius: 12px;
+    border-radius: 6px;
     padding: 10px 14px;
     cursor: pointer;
     transition: all 0.2s ease;
