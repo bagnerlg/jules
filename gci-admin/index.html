@@ -3,13 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GCI Admin - Plataforma de Control</title>
+    <title>GCI Admin - Plataforma Empresarial</title>
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <!-- FontAwesome / CDN Icons -->
+    <!-- Bootstrap CSS Grid & Utility System -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+    <!-- FontAwesome / Bootstrap Icons / CDN Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <!-- Base Styling -->
     <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -47,30 +50,38 @@
                 </div>
             </div>
 
-            <div class="user-profile-badge">
-                <div class="user-avatar-glossy">
-                    <i class="fa-solid fa-user-shield"></i>
-                </div>
-                <div class="user-info">
-                    <span class="user-name">Administrador GCI</span>
-                    <span class="user-role">Super Admin</span>
+            <!-- Acciones de Cabecera: Botón Modal de Conexiones & Perfil -->
+            <div class="d-flex align-items-center gap-3">
+                <button id="btn-open-connections-modal" class="btn-gci btn-primary" style="padding: 8px 16px; border-radius: 20px; display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-plug"></i>
+                    <span>Configuración de Conexiones</span>
+                </button>
+
+                <div class="user-profile-badge">
+                    <div class="user-avatar-glossy">
+                        <i class="fa-solid fa-user-shield"></i>
+                    </div>
+                    <div class="user-info">
+                        <span class="user-name">Administrador GCI</span>
+                        <span class="user-role">Super Admin</span>
+                    </div>
                 </div>
             </div>
         </header>
 
-        <!-- NAVEGACIÓN HORIZONTAL GLOSSY (Pestañas estilo relieve / 3D) -->
+        <!-- NAVEGACIÓN HORIZONTAL GLOSSY (Pestañas estilo relieve / 3D con prioridad a Clientes) -->
         <nav class="glossy-navbar">
             <ul class="nav-tabs-container">
-                <li class="nav-tab-item active" data-module="dashboard">
-                    <a href="#dashboard" class="nav-tab-link tab-cyan">
-                        <i class="fa-solid fa-chart-pie"></i>
-                        <span>DASHBOARD</span>
+                <li class="nav-tab-item active" data-module="clientes">
+                    <a href="#clientes" class="nav-tab-link tab-cyan">
+                        <i class="fa-solid fa-users"></i>
+                        <span>CLIENTES</span>
                     </a>
                 </li>
-                <li class="nav-tab-item" data-module="api-config">
-                    <a href="#api-config" class="nav-tab-link tab-blue">
-                        <i class="fa-solid fa-sliders"></i>
-                        <span>CONEXIONES & APIs</span>
+                <li class="nav-tab-item" data-module="dashboard">
+                    <a href="#dashboard" class="nav-tab-link tab-blue">
+                        <i class="fa-solid fa-chart-pie"></i>
+                        <span>DASHBOARD</span>
                     </a>
                 </li>
                 <li class="nav-tab-item" data-module="file-manager">
@@ -86,7 +97,7 @@
                     </a>
                 </li>
                 <li class="nav-tab-item" data-module="sap-view">
-                    <a href="#sap-view" class="nav-link-item tab-deepblue">
+                    <a href="#sap-view" class="nav-tab-link tab-deepblue">
                         <i class="fa-solid fa-building-columns"></i>
                         <span>SAP B1</span>
                     </a>
@@ -95,12 +106,6 @@
                     <a href="#google-sheets-view" class="nav-tab-link tab-green">
                         <i class="fa-solid fa-file-excel"></i>
                         <span>GOOGLE SHEETS</span>
-                    </a>
-                </li>
-                <li class="nav-tab-item" data-module="onedrive-view">
-                    <a href="#onedrive-view" class="nav-tab-link tab-cloud">
-                        <i class="fa-solid fa-cloud"></i>
-                        <span>ONEDRIVE</span>
                     </a>
                 </li>
             </ul>
@@ -115,6 +120,19 @@
                 </div>
             </div>
         </main>
+    </div>
+
+    <!-- MODAL DE CONFIGURACIÓN DE CONEXIONES API -->
+    <div id="connections-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-dialog-gci">
+            <div class="modal-header-gci">
+                <h3><i class="fa-solid fa-plug text-primary"></i> Configuración de Conexiones (APIs & Datos)</h3>
+                <button id="btn-close-connections-modal" class="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body-gci" id="connections-modal-body">
+                <!-- Se renderizará dinámicamente desde api-config.js -->
+            </div>
+        </div>
     </div>
 
     <!-- Script Principal JS Modular -->

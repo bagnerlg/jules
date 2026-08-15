@@ -2,19 +2,24 @@
  * GCI ADMIN - App Principal & Enrutador Modular (Versión Navbar Glossy)
  */
 
+import { ClientsModule } from './modules/clients.js';
 import { renderDashboardModule } from './modules/dashboard.js';
 import { renderApiConfigModule } from './modules/api-config.js';
 import { renderFileManagerModule } from './modules/file-manager.js';
 
+// Instancia única del módulo de Clientes
+const clientsInstance = new ClientsModule();
+
 // Módulo App Global
 export const GCIApp = {
-    currentModule: 'dashboard',
+    currentModule: 'clientes',
 
     // Registro de Módulos disponibles
     modules: {
+        'clientes': { title: 'Clientes', render: (container) => { container.innerHTML = clientsInstance.render(); clientsInstance.initEvents(); } },
         'dashboard': { title: 'Dashboard', render: renderDashboardModule },
-        'api-config': { title: 'Conexiones & APIs', render: renderApiConfigModule },
         'file-manager': { title: 'Archivos Locales', render: renderFileManagerModule },
+        'api-config': { title: 'Conexiones & APIs', render: renderApiConfigModule },
         'supabase-view': { title: 'Supabase DB', render: () => renderPlaceholderModule('Supabase DB', 'fa-database', '059669') },
         'sap-view': { title: 'SAP Business One', render: () => renderPlaceholderModule('SAP Business One', 'fa-building-columns', '1e40af') },
         'google-sheets-view': { title: 'Google Sheets', render: () => renderPlaceholderModule('Google Sheets', 'fa-file-excel', '166534') },
@@ -22,16 +27,17 @@ export const GCIApp = {
     },
 
     init() {
-        console.log("🚀 Inicializando GCI Admin Glossy Core...");
+        console.log("🚀 Inicializando GCI Admin Glossy Core (Módulo Clientes)...");
         this.setupNavigation();
+        this.setupConnectionsModal();
         this.updatePillsStatus();
 
-        // Manejar cambio de Hash o carga inicial
-        const initialModule = location.hash.replace('#', '') || 'dashboard';
+        // Manejar cambio de Hash o carga inicial (Por defecto 'clientes')
+        const initialModule = location.hash.replace('#', '') || 'clientes';
         this.navigateTo(initialModule);
 
         window.addEventListener('hashchange', () => {
-            const moduleName = location.hash.replace('#', '') || 'dashboard';
+            const moduleName = location.hash.replace('#', '') || 'clientes';
             this.navigateTo(moduleName);
         });
     },
@@ -51,10 +57,44 @@ export const GCIApp = {
         });
     },
 
+    // Modal de Conexiones API desde la cabecera
+    setupConnectionsModal() {
+        const modal = document.getElementById('connections-modal');
+        const openBtn = document.getElementById('btn-open-connections-modal');
+        const closeBtn = document.getElementById('btn-close-connections-modal');
+        const modalBody = document.getElementById('connections-modal-body');
+
+        if (openBtn && modal) {
+            openBtn.addEventListener('click', () => {
+                if (modalBody) {
+                    renderApiConfigModule(modalBody);
+                }
+                modal.style.display = 'flex';
+            });
+        }
+
+        if (closeBtn && modal) {
+            closeBtn.addEventListener('click', () => {
+                modal.style.display = 'none';
+                this.updatePillsStatus();
+            });
+        }
+
+        // Cerrar al hacer clic fuera del modal
+        if (modal) {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.style.display = 'none';
+                    this.updatePillsStatus();
+                }
+            });
+        }
+    },
+
     // Carga de Módulo Dinámica y Aislada
     navigateTo(moduleName) {
         if (!this.modules[moduleName]) {
-            moduleName = 'dashboard';
+            moduleName = 'clientes';
         }
 
         this.currentModule = moduleName;
@@ -135,9 +175,9 @@ function renderPlaceholderModule(title, icon, colorHex) {
             </div>
             <h2>Módulo listo para conexión</h2>
             <p style="color: var(--text-muted); max-width: 500px; margin: 10px auto 24px;">
-                Las credenciales para este servicio pueden configurarse en la pestaña <a href="#api-config" style="color: #2563eb; font-weight: 700;">CONEXIONES & APIs</a>.
+                Las credenciales para este servicio pueden configurarse en el botón superior <strong style="color: #2563eb;">"Configuración de Conexiones"</strong>.
             </p>
-            <a href="#api-config" class="btn-gci btn-primary"><i class="fa-solid fa-sliders"></i> Configurar Credenciales</a>
+            <button onclick="document.getElementById('btn-open-connections-modal').click()" class="btn-gci btn-primary"><i class="fa-solid fa-plug"></i> Configurar Credenciales</button>
         </div>
     `;
 }
