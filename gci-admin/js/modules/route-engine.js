@@ -336,6 +336,12 @@ export class RouteEngine {
         localStorage.setItem(this.scheduledVisitsKey, JSON.stringify(visits));
     }
 
+    deleteScheduledVisit(visitId) {
+        let visits = this.getScheduledVisits();
+        visits = visits.filter(v => v.id !== visitId);
+        localStorage.setItem(this.scheduledVisitsKey, JSON.stringify(visits));
+    }
+
     // Fórmula Haversine para distancia en línea recta (KM)
     calculateHaversineDistance(lat1, lon1, lat2, lon2) {
         const R = 6371; // Radio de la Tierra en KM

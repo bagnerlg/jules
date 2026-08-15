@@ -279,9 +279,14 @@ export class RoutesModule {
         }
 
         return scheduled.map(s => `
-            <div class="p-2 mb-2 bg-light rounded border-start border-3 border-primary extra-small">
-                <div class="fw-bold text-primary">${s.clientName}</div>
-                <div class="text-muted">${s.notes || 'Visita acordada'}</div>
+            <div class="p-2 mb-2 bg-light rounded border-start border-3 border-primary extra-small d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="fw-bold text-primary">${s.clientName}</div>
+                    <div class="text-muted">${s.notes || 'Visita acordada'}</div>
+                </div>
+                <button class="btn btn-xs btn-outline-danger btn-delete-scheduled-visit ms-2" data-visit-id="${s.id}" title="Eliminar visita acordada">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
             </div>
         `).join('');
     }
@@ -441,6 +446,15 @@ export class RoutesModule {
                 this.deleteActiveRoute();
             });
         }
+
+        // Eliminar Visita Acordada Previamente
+        document.querySelectorAll('.btn-delete-scheduled-visit').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const visitId = btn.dataset.visitId;
+                this.engine.deleteScheduledVisit(visitId);
+                this.refreshUI();
+            });
+        });
 
         this.loadLeafletAssets();
     }
