@@ -702,28 +702,46 @@
             return false;
         }
 
-        // 2. Regla de negocio: Si hay un solo producto en la orden y vale menos de Q 1,999.00
+        // Función auxiliar para determinar si un ítem pertenece a una categoría restringida
+        function esCategoriaRestringida(catVal, precioVal) {
+            var cat = (catVal || "").toLowerCase().trim();
+
+            // 1. Categoría Promocionales: Siempre es restringida (no puede ir sola)
+            if (cat === "promocionales" || cat === "promocional" || cat === "promocion") {
+                return true;
+            }
+
+            // 2. Categoría Centro de Entretenimiento: Es restringida SOLO si su precio es menor a Q 1,699.00
+            if (cat.indexOf("centro de entretenimiento") !== -1 || cat.indexOf("entretenimiento") !== -1) {
+                if (precioVal < 1699) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        // 2. Regla de negocio: Si hay un solo producto en la orden y vale menos de Q 1,699.00
         if (g_rows.length === 1) {
             var singleItem = g_rows[0];
-            if (singleItem.precioVal < 1999) {
-                alert("No se puede enviar un solo producto si su precio es menor a Q 1,999.00. Debe agregar otro producto a la orden.");
+            if (singleItem.precioVal < 1699) {
+                alert("No se puede enviar un solo producto si su precio es menor a Q 1,699.00. Debe agregar otro producto a la orden.");
                 var searchInp = $("buscarSku");
                 if (searchInp) searchInp.focus();
                 return false;
             }
         }
 
-        // 3. Regla de negocio: Si todos los productos agregados son de la categoría "Promocionales", no se puede enviar solo esa categoría
-        var tieneCategoriaNoPromocional = false;
+        // 3. Regla de negocio: Verificar que la orden contenga al menos un producto no restringido
+        var tieneProductoValidoPrincipal = false;
         for (var i = 0; i < g_rows.length; i++) {
-            var cat = (g_rows[i].catVal || "").toLowerCase().trim();
-            if (cat !== "promocionales" && cat !== "promocional" && cat !== "promocion") {
-                tieneCategoriaNoPromocional = true;
+            if (!esCategoriaRestringida(g_rows[i].catVal, g_rows[i].precioVal)) {
+                tieneProductoValidoPrincipal = true;
                 break;
             }
         }
-        if (!tieneCategoriaNoPromocional) {
-            alert("Los productos de la categoría 'Promocionales' no pueden enviarse solos. Debe incluir al menos un producto de otra categoría en la orden.");
+        if (!tieneProductoValidoPrincipal) {
+            alert("Los productos de la categoría 'Promocionales' y 'Centro de Entretenimiento' (menores a Q 1,699.00) no pueden enviarse solos. Debe incluir al menos un producto de otra categoría en la orden.");
             var searchInp = $("buscarSku");
             if (searchInp) searchInp.focus();
             return false;
