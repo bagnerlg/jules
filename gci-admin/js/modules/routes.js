@@ -152,6 +152,11 @@ export class RoutesModule {
                                 ${this.renderRouteTabs()}
                             </div>
 
+                            <!-- Botón de Abrir Ruta Completa con Paradas -->
+                            <div class="mb-3" id="full-route-btn-container">
+                                ${this.renderFullRouteButton()}
+                            </div>
+
                             <!-- Contenedor del Mapa Leaflet -->
                             <div id="route-map" class="route-map-container mb-3" style="height: 320px; border-radius: 8px; border: 1px solid #cbd5e1; background: #e2e8f0;">
                                 <div class="d-flex align-items-center justify-content-center h-100 text-muted extra-small">
@@ -166,6 +171,78 @@ export class RoutesModule {
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MODAL DE REPORTE DE CUMPLIMIENTO DE VISITA CON FOTO Y PRODUCTOS -->
+            <div id="completion-report-modal" class="modal-overlay" style="display: none;">
+                <div class="modal-dialog-gci" style="max-width: 600px;">
+                    <div class="modal-header-gci">
+                        <h3><i class="fa-solid fa-clipboard-check text-success"></i> Reporte de Visita y Cumplimiento</h3>
+                        <button id="btn-close-completion-modal" class="modal-close-btn">&times;</button>
+                    </div>
+                    <div class="modal-body-gci">
+                        <form id="form-completion-report">
+                            <input type="hidden" id="rep-client-id">
+                            <div class="mb-3">
+                                <label class="form-label extra-small fw-bold">Cliente Visitado</label>
+                                <input type="text" id="rep-client-name" class="form-control form-control-capsule bg-light" readonly>
+                            </div>
+
+                            <!-- Carga de Foto del Local del Cliente -->
+                            <div class="mb-3">
+                                <label class="form-label extra-small fw-bold text-primary"><i class="fa-solid fa-camera me-1"></i> Foto del Local / Fachada del Cliente *</label>
+                                <input type="file" id="rep-photo-input" class="form-control form-control-sm" accept="image/*" required>
+                                <div class="extra-small text-muted mt-1">Requerido como comprobante físico si no hay GPS activo o comprobante de visita.</div>
+                                <div id="rep-photo-preview" class="mt-2 text-center" style="display: none;">
+                                    <img id="img-preview" src="" alt="Vista previa" style="max-height: 140px; border-radius: 8px; border: 1px solid #cbd5e1;">
+                                </div>
+                            </div>
+
+                            <!-- Registro de Productos Nuestros en Tienda -->
+                            <div class="p-3 mb-3 bg-light rounded border">
+                                <h6 class="extra-small fw-bold text-dark uppercase mb-2"><i class="fa-solid fa-boxes-stacked me-1 text-info"></i> Inventario de Nuestros Productos en Tienda</h6>
+                                <div class="row g-2 mb-2">
+                                    <div class="col-7">
+                                        <label class="extra-small fw-bold">Producto en Exhibición</label>
+                                        <input type="text" id="rep-prod-name" class="form-control form-control-sm extra-small" placeholder="Ej: Ropero 2 Puertas L">
+                                    </div>
+                                    <div class="col-3">
+                                        <label class="extra-small fw-bold">Cantidad</label>
+                                        <input type="number" id="rep-prod-qty" class="form-control form-control-sm extra-small font-mono" min="1" value="1">
+                                    </div>
+                                    <div class="col-2 d-flex align-items-end">
+                                        <button type="button" id="btn-add-prod-item" class="btn btn-sm btn-primary w-100 extra-small"><i class="fa-solid fa-plus"></i></button>
+                                    </div>
+                                </div>
+                                <div id="rep-products-list" class="extra-small text-muted">
+                                    No hay productos agregados al reporte.
+                                </div>
+                            </div>
+
+                            <!-- Ventas Realizadas en la Semana -->
+                            <div class="mb-3">
+                                <label class="form-label extra-small fw-bold">¿Se vendió algún producto en la semana?</label>
+                                <div class="d-flex gap-3 mb-2">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="soldThisWeek" id="soldYes" value="SI">
+                                        <label class="form-check-label extra-small" for="soldYes">Sí, hubo venta</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="soldThisWeek" id="soldNo" value="NO" checked>
+                                        <label class="form-check-label extra-small" for="soldNo">No hubo venta</label>
+                                    </div>
+                                </div>
+                                <textarea id="rep-sales-details" class="form-control form-control-capsule" rows="2" placeholder="Detalle de productos vendidos o notas de la venta..."></textarea>
+                            </div>
+
+                            <div class="text-end">
+                                <button type="button" id="btn-submit-visit-report" class="btn btn-capsule btn-success-gradient">
+                                    <i class="fa-solid fa-check-circle me-1"></i> Registrar Parada como Cumplida
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             </div>
@@ -238,6 +315,36 @@ export class RoutesModule {
         return tabsHtml;
     }
 
+    renderFullRouteButton() {
+        const activeRoute = this.getActiveRoute();
+        if (!activeRoute || !activeRoute.waypoints || activeRoute.waypoints.length === 0) {
+            return '';
+        }
+
+        const originStr = `${activeRoute.origin.lat},${activeRoute.origin.lng}`;
+        const destinationWp = activeRoute.waypoints[activeRoute.waypoints.length - 1];
+        const destinationStr = `${destinationWp.lat},${destinationWp.lng}`;
+
+        // Construir waypoints intermedios para Google Maps
+        const waypointsStr = activeRoute.waypoints.slice(0, activeRoute.waypoints.length - 1)
+            .map(w => `${w.lat},${w.lng}`).join('|');
+
+        const fullGmapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${originStr}&destination=${destinationStr}&waypoints=${waypointsStr}&travelmode=driving`;
+        const firstWazeUrl = activeRoute.waypoints[0].wazeUrl;
+
+        return `
+            <div class="d-flex flex-wrap align-items-center gap-2 p-2 bg-light rounded border border-info">
+                <span class="extra-small fw-bold text-dark"><i class="fa-solid fa-diamond-turn-right text-primary me-1"></i> Navegación de Ruta Completa (${activeRoute.waypoints.length} paradas):</span>
+                <a href="${fullGmapsUrl}" target="_blank" class="btn btn-xs btn-primary fw-bold" style="border-radius: 6px; font-size: 0.72rem;">
+                    <i class="fa-solid fa-map-location-dot me-1"></i> Abrir Ruta Completa (Google Maps Multiparada)
+                </a>
+                <a href="${firstWazeUrl}" target="_blank" class="btn btn-xs btn-info text-white fw-bold" style="border-radius: 6px; font-size: 0.72rem; background: #0284c7;">
+                    <i class="fa-solid fa-location-arrow me-1"></i> Iniciar Parada #1 en Waze
+                </a>
+            </div>
+        `;
+    }
+
     renderCalendarGrid() {
         const today = new Date();
         const year = today.getFullYear();
@@ -291,7 +398,125 @@ export class RoutesModule {
         `).join('');
     }
 
+    openCompletionModal(clientId, clientName) {
+        const modal = document.getElementById('completion-report-modal');
+        if (!modal) return;
+
+        document.getElementById('rep-client-id').value = clientId;
+        document.getElementById('rep-client-name').value = clientName;
+        document.getElementById('rep-photo-input').value = '';
+        document.getElementById('rep-photo-preview').style.display = 'none';
+        document.getElementById('rep-prod-name').value = '';
+        document.getElementById('rep-prod-qty').value = '1';
+        document.getElementById('rep-sales-details').value = '';
+        document.getElementById('soldNo').checked = true;
+
+        this.currentReportProducts = [];
+        this.renderReportProductsList();
+
+        modal.style.display = 'flex';
+    }
+
+    renderReportProductsList() {
+        const listContainer = document.getElementById('rep-products-list');
+        if (!listContainer) return;
+
+        if (!this.currentReportProducts || this.currentReportProducts.length === 0) {
+            listContainer.innerHTML = '<span class="text-muted font-italic">No hay productos agregados.</span>';
+            return;
+        }
+
+        listContainer.innerHTML = `
+            <div class="d-flex flex-wrap gap-1">
+                ${this.currentReportProducts.map((p, idx) => `
+                    <span class="badge bg-secondary d-flex align-items-center gap-1">
+                        ${p.name} (${p.qty})
+                        <button type="button" class="btn-close btn-close-white btn-remove-rep-prod" data-index="${idx}" style="font-size: 0.55rem;"></button>
+                    </span>
+                `).join('')}
+            </div>
+        `;
+
+        listContainer.querySelectorAll('.btn-remove-rep-prod').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.dataset.index, 10);
+                this.currentReportProducts.splice(idx, 1);
+                this.renderReportProductsList();
+            });
+        });
+    }
+
     initEvents() {
+        // Modal de Reporte de Cumplimiento
+        const modalComp = document.getElementById('completion-report-modal');
+        const btnCloseComp = document.getElementById('btn-close-completion-modal');
+        const btnAddProd = document.getElementById('btn-add-prod-item');
+        const photoInput = document.getElementById('rep-photo-input');
+        const btnSubmitComp = document.getElementById('btn-submit-visit-report');
+
+        if (btnCloseComp && modalComp) {
+            btnCloseComp.addEventListener('click', () => {
+                modalComp.style.display = 'none';
+            });
+        }
+
+        if (photoInput) {
+            photoInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                        const img = document.getElementById('img-preview');
+                        if (img) img.src = evt.target.result;
+                        const preview = document.getElementById('rep-photo-preview');
+                        if (preview) preview.style.display = 'block';
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+        }
+
+        if (btnAddProd) {
+            btnAddProd.addEventListener('click', () => {
+                const name = document.getElementById('rep-prod-name').value.trim();
+                const qty = parseInt(document.getElementById('rep-prod-qty').value, 10) || 1;
+                if (name) {
+                    if (!this.currentReportProducts) this.currentReportProducts = [];
+                    this.currentReportProducts.push({ name, qty });
+                    document.getElementById('rep-prod-name').value = '';
+                    document.getElementById('rep-prod-qty').value = '1';
+                    this.renderReportProductsList();
+                }
+            });
+        }
+
+        if (btnSubmitComp) {
+            btnSubmitComp.addEventListener('click', () => {
+                const clientId = document.getElementById('rep-client-id').value;
+                const photoInputElem = document.getElementById('rep-photo-input');
+
+                if (!photoInputElem.files || photoInputElem.files.length === 0) {
+                    alert("Por favor adjunte la foto del local/fachada del cliente como comprobante de visita.");
+                    return;
+                }
+
+                const soldThisWeek = document.querySelector('input[name="soldThisWeek"]:checked').value;
+                const salesDetails = document.getElementById('rep-sales-details').value;
+
+                const reportData = {
+                    photoAttached: true,
+                    products: this.currentReportProducts || [],
+                    soldThisWeek: soldThisWeek,
+                    salesDetails: salesDetails
+                };
+
+                this.engine.saveVisitCompletion(this.selectedDate, clientId, reportData);
+                modalComp.style.display = 'none';
+                this.renderWaypointsList();
+                this.renderMap();
+            });
+        }
+
         // Modal de Agendar Visita
         const btnOpenSchedule = document.getElementById('btn-open-schedule-modal');
         const modalSchedule = document.getElementById('schedule-visit-modal');
@@ -480,6 +705,11 @@ export class RoutesModule {
                 });
             }
         }
+
+        const fullRouteContainer = document.getElementById('full-route-btn-container');
+        if (fullRouteContainer) {
+            fullRouteContainer.innerHTML = this.renderFullRouteButton();
+        }
     }
 
     loadLeafletAssets() {
@@ -595,13 +825,15 @@ export class RoutesModule {
         // Filtrar el cliente quitado
         routeToModify.waypoints = routeToModify.waypoints.filter(wp => wp.id !== clientId);
 
-        // Recalcular distancias y orden numerado de paradas en tiempo real
+        // Recalcular distancias, orden numerado de paradas y enlaces en tiempo real
         routeToModify.waypoints.forEach((wp, idx) => {
             wp.step = idx + 1;
             const dist = this.engine.calculateHaversineDistance(
                 routeToModify.origin.lat, routeToModify.origin.lng, wp.lat, wp.lng
             );
             wp.distanceKm = parseFloat(dist.toFixed(2));
+            wp.wazeUrl = `https://www.waze.com/ul?ll=${wp.lat},${wp.lng}&navigate=yes&from=${routeToModify.origin.lat},${routeToModify.origin.lng}`;
+            wp.mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${routeToModify.origin.lat},${routeToModify.origin.lng}&destination=${wp.lat},${wp.lng}&travelmode=driving`;
         });
 
         routeToModify.totalWaypoints = routeToModify.waypoints.length;
@@ -633,35 +865,60 @@ export class RoutesModule {
             subInfo.textContent = `${activeRoute.title}: ${activeRoute.totalWaypoints} paradas, ~${activeRoute.totalEstimatedKm} KM estimados desde el punto de partida.`;
         }
 
+        const completions = this.engine.getCompletions();
+
         container.innerHTML = `
             <div class="list-group extra-small">
-                ${activeRoute.waypoints.map(wp => `
-                    <div class="list-group-item p-3 mb-2 rounded border ${wp.isAgreed ? 'bg-warning-soft border-warning' : 'bg-white'}">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div class="d-flex align-items-center gap-2">
-                                <span class="badge bg-primary rounded-circle" style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">${wp.step}</span>
-                                <h6 class="m-0 fw-bold text-dark">${wp.cliente}</h6>
-                            </div>
-                            <div class="d-flex align-items-center gap-1">
-                                <a href="${wp.wazeUrl}" target="_blank" class="btn btn-xs btn-info text-white fw-bold" style="border-radius: 12px; background: #0284c7;">
-                                    <i class="fa-solid fa-location-arrow me-1"></i> Waze
-                                </a>
-                                <button class="btn btn-xs btn-outline-danger btn-remove-client-from-route" data-client-id="${wp.id}" title="Quitar cliente de esta ruta">
-                                    <i class="fa-solid fa-xmark"></i>
-                                </button>
-                            </div>
-                        </div>
+                ${activeRoute.waypoints.map(wp => {
+                    const isCompleted = this.engine.isVisitCompleted(this.selectedDate, wp.id);
+                    const compData = completions[`${this.selectedDate}_${wp.id}`];
 
-                        <div class="mt-2 text-muted">
-                            <i class="fa-solid fa-location-dot text-danger me-1"></i> ${wp.direccion}, ${wp.municipio}, ${wp.departamento}
-                            <span class="ms-2 font-mono fw-bold text-dark">(${wp.distanceKm} KM desde origen)</span>
-                        </div>
+                    return `
+                        <div class="list-group-item p-3 mb-2 rounded border ${isCompleted ? 'bg-success-subtle border-success' : (wp.isAgreed ? 'bg-warning-soft border-warning' : 'bg-white')}">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="badge ${isCompleted ? 'bg-success' : 'bg-primary'} rounded-circle" style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">${wp.step}</span>
+                                    <div>
+                                        <h6 class="m-0 fw-bold text-dark d-flex align-items-center gap-2">
+                                            ${wp.cliente}
+                                            ${isCompleted ? '<span class="badge bg-success font-mono"><i class="fa-solid fa-circle-check me-1"></i> Parada Cumplida</span>' : ''}
+                                        </h6>
+                                    </div>
+                                </div>
+                                <div class="d-flex align-items-center gap-1">
+                                    ${!isCompleted ? `
+                                        <button class="btn btn-xs btn-success text-white fw-bold btn-open-completion-modal" data-client-id="${wp.id}" data-client-name="${wp.cliente}" style="border-radius: 12px;" title="Registrar cumplimiento de parada">
+                                            <i class="fa-solid fa-check me-1"></i> Cumplido
+                                        </button>
+                                    ` : ''}
+                                    <a href="${wp.wazeUrl}" target="_blank" class="btn btn-xs btn-info text-white fw-bold" style="border-radius: 12px; background: #0284c7;">
+                                        <i class="fa-solid fa-location-arrow me-1"></i> Waze
+                                    </a>
+                                    <button class="btn btn-xs btn-outline-danger btn-remove-client-from-route" data-client-id="${wp.id}" title="Quitar cliente de esta ruta">
+                                        <i class="fa-solid fa-xmark"></i>
+                                    </button>
+                                </div>
+                            </div>
 
-                        <div class="mt-2">
-                            ${wp.priorityReasons.map(r => `<span class="badge bg-secondary me-1 mb-1">${r}</span>`).join('')}
+                            <div class="mt-2 text-muted">
+                                <i class="fa-solid fa-location-dot text-danger me-1"></i> ${wp.direccion}, ${wp.municipio}, ${wp.departamento}
+                                <span class="ms-2 font-mono fw-bold text-dark">(${wp.distanceKm} KM desde origen)</span>
+                            </div>
+
+                            ${isCompleted && compData ? `
+                                <div class="mt-2 p-2 bg-white rounded border border-success-subtle extra-small text-dark">
+                                    <div class="fw-bold text-success"><i class="fa-solid fa-camera me-1"></i> Reporte de Visita Registrado:</div>
+                                    <div class="text-muted">Productos nuestros en tienda: <b>${compData.products ? compData.products.map(p => `${p.name} (${p.qty})`).join(', ') : 'Ninguno registrado'}</b></div>
+                                    <div class="text-muted">Venta en la semana: <b>${compData.soldThisWeek}</b> ${compData.salesDetails ? `(${compData.salesDetails})` : ''}</div>
+                                </div>
+                            ` : ''}
+
+                            <div class="mt-2">
+                                ${wp.priorityReasons.map(r => `<span class="badge bg-secondary me-1 mb-1">${r}</span>`).join('')}
+                            </div>
                         </div>
-                    </div>
-                `).join('')}
+                    `;
+                }).join('')}
             </div>
         `;
 
@@ -670,6 +927,15 @@ export class RoutesModule {
             btn.addEventListener('click', () => {
                 const clientId = btn.dataset.clientId;
                 this.removeClientFromActiveRoute(clientId);
+            });
+        });
+
+        // Eventos para abrir modal de reporte de cumplimiento
+        container.querySelectorAll('.btn-open-completion-modal').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const clientId = btn.dataset.clientId;
+                const clientName = btn.dataset.clientName;
+                this.openCompletionModal(clientId, clientName);
             });
         });
     }

@@ -313,6 +313,32 @@ const DEMO_ROUTE_DATA = [
 export class RouteEngine {
     constructor() {
         this.scheduledVisitsKey = 'gci_scheduled_visits';
+        this.completionsKey = 'gci_route_completions';
+    }
+
+    getCompletions() {
+        try {
+            return JSON.parse(localStorage.getItem(this.completionsKey) || '{}');
+        } catch (e) {
+            return {};
+        }
+    }
+
+    saveVisitCompletion(dateStr, clientId, reportData) {
+        const completions = this.getCompletions();
+        const key = `${dateStr}_${clientId}`;
+        completions[key] = {
+            date: dateStr,
+            clientId: clientId,
+            timestamp: new Date().toISOString(),
+            ...reportData
+        };
+        localStorage.setItem(this.completionsKey, JSON.stringify(completions));
+    }
+
+    isVisitCompleted(dateStr, clientId) {
+        const completions = this.getCompletions();
+        return !!completions[`${dateStr}_${clientId}`];
     }
 
     getScheduledVisits() {
@@ -474,7 +500,8 @@ export class RouteEngine {
         const routeWaypoints = candidates.map((item, index) => ({
             step: index + 1,
             ...item,
-            wazeUrl: `https://waze.com/ul?ll=${item.lat},${item.lng}&navigate=yes`
+            wazeUrl: `https://www.waze.com/ul?ll=${item.lat},${item.lng}&navigate=yes&from=${originCoords.lat},${originCoords.lng}`,
+            mapsUrl: `https://www.google.com/maps/dir/?api=1&origin=${originCoords.lat},${originCoords.lng}&destination=${item.lat},${item.lng}&travelmode=driving`
         }));
 
         const totalKm = routeWaypoints.reduce((sum, w) => sum + w.distanceKm, 0);
