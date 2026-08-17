@@ -181,6 +181,14 @@ export const REFERENCE_LOCATIONS = [
     { name: 'Chiquimula - Centro', lat: 14.7833, lng: -89.5500, dept: 'Chiquimula' }
 ];
 
+// Configuración de Horarios Laborales y Distancias por Defecto
+export const DEFAULT_TIME_CONFIG = {
+    workStartHour: '07:00',
+    workEndHour: '17:00',
+    visitDurationMinutes: 60, // Estándar 1 hora por cliente (máximo 120 min / 2 horas)
+    maxConsecutiveDistanceKm: 20 // Máximo 20 KM entre paradas consecutivas
+};
+
 // Base de Datos Demostrativa de Cartera, Cobros y Pedidos integrados
 const DEMO_ROUTE_DATA = [
     {
@@ -191,6 +199,7 @@ const DEMO_ROUTE_DATA = [
         regionKey: 'occidente',
         municipio: 'Mazatenango',
         departamento: 'Suchitepéquez',
+        subZona: 'Mazatenango Centro',
         direccion: 'Calle Principal Don León Z.1',
         lat: 14.5342,
         lng: -91.5033,
@@ -213,6 +222,7 @@ const DEMO_ROUTE_DATA = [
         regionKey: 'costa_sur',
         municipio: 'Mazatenango',
         departamento: 'Suchitepéquez',
+        subZona: 'Mazatenango Centro',
         direccion: '4ta Calle 2-15 Zona 1',
         lat: 14.5380,
         lng: -91.5080,
@@ -234,6 +244,7 @@ const DEMO_ROUTE_DATA = [
         regionKey: 'oriente',
         municipio: 'Chiquimula',
         departamento: 'Chiquimula',
+        subZona: 'Chiquimula Centro',
         direccion: 'Barrio El Centro',
         lat: 14.7833,
         lng: -89.5500,
@@ -254,6 +265,7 @@ const DEMO_ROUTE_DATA = [
         regionKey: 'occidente',
         municipio: 'Quetzaltenango',
         departamento: 'Quetzaltenango',
+        subZona: 'Xela Urbana / Zona 3',
         direccion: '12 Avenida Zona 3, Xela',
         lat: 14.8347,
         lng: -91.5181,
@@ -274,6 +286,7 @@ const DEMO_ROUTE_DATA = [
         regionKey: 'central',
         municipio: 'Villa Nueva',
         departamento: 'Guatemala',
+        subZona: 'Villa Nueva Sur / Petapa',
         direccion: '16 Avenida 2-00 Zona 4',
         lat: 14.5269,
         lng: -90.5875,
@@ -295,6 +308,7 @@ const DEMO_ROUTE_DATA = [
         regionKey: 'costa_sur',
         municipio: 'Retalhuleu',
         departamento: 'Retalhuleu',
+        subZona: 'Retalhuleu Centro',
         direccion: '5ta Calle Zona 1 Reu',
         lat: 14.5361,
         lng: -91.6778,
@@ -422,6 +436,78 @@ export class RouteEngine {
         this.scheduledVisitsKey = 'gci_scheduled_visits';
         this.completionsKey = 'gci_route_completions';
         this.rulesKey = 'gci_route_rules';
+        this.timeConfigKey = 'gci_route_time_config';
+    }
+
+    getTimeConfig() {
+        try {
+            const saved = localStorage.getItem(this.timeConfigKey);
+            if (saved) return JSON.parse(saved);
+        } catch (e) {
+            console.error("Error al cargar configuración de tiempos:", e);
+        }
+        return JSON.parse(JSON.stringify(DEFAULT_TIME_CONFIG));
+    }
+
+    saveTimeConfig(config) {
+        localStorage.setItem(this.timeConfigKey, JSON.stringify(config));
+    }
+
+    resetTimeConfigToDefault() {
+        localStorage.setItem(this.timeConfigKey, JSON.stringify(DEFAULT_TIME_CONFIG));
+        return JSON.parse(JSON.stringify(DEFAULT_TIME_CONFIG));
+    }
+
+    /**
+     * Obtiene la hora actual en Guatemala en formato "HH:MM" de 24 horas.
+     */
+    getGuatemalaCurrentTimeStr() {
+        const now = new Date();
+        const options = { timeZone: 'America/Guatemala', hour: '2-digit', minute: '2-digit', hour12: false };
+        const timeParts = new Intl.DateTimeFormat('en-US', options).formatToParts(now);
+        let h = '07', m = '00';
+        timeParts.forEach(p => {
+            if (p.type === 'hour') h = p.value;
+            if (p.type === 'minute') m = p.value;
+        });
+        if (h === '24') h = '00';
+        return `${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
+    }
+
+    /**
+     * Obtiene la fecha actual en Guatemala en formato "YYYY-MM-DD".
+     */
+    getGuatemalaTodayDateStr() {
+        const now = new Date();
+        const options = { timeZone: 'America/Guatemala', year: 'numeric', month: '2-digit', day: '2-digit' };
+        const parts = new Intl.DateTimeFormat('en-US', options).formatToParts(now);
+        let y = '', m = '', d = '';
+        parts.forEach(p => {
+            if (p.type === 'year') y = p.value;
+            if (p.type === 'month') m = p.value;
+            if (p.type === 'day') d = p.value;
+        });
+        return `${y}-${m}-${d}`;
+    }
+
+    /**
+     * Suma N minutos a un string de hora "HH:MM"
+     */
+    addMinutesToTimeStr(timeStr, minsToAdd) {
+        const [h, m] = timeStr.split(':').map(Number);
+        const totalMins = (h * 60) + m + minsToAdd;
+        const newH = Math.floor(totalMins / 60) % 24;
+        const newM = totalMins % 60;
+        return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+    }
+
+    /**
+     * Retorna la diferencia en minutos entre dos horas (timeStr2 - timeStr1)
+     */
+    diffMinutes(timeStr1, timeStr2) {
+        const [h1, m1] = timeStr1.split(':').map(Number);
+        const [h2, m2] = timeStr2.split(':').map(Number);
+        return ((h2 * 60) + m2) - ((h1 * 60) + m1);
     }
 
     getRules() {
@@ -603,11 +689,36 @@ export class RouteEngine {
     }
 
     /**
-     * Planifica la ruta óptima iniciando desde el cliente MÁS LEJANO hacia el MÁS CERCANO al origen.
+     * Planifica la ruta óptima con Agrupación Geográfica (Sub-Zonas / Vecino Más Cercano <= 20KM)
+     * y Ventanas de Tiempo Laborales (7:00 AM - 5:00 PM).
      */
     planRoute({ regionKey, originCoords, targetDateStr }) {
         const selectedRegion = GUATEMALA_REGIONS[regionKey] || GUATEMALA_REGIONS['central'];
         const activeRules = this.getRules().filter(r => r.enabled);
+        const timeConfig = this.getTimeConfig();
+
+        const todayStr = this.getGuatemalaTodayDateStr();
+        const isToday = (targetDateStr === todayStr);
+
+        let startTime = timeConfig.workStartHour || '07:00';
+        let workEnd = timeConfig.workEndHour || '17:00';
+        let visitMins = Number(timeConfig.visitDurationMinutes) || 60;
+        let maxKm = Number(timeConfig.maxConsecutiveDistanceKm) || 20;
+
+        let isWorkDayEnded = false;
+        let suggestionMsg = '';
+
+        if (isToday) {
+            const currentGuaTime = this.getGuatemalaCurrentTimeStr();
+            if (this.diffMinutes(currentGuaTime, workEnd) <= 30) {
+                // Son pasadas las 4:30 PM o 5:00 PM
+                isWorkDayEnded = true;
+                suggestionMsg = `Atención: La jornada laboral de hoy (${startTime} - ${workEnd}) está por finalizar o ha concluido (${currentGuaTime}). Se sugiere seleccionar una fecha futura para programar la ruta desde las 7:00 AM.`;
+            } else if (this.diffMinutes(startTime, currentGuaTime) > 0) {
+                // Si la hora actual es posterior a 7:00 AM (ej. 3:00 PM / 15:00)
+                startTime = currentGuaTime;
+            }
+        }
 
         // 1. Filtrar clientes pertenecientes a la región o con acuerdo agendado para hoy
         let candidates = DEMO_ROUTE_DATA.filter(c => {
@@ -625,7 +736,7 @@ export class RouteEngine {
             });
         }
 
-        // 3. Evaluar puntuaciones de prioridad
+        // 3. Evaluar puntuaciones de prioridad y distancias al origen
         candidates = candidates.map(client => {
             const evalResult = this.evaluateClientPriority(client, targetDateStr);
             const distFromOrigin = this.calculateHaversineDistance(
@@ -656,23 +767,81 @@ export class RouteEngine {
             });
         });
 
-        // 5. Ordenamiento Estratégico de Ruta:
-        // Primero aseguramos acuerdos agendados y prioridad alta,
-        // ordenados de Mayor a Menor distancia desde el origen (Iniciando por el más lejano).
-        candidates.sort((a, b) => {
-            if (a.isAgreed !== b.isAgreed) return a.isAgreed ? -1 : 1;
-            if (b.priorityScore !== a.priorityScore) return b.priorityScore - a.priorityScore;
-            return b.distanceKm - a.distanceKm; // De más lejano a más cercano
-        });
+        // 5. Algoritmo de Vecino Más Cercano (Nearest-Neighbor) con Límite de Distancia (20 KM) y Ventana Temporal
+        let unvisited = [...candidates];
+        const routeWaypoints = [];
+        const overflowClients = [];
 
-        // Reordenar secuencia final enumerada (1, 2, 3...)
-        const routeWaypoints = candidates.map((item, index) => ({
-            step: index + 1,
-            ...item,
-            wazeUrl: `https://www.waze.com/live-map/directions?from=ll.${originCoords.lat}%2C${originCoords.lng}&to=ll.${item.lat}%2C${item.lng}`,
-            wazeAppUrl: `https://www.waze.com/ul?ll=${item.lat}%2C${item.lng}&navigate=yes`,
-            mapsUrl: `https://www.google.com/maps/dir/?api=1&origin=${originCoords.lat},${originCoords.lng}&destination=${item.lat},${item.lng}&travelmode=driving`
-        }));
+        let currentLat = originCoords.lat;
+        let currentLng = originCoords.lng;
+        let currentTime = startTime;
+
+        while (unvisited.length > 0) {
+            // Evaluar candidatos disponibles desde la posición actual
+            let bestIndex = -1;
+            let bestScore = -Infinity;
+            let minDistance = Infinity;
+
+            for (let i = 0; i < unvisited.length; i++) {
+                const client = unvisited[i];
+                const dist = this.calculateHaversineDistance(currentLat, currentLng, client.lat, client.lng);
+
+                // Priorizar paradas que estén dentro del límite de Sub-Zona / Vecino Cercano (< 20 KM)
+                const isWithinRange = dist <= maxKm;
+
+                // Puntuación combinada (Prioridad de Negocio + Proximidad)
+                let combinedScore = client.priorityScore - (dist * 2);
+                if (isWithinRange) combinedScore += 500; // Bonificación de cluster cercano
+
+                if (combinedScore > bestScore) {
+                    bestScore = combinedScore;
+                    minDistance = dist;
+                    bestIndex = i;
+                }
+            }
+
+            if (bestIndex === -1) break;
+
+            const nextClient = unvisited.splice(bestIndex, 1)[0];
+            const segDist = this.calculateHaversineDistance(currentLat, currentLng, nextClient.lat, nextClient.lng);
+
+            // Tiempo de viaje estimado en minutos (aprox. 2 min por KM en tráfico comercial)
+            const travelMins = Math.max(10, Math.round(segDist * 2));
+            const estArrival = this.addMinutesToTimeStr(currentTime, travelMins);
+            const estDeparture = this.addMinutesToTimeStr(estArrival, visitMins);
+
+            // Verificar si el cliente puede ser atendido antes de las 5:00 PM (workEnd)
+            const remainingMins = this.diffMinutes(estDeparture, workEnd);
+
+            if (remainingMins >= 0) {
+                // Cabe dentro de la jornada laboral
+                routeWaypoints.push({
+                    step: routeWaypoints.length + 1,
+                    ...nextClient,
+                    segmentDistanceKm: parseFloat(segDist.toFixed(2)),
+                    estimatedArrival: estArrival,
+                    estimatedDeparture: estDeparture,
+                    timeWindow: `${estArrival} - ${estDeparture}`,
+                    actualArrival: estArrival, // Por defecto igual a estimada
+                    actualDeparture: estDeparture,
+                    wazeUrl: `https://www.waze.com/live-map/directions?from=ll.${currentLat}%2C${currentLng}&to=ll.${nextClient.lat}%2C${nextClient.lng}`,
+                    wazeAppUrl: `https://www.waze.com/ul?ll=${nextClient.lat}%2C${nextClient.lng}&navigate=yes`,
+                    mapsUrl: `https://www.google.com/maps/dir/?api=1&origin=${currentLat},${currentLng}&destination=${nextClient.lat},${nextClient.lng}&travelmode=driving`
+                });
+
+                currentLat = nextClient.lat;
+                currentLng = nextClient.lng;
+                currentTime = estDeparture;
+            } else {
+                // Excede las 5:00 PM
+                overflowClients.push(nextClient);
+            }
+        }
+
+        // Si quedaron clientes fuera por límite de horario
+        if (overflowClients.length > 0 && !suggestionMsg) {
+            suggestionMsg = `Atención: El tiempo restante de la jornada laboral (hasta las 5:00 PM) no permite cubrir a todos los clientes hoy. Se sugiere programar las paradas restantes (${overflowClients.map(c => c.cliente).join(', ')}) para el día siguiente desde las 7:00 AM.`;
+        }
 
         const totalKm = routeWaypoints.reduce((sum, w) => sum + w.distanceKm, 0);
 
@@ -680,6 +849,11 @@ export class RouteEngine {
             region: selectedRegion,
             date: targetDateStr,
             origin: originCoords,
+            timeConfig: timeConfig,
+            startTimeUsed: startTime,
+            isWorkDayEnded: isWorkDayEnded,
+            suggestionMsg: suggestionMsg,
+            overflowClients: overflowClients,
             totalWaypoints: routeWaypoints.length,
             totalEstimatedKm: parseFloat(totalKm.toFixed(1)),
             waypoints: routeWaypoints

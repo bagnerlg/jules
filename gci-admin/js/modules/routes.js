@@ -36,6 +36,7 @@ export class RoutesModule {
         this.activeRouteIndex = 0;
         this.map = null;
         this.tempRules = [];
+        this.tempTimeConfig = {};
     }
 
     openRulesModal() {
@@ -43,6 +44,7 @@ export class RoutesModule {
         if (!modal) return;
 
         this.tempRules = this.engine.getRules();
+        this.tempTimeConfig = this.engine.getTimeConfig();
         this.renderRulesEditor();
         modal.style.display = 'flex';
     }
@@ -505,6 +507,30 @@ export class RoutesModule {
                         <button id="btn-close-rules-modal" class="modal-close-btn">&times;</button>
                     </div>
                     <div class="modal-body-gci">
+                        <!-- Sección 1: Parámetros de Horarios y Distancias -->
+                        <div class="p-3 mb-4 bg-light rounded border border-primary-subtle">
+                            <h6 class="extra-small fw-bold text-primary uppercase mb-2"><i class="fa-solid fa-business-time me-1"></i> Jornada Laboral & Parámetros de Tiempo (7:00 AM - 5:00 PM)</h6>
+                            <div class="row g-3">
+                                <div class="col-md-3">
+                                    <label class="form-label extra-small fw-bold">Inicio Jornada</label>
+                                    <input type="time" id="time-cfg-start" class="form-control form-control-sm font-mono extra-small" value="${(this.engine.getTimeConfig()).workStartHour || '07:00'}">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label extra-small fw-bold">Fin Jornada</label>
+                                    <input type="time" id="time-cfg-end" class="form-control form-control-sm font-mono extra-small" value="${(this.engine.getTimeConfig()).workEndHour || '17:00'}">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label extra-small fw-bold">Atención por Visita (Mins)</label>
+                                    <input type="number" id="time-cfg-visit-duration" class="form-control form-control-sm font-mono extra-small" min="15" max="120" value="${(this.engine.getTimeConfig()).visitDurationMinutes || 60}" placeholder="Ej: 60 (1 hora)">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label extra-small fw-bold">Distancia Máx Sub-Zona (KM)</label>
+                                    <input type="number" id="time-cfg-max-km" class="form-control form-control-sm font-mono extra-small" min="1" max="100" value="${(this.engine.getTimeConfig()).maxConsecutiveDistanceKm || 20}" placeholder="Ej: 20">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Sección 2: Reglas Dinámicas -->
                         <div class="d-flex justify-content-between align-items-center mb-3">
                             <p class="text-muted extra-small m-0">Ajuste las reglas dinámicas, active/desactive criterios, configure puntuación de prioridad o filtros estrictos.</p>
                             <div class="d-flex gap-2">
@@ -752,6 +778,18 @@ export class RoutesModule {
 
         if (btnSaveRules) {
             btnSaveRules.addEventListener('click', () => {
+                const startTime = document.getElementById('time-cfg-start')?.value || '07:00';
+                const endTime = document.getElementById('time-cfg-end')?.value || '17:00';
+                const visitDuration = parseInt(document.getElementById('time-cfg-visit-duration')?.value, 10) || 60;
+                const maxKm = parseInt(document.getElementById('time-cfg-max-km')?.value, 10) || 20;
+
+                this.engine.saveTimeConfig({
+                    workStartHour: startTime,
+                    workEndHour: endTime,
+                    visitDurationMinutes: visitDuration,
+                    maxConsecutiveDistanceKm: maxKm
+                });
+
                 this.engine.saveRules(this.tempRules);
                 if (modalRules) modalRules.style.display = 'none';
                 alert("Parámetros y reglas de rutas guardados exitosamente.");
@@ -1221,7 +1259,21 @@ export class RoutesModule {
 
         const completions = this.engine.getCompletions();
 
+        let alertSuggestionHtml = '';
+        if (activeRoute.suggestionMsg) {
+            alertSuggestionHtml = `
+                <div class="alert alert-warning border-warning p-2 mb-3 rounded extra-small d-flex align-items-center gap-2">
+                    <i class="fa-solid fa-clock-triangle-exclamation fs-5 text-warning"></i>
+                    <div>
+                        <strong class="d-block text-dark">Aviso de Ventana de Trabajo (7:00 AM - 5:00 PM):</strong>
+                        <span>${activeRoute.suggestionMsg}</span>
+                    </div>
+                </div>
+            `;
+        }
+
         container.innerHTML = `
+            ${alertSuggestionHtml}
             <div class="list-group extra-small">
                 ${activeRoute.waypoints.map(wp => {
                     const isCompleted = this.engine.isVisitCompleted(this.selectedDate, wp.id);
@@ -1233,11 +1285,17 @@ export class RoutesModule {
                                 <div class="d-flex align-items-center gap-2">
                                     <span class="badge ${isCompleted ? 'bg-success' : 'bg-primary'} rounded-circle" style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">${wp.step}</span>
                                     <div>
-                                        <h6 class="m-0 fw-bold text-dark d-flex align-items-center gap-2">
+                                        <h6 class="m-0 fw-bold text-dark d-flex flex-wrap align-items-center gap-2">
                                             ${wp.cliente}
+                                            <span class="badge bg-secondary font-mono" style="font-size: 0.65rem;"><i class="fa-solid fa-layer-group me-1"></i> Sub-Zona: ${wp.subZona || wp.municipio}</span>
+                                            <span class="badge bg-primary-subtle text-primary font-mono fw-bold" style="font-size: 0.65rem;"><i class="fa-solid fa-clock me-1"></i> Horario: ${wp.timeWindow || '07:00 - 08:00'}</span>
                                             ${isCompleted ? '<span class="badge bg-success font-mono"><i class="fa-solid fa-circle-check me-1"></i> Parada Cumplida</span>' : ''}
                                         </h6>
                                     </div>
+                                </div>
+                                <div class="mt-1 d-flex flex-wrap align-items-center gap-2 text-muted font-mono extra-small">
+                                    <span>Llegada Real: <input type="time" class="form-control form-control-sm font-mono extra-small d-inline-block wp-actual-arrival" data-wpid="${wp.id}" value="${wp.actualArrival || wp.estimatedArrival || '07:00'}" style="width: 90px; padding: 2px 4px;"></span>
+                                    <span>Salida Real: <input type="time" class="form-control form-control-sm font-mono extra-small d-inline-block wp-actual-departure" data-wpid="${wp.id}" value="${wp.actualDeparture || wp.estimatedDeparture || '08:00'}" style="width: 90px; padding: 2px 4px;"></span>
                                 </div>
                                 <div class="d-flex align-items-center gap-1">
                                     ${!isCompleted ? `
