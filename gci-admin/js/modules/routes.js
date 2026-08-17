@@ -6,6 +6,22 @@
 
 import { RouteEngine, GUATEMALA_REGIONS, DEFAULT_ORIGIN_LOCATION, GUATEMALA_DEPARTMENTS_MUNICIPALITIES, parseGoogleMapsInput } from './route-engine.js';
 
+const AVAILABLE_RULE_FIELDS = [
+    { id: 'diasMoraMax', label: 'Días Máximos de Mora (diasMoraMax)' },
+    { id: 'frecuenciaCompraScore', label: 'Score Frecuencia de Compra (frecuenciaCompraScore)' },
+    { id: 'garantiasAbiertas', label: 'Órdenes de Garantía Abiertas (garantiasAbiertas)' },
+    { id: 'pedidoListoPagoPendiente', label: 'Pedido Listo Pago Pendiente (pedidoListoPagoPendiente)' },
+    { id: 'carteraVencidaTotal', label: 'Monto Cartera Vencida (carteraVencidaTotal)' },
+    { id: 'diasSinComprar', label: 'Días Sin Comprar (diasSinComprar)' },
+    { id: 'ultimoPagoDias', label: 'Días desde Último Pago (ultimoPagoDias)' },
+    { id: 'isAgreed', label: 'Visita Acordada Agendada (isAgreed)' },
+    { id: 'esIncobrableCandidate', label: 'Candidato a Incobrable (esIncobrableCandidate)' },
+    { id: 'departamento', label: 'Departamento (departamento)' },
+    { id: 'municipio', label: 'Municipio (municipio)' },
+    { id: 'cliente', label: 'Nombre Cliente (cliente)' },
+    { id: 'nit', label: 'NIT del Cliente (nit)' }
+];
+
 export class RoutesModule {
     constructor() {
         this.engine = new RouteEngine();
@@ -19,6 +35,237 @@ export class RoutesModule {
         this.routesByDate = {}; // { '2026-08-15': [ routeObj1, routeObj2 ] }
         this.activeRouteIndex = 0;
         this.map = null;
+        this.tempRules = [];
+    }
+
+    openRulesModal() {
+        const modal = document.getElementById('route-rules-modal');
+        if (!modal) return;
+
+        this.tempRules = this.engine.getRules();
+        this.renderRulesEditor();
+        modal.style.display = 'flex';
+    }
+
+    renderRulesEditor() {
+        const container = document.getElementById('rules-editor-list-container');
+        if (!container) return;
+
+        if (!this.tempRules || this.tempRules.length === 0) {
+            container.innerHTML = '<div class="text-muted extra-small">No hay reglas configuradas.</div>';
+            return;
+        }
+
+        container.innerHTML = this.tempRules.map((rule, rIdx) => `
+            <div class="p-3 bg-light rounded border border-secondary-subtle card-rule-item">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2 pb-2 border-bottom">
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="form-check form-switch m-0">
+                            <input class="form-check-input rule-toggle-enabled" type="checkbox" data-ridx="${rIdx}" ${rule.enabled ? 'checked' : ''}>
+                        </div>
+                        <input type="text" class="form-control form-control-sm font-mono fw-bold rule-name-input extra-small" data-ridx="${rIdx}" value="${rule.name || ''}" placeholder="Nombre de la regla..." style="min-width: 250px;">
+                    </div>
+
+                    <div class="d-flex align-items-center gap-2">
+                        <select class="form-select form-select-sm extra-small rule-type-select" data-ridx="${rIdx}" style="width: 140px;">
+                            <option value="score" ${rule.type === 'score' ? 'selected' : ''}>Puntuación (+Pts)</option>
+                            <option value="strict_filter" ${rule.type === 'strict_filter' ? 'selected' : ''}>Filtro Estricto</option>
+                        </select>
+
+                        ${rule.type === 'strict_filter' ? `
+                            <select class="form-select form-select-sm extra-small rule-action-select" data-ridx="${rIdx}" style="width: 140px;">
+                                <option value="max_limit" ${rule.filterAction === 'max_limit' ? 'selected' : ''}>Límite Máximo N</option>
+                                <option value="exclude" ${rule.filterAction === 'exclude' ? 'selected' : ''}>Excluir Cliente</option>
+                                <option value="include" ${rule.filterAction === 'include' ? 'selected' : ''}>Incluir Forzado</option>
+                            </select>
+                            ${rule.filterAction === 'max_limit' ? `
+                                <input type="number" class="form-control form-control-sm font-mono extra-small rule-limit-input" data-ridx="${rIdx}" value="${rule.maxLimitValue || 1}" style="width: 60px;" title="Límite máximo por ruta">
+                            ` : ''}
+                        ` : ''}
+
+                        <div class="d-flex align-items-center gap-1">
+                            <span class="extra-small text-muted">Pts:</span>
+                            <input type="number" class="form-control form-control-sm font-mono extra-small rule-points-input" data-ridx="${rIdx}" value="${rule.scorePoints || 0}" style="width: 70px;">
+                        </div>
+
+                        <select class="form-select form-select-sm extra-small rule-logic-select" data-ridx="${rIdx}" style="width: 80px;" title="Conector lógico entre condiciones">
+                            <option value="AND" ${rule.logic === 'AND' ? 'selected' : ''}>Y (AND)</option>
+                            <option value="OR" ${rule.logic === 'OR' ? 'selected' : ''}>O (OR)</option>
+                        </select>
+
+                        <button type="button" class="btn btn-xs btn-outline-danger btn-delete-rule" data-ridx="${rIdx}" title="Eliminar Regla">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Condiciones de la Regla -->
+                <div class="ps-2">
+                    <div class="extra-small fw-bold text-muted mb-1"><i class="fa-solid fa-filter me-1"></i> Condiciones (Evaluación ${rule.logic || 'AND'}):</div>
+                    <div class="d-flex flex-column gap-2 mb-2">
+                        ${(rule.conditions || []).map((cond, cIdx) => `
+                            <div class="d-flex align-items-center gap-2">
+                                <select class="form-select form-select-sm extra-small cond-field-select" data-ridx="${rIdx}" data-cidx="${cIdx}">
+                                    ${AVAILABLE_RULE_FIELDS.map(f => `
+                                        <option value="${f.id}" ${f.id === cond.field ? 'selected' : ''}>${f.label}</option>
+                                    `).join('')}
+                                </select>
+
+                                <select class="form-select form-select-sm extra-small cond-op-select" data-ridx="${rIdx}" data-cidx="${cIdx}" style="width: 100px;">
+                                    <option value=">" ${cond.operator === '>' ? 'selected' : ''}>Mayor (>)</option>
+                                    <option value="<" ${cond.operator === '<' ? 'selected' : ''}>Menor (<)</option>
+                                    <option value=">=" ${cond.operator === '>=' ? 'selected' : ''}>Mayor/Igual (>=)</option>
+                                    <option value="<=" ${cond.operator === '<=' ? 'selected' : ''}>Menor/Igual (<=)</option>
+                                    <option value="==" ${cond.operator === '==' ? 'selected' : ''}>Igual (==)</option>
+                                    <option value="!=" ${cond.operator === '!=' ? 'selected' : ''}>Diferente (!=)</option>
+                                    <option value="contains" ${cond.operator === 'contains' ? 'selected' : ''}>Contiene</option>
+                                </select>
+
+                                <input type="text" class="form-control form-control-sm font-mono extra-small cond-val-input" data-ridx="${rIdx}" data-cidx="${cIdx}" value="${cond.value !== undefined ? cond.value : ''}" placeholder="Valor..." style="width: 140px;">
+
+                                ${(rule.conditions || []).length > 1 ? `
+                                    <button type="button" class="btn btn-xs btn-outline-danger btn-delete-cond" data-ridx="${rIdx}" data-cidx="${cIdx}" title="Quitar Condición">
+                                        <i class="fa-solid fa-xmark"></i>
+                                    </button>
+                                ` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <button type="button" class="btn btn-xs btn-outline-primary btn-add-cond" data-ridx="${rIdx}">
+                        <i class="fa-solid fa-plus me-1"></i> Agregar Condición
+                    </button>
+                </div>
+            </div>
+        `).join('');
+
+        this.bindRulesEditorEvents();
+    }
+
+    bindRulesEditorEvents() {
+        const container = document.getElementById('rules-editor-list-container');
+        if (!container) return;
+
+        // Toggles ON/OFF
+        container.querySelectorAll('.rule-toggle-enabled').forEach(el => {
+            el.addEventListener('change', (e) => {
+                const rIdx = parseInt(e.target.dataset.ridx, 10);
+                this.tempRules[rIdx].enabled = e.target.checked;
+            });
+        });
+
+        // Nombres de regla
+        container.querySelectorAll('.rule-name-input').forEach(el => {
+            el.addEventListener('input', (e) => {
+                const rIdx = parseInt(e.target.dataset.ridx, 10);
+                this.tempRules[rIdx].name = e.target.value;
+            });
+        });
+
+        // Tipo de Regla
+        container.querySelectorAll('.rule-type-select').forEach(el => {
+            el.addEventListener('change', (e) => {
+                const rIdx = parseInt(e.target.dataset.ridx, 10);
+                this.tempRules[rIdx].type = e.target.value;
+                this.renderRulesEditor();
+            });
+        });
+
+        // Acción de filtro estricto
+        container.querySelectorAll('.rule-action-select').forEach(el => {
+            el.addEventListener('change', (e) => {
+                const rIdx = parseInt(e.target.dataset.ridx, 10);
+                this.tempRules[rIdx].filterAction = e.target.value;
+                this.renderRulesEditor();
+            });
+        });
+
+        // Límite máximo
+        container.querySelectorAll('.rule-limit-input').forEach(el => {
+            el.addEventListener('input', (e) => {
+                const rIdx = parseInt(e.target.dataset.ridx, 10);
+                this.tempRules[rIdx].maxLimitValue = parseInt(e.target.value, 10) || 1;
+            });
+        });
+
+        // Puntos de prioridad
+        container.querySelectorAll('.rule-points-input').forEach(el => {
+            el.addEventListener('input', (e) => {
+                const rIdx = parseInt(e.target.dataset.ridx, 10);
+                this.tempRules[rIdx].scorePoints = parseInt(e.target.value, 10) || 0;
+            });
+        });
+
+        // Conector Lógico Y / O
+        container.querySelectorAll('.rule-logic-select').forEach(el => {
+            el.addEventListener('change', (e) => {
+                const rIdx = parseInt(e.target.dataset.ridx, 10);
+                this.tempRules[rIdx].logic = e.target.value;
+                this.renderRulesEditor();
+            });
+        });
+
+        // Eliminar Regla
+        container.querySelectorAll('.btn-delete-rule').forEach(el => {
+            el.addEventListener('click', (e) => {
+                const rIdx = parseInt(e.currentTarget.dataset.ridx, 10);
+                this.tempRules.splice(rIdx, 1);
+                this.renderRulesEditor();
+            });
+        });
+
+        // Campos, operadores y valores de condiciones
+        container.querySelectorAll('.cond-field-select').forEach(el => {
+            el.addEventListener('change', (e) => {
+                const rIdx = parseInt(e.target.dataset.ridx, 10);
+                const cIdx = parseInt(e.target.dataset.cidx, 10);
+                this.tempRules[rIdx].conditions[cIdx].field = e.target.value;
+            });
+        });
+
+        container.querySelectorAll('.cond-op-select').forEach(el => {
+            el.addEventListener('change', (e) => {
+                const rIdx = parseInt(e.target.dataset.ridx, 10);
+                const cIdx = parseInt(e.target.dataset.cidx, 10);
+                this.tempRules[rIdx].conditions[cIdx].operator = e.target.value;
+            });
+        });
+
+        container.querySelectorAll('.cond-val-input').forEach(el => {
+            el.addEventListener('input', (e) => {
+                const rIdx = parseInt(e.target.dataset.ridx, 10);
+                const cIdx = parseInt(e.target.dataset.cidx, 10);
+                let val = e.target.value;
+                if (val === 'true') val = true;
+                else if (val === 'false') val = false;
+                else if (!isNaN(Number(val)) && val.trim() !== '') val = Number(val);
+                this.tempRules[rIdx].conditions[cIdx].value = val;
+            });
+        });
+
+        // Agregar Condición
+        container.querySelectorAll('.btn-add-cond').forEach(el => {
+            el.addEventListener('click', (e) => {
+                const rIdx = parseInt(e.currentTarget.dataset.ridx, 10);
+                if (!this.tempRules[rIdx].conditions) this.tempRules[rIdx].conditions = [];
+                this.tempRules[rIdx].conditions.push({
+                    field: 'diasMoraMax',
+                    operator: '>',
+                    value: 0
+                });
+                this.renderRulesEditor();
+            });
+        });
+
+        // Eliminar Condición
+        container.querySelectorAll('.btn-delete-cond').forEach(el => {
+            el.addEventListener('click', (e) => {
+                const rIdx = parseInt(e.currentTarget.dataset.ridx, 10);
+                const cIdx = parseInt(e.currentTarget.dataset.cidx, 10);
+                this.tempRules[rIdx].conditions.splice(cIdx, 1);
+                this.renderRulesEditor();
+            });
+        });
     }
 
     render() {
@@ -38,6 +285,9 @@ export class RoutesModule {
                         </div>
 
                         <div class="d-flex align-items-center gap-2">
+                            <button id="btn-open-rules-config-modal" class="btn btn-capsule btn-outline-primary" style="border-radius: 20px;">
+                                <i class="fa-solid fa-sliders me-1"></i> Configurar Parámetros de Rutas
+                            </button>
                             <button id="btn-open-schedule-modal" class="btn btn-capsule btn-primary-gradient">
                                 <i class="fa-solid fa-calendar-plus me-1"></i> Agendar Visita Acordada
                             </button>
@@ -247,6 +497,39 @@ export class RoutesModule {
                 </div>
             </div>
 
+            <!-- MODAL DE CONFIGURACIÓN DE PARÁMETROS DE RUTAS Y REGLAS DINÁMICAS -->
+            <div id="route-rules-modal" class="modal-overlay" style="display: none;">
+                <div class="modal-dialog-gci" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+                    <div class="modal-header-gci">
+                        <h3><i class="fa-solid fa-sliders text-primary"></i> Configurar Parámetros y Reglas de Rutas</h3>
+                        <button id="btn-close-rules-modal" class="modal-close-btn">&times;</button>
+                    </div>
+                    <div class="modal-body-gci">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <p class="text-muted extra-small m-0">Ajuste las reglas dinámicas, active/desactive criterios, configure puntuación de prioridad o filtros estrictos.</p>
+                            <div class="d-flex gap-2">
+                                <button type="button" id="btn-reset-route-rules" class="btn btn-sm btn-outline-secondary extra-small" style="border-radius: 6px;">
+                                    <i class="fa-solid fa-rotate-left me-1"></i> Restablecer Por Defecto
+                                </button>
+                                <button type="button" id="btn-add-new-rule" class="btn btn-sm btn-primary extra-small" style="border-radius: 6px;">
+                                    <i class="fa-solid fa-plus me-1"></i> Nueva Regla
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="rules-editor-list-container" class="d-flex flex-column gap-3 mb-4">
+                            <!-- Se renderiza dinámicamente -->
+                        </div>
+
+                        <div class="text-end border-top pt-3">
+                            <button type="button" id="btn-save-route-rules" class="btn btn-capsule btn-success-gradient">
+                                <i class="fa-solid fa-floppy-disk me-1"></i> Guardar Parámetros de Rutas
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- MODAL DE AGENDAR VISITA ACORDADA (REGLA 8) -->
             <div id="schedule-visit-modal" class="modal-overlay" style="display: none;">
                 <div class="modal-dialog-gci" style="max-width: 500px;">
@@ -447,6 +730,62 @@ export class RoutesModule {
     }
 
     initEvents() {
+        // Modal de Configurar Parámetros de Rutas
+        const btnOpenRules = document.getElementById('btn-open-rules-config-modal');
+        const modalRules = document.getElementById('route-rules-modal');
+        const btnCloseRules = document.getElementById('btn-close-rules-modal');
+        const btnSaveRules = document.getElementById('btn-save-route-rules');
+        const btnResetRules = document.getElementById('btn-reset-route-rules');
+        const btnAddNewRule = document.getElementById('btn-add-new-rule');
+
+        if (btnOpenRules && modalRules) {
+            btnOpenRules.addEventListener('click', () => {
+                this.openRulesModal();
+            });
+        }
+
+        if (btnCloseRules && modalRules) {
+            btnCloseRules.addEventListener('click', () => {
+                modalRules.style.display = 'none';
+            });
+        }
+
+        if (btnSaveRules) {
+            btnSaveRules.addEventListener('click', () => {
+                this.engine.saveRules(this.tempRules);
+                if (modalRules) modalRules.style.display = 'none';
+                alert("Parámetros y reglas de rutas guardados exitosamente.");
+            });
+        }
+
+        if (btnResetRules) {
+            btnResetRules.addEventListener('click', () => {
+                if (confirm("¿Desea restablecer las reglas de rutas a la configuración por defecto?")) {
+                    this.tempRules = this.engine.resetRulesToDefault();
+                    this.renderRulesEditor();
+                    alert("Reglas restablecidas a los parámetros predeterminados.");
+                }
+            });
+        }
+
+        if (btnAddNewRule) {
+            btnAddNewRule.addEventListener('click', () => {
+                const newId = 'RULE-' + (this.tempRules.length + 1) + '-' + Date.now().toString().slice(-4);
+                this.tempRules.push({
+                    id: newId,
+                    name: `Nueva Regla #${this.tempRules.length + 1}`,
+                    type: 'score',
+                    enabled: true,
+                    scorePoints: 100,
+                    logic: 'AND',
+                    conditions: [
+                        { field: 'diasMoraMax', operator: '>', value: 30 }
+                    ]
+                });
+                this.renderRulesEditor();
+            });
+        }
+
         // Modal de Reporte de Cumplimiento
         const modalComp = document.getElementById('completion-report-modal');
         const btnCloseComp = document.getElementById('btn-close-completion-modal');

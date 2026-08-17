@@ -310,10 +310,208 @@ const DEMO_ROUTE_DATA = [
     }
 ];
 
+// Reglas de Negocio Predeterminadas (por defecto)
+export const DEFAULT_ROUTE_RULES = [
+    {
+        id: 'RULE-1',
+        name: 'Regla 1: Cliente moroso según días de mora',
+        type: 'score', // 'score' o 'strict_filter'
+        enabled: true,
+        scorePoints: 150,
+        logic: 'AND',
+        conditions: [
+            { field: 'diasMoraMax', operator: '>', value: 30 }
+        ]
+    },
+    {
+        id: 'RULE-2',
+        name: 'Regla 2: Cliente con alta frecuencia de compra',
+        type: 'score',
+        enabled: true,
+        scorePoints: 120,
+        logic: 'AND',
+        conditions: [
+            { field: 'frecuenciaCompraScore', operator: '>=', value: 8 }
+        ]
+    },
+    {
+        id: 'RULE-3',
+        name: 'Regla 3: Órdenes de garantía pendientes',
+        type: 'score',
+        enabled: true,
+        scorePoints: 130,
+        logic: 'AND',
+        conditions: [
+            { field: 'garantiasAbiertas', operator: '>', value: 0 }
+        ]
+    },
+    {
+        id: 'RULE-4',
+        name: 'Regla 4: Pedido listo de envío con pago pendiente',
+        type: 'score',
+        enabled: true,
+        scorePoints: 140,
+        logic: 'AND',
+        conditions: [
+            { field: 'pedidoListoPagoPendiente', operator: '==', value: true }
+        ]
+    },
+    {
+        id: 'RULE-5',
+        name: 'Regla 5: Cartera vencida de atraso importante (>Q10,000)',
+        type: 'score',
+        enabled: true,
+        scorePoints: 80,
+        logic: 'AND',
+        conditions: [
+            { field: 'carteraVencidaTotal', operator: '>', value: 10000 }
+        ]
+    },
+    {
+        id: 'RULE-6',
+        name: 'Regla 6: Sin compras en los últimos 45 a 120 días',
+        type: 'score',
+        enabled: true,
+        scorePoints: 90,
+        logic: 'AND',
+        conditions: [
+            { field: 'diasSinComprar', operator: '>=', value: 45 },
+            { field: 'diasSinComprar', operator: '<', value: 120 }
+        ]
+    },
+    {
+        id: 'RULE-7',
+        name: 'Regla 7: Pago reciente pero deserción en compras',
+        type: 'score',
+        enabled: true,
+        scorePoints: 100,
+        logic: 'AND',
+        conditions: [
+            { field: 'diasSinComprar', operator: '>=', value: 45 },
+            { field: 'ultimoPagoDias', operator: '<=', value: 30 }
+        ]
+    },
+    {
+        id: 'RULE-8',
+        name: 'Regla 8: Acuerdo de visita agendado previamente (Máxima Prioridad)',
+        type: 'score',
+        enabled: true,
+        scorePoints: 1000,
+        logic: 'AND',
+        conditions: [
+            { field: 'isAgreed', operator: '==', value: true }
+        ]
+    },
+    {
+        id: 'RULE-9',
+        name: 'Regla 9: Candidato a recuperación incobrable (Límite Máximo 1 por ruta)',
+        type: 'strict_filter',
+        enabled: true,
+        scorePoints: 70,
+        filterAction: 'max_limit',
+        maxLimitValue: 1,
+        logic: 'AND',
+        conditions: [
+            { field: 'esIncobrableCandidate', operator: '==', value: true }
+        ]
+    }
+];
+
 export class RouteEngine {
     constructor() {
         this.scheduledVisitsKey = 'gci_scheduled_visits';
         this.completionsKey = 'gci_route_completions';
+        this.rulesKey = 'gci_route_rules';
+    }
+
+    getRules() {
+        try {
+            const saved = localStorage.getItem(this.rulesKey);
+            if (saved) return JSON.parse(saved);
+        } catch (e) {
+            console.error("Error al cargar reglas guardadas:", e);
+        }
+        return JSON.parse(JSON.stringify(DEFAULT_ROUTE_RULES));
+    }
+
+    saveRules(rules) {
+        localStorage.setItem(this.rulesKey, JSON.stringify(rules));
+    }
+
+    resetRulesToDefault() {
+        localStorage.setItem(this.rulesKey, JSON.stringify(DEFAULT_ROUTE_RULES));
+        return JSON.parse(JSON.stringify(DEFAULT_ROUTE_RULES));
+    }
+
+    /**
+     * Extrae el valor dinámico del objeto cliente para un campo dado.
+     */
+    extractFieldValue(client, fieldName, targetDateStr) {
+        if (fieldName === 'isAgreed') {
+            const scheduledVisits = this.getScheduledVisits();
+            return scheduledVisits.some(v => v.clientId === client.id && v.date === targetDateStr);
+        }
+        if (fieldName === 'carteraVencidaTotal') {
+            return (client.cartera?.d31_60 || 0) + (client.cartera?.d61_90 || 0) + (client.cartera?.d91_120 || 0);
+        }
+        if (fieldName in client) {
+            return client[fieldName];
+        }
+        if (client.cartera && fieldName in client.cartera) {
+            return client.cartera[fieldName];
+        }
+        return null;
+    }
+
+    /**
+     * Evalúa una condición individual entre el valor del cliente y la regla.
+     */
+    evaluateConditionValue(clientVal, operator, targetVal) {
+        if (clientVal === null || clientVal === undefined) return false;
+
+        const numClient = Number(clientVal);
+        const numTarget = Number(targetVal);
+        const isNumComp = !isNaN(numClient) && !isNaN(numTarget) && typeof targetVal !== 'boolean';
+
+        switch (operator) {
+            case '>':
+                return isNumComp ? numClient > numTarget : false;
+            case '<':
+                return isNumComp ? numClient < numTarget : false;
+            case '>=':
+                return isNumComp ? numClient >= numTarget : false;
+            case '<=':
+                return isNumComp ? numClient <= numTarget : false;
+            case '==':
+                return String(clientVal).toLowerCase() === String(targetVal).toLowerCase();
+            case '!=':
+                return String(clientVal).toLowerCase() !== String(targetVal).toLowerCase();
+            case 'contains':
+                return String(clientVal).toLowerCase().includes(String(targetVal).toLowerCase());
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Evalúa si una regla aplica para un cliente considerando sus condiciones y conectores Y / O.
+     */
+    evaluateRuleForClient(rule, client, targetDateStr) {
+        if (!rule.enabled || !rule.conditions || rule.conditions.length === 0) {
+            return false;
+        }
+
+        const logic = rule.logic || 'AND';
+        const results = rule.conditions.map(cond => {
+            const clientVal = this.extractFieldValue(client, cond.field, targetDateStr);
+            return this.evaluateConditionValue(clientVal, cond.operator, cond.value);
+        });
+
+        if (logic === 'OR') {
+            return results.some(r => r === true);
+        }
+        // Por defecto 'AND'
+        return results.every(r => r === true);
     }
 
     getCompletions() {
@@ -381,70 +579,27 @@ export class RouteEngine {
     }
 
     /**
-     * Evalúa las 9 reglas de negocio para cada cliente y asigna una puntuación de prioridad.
+     * Evalúa las reglas dinámicas configuradas para cada cliente y asigna una puntuación de prioridad.
      */
     evaluateClientPriority(client, targetDateStr) {
         let score = 0;
         const reasons = [];
 
-        // REGLA 8: Acuerdo de visita agendado para esta fecha específica (MÁXIMA PRIORIDAD)
+        const activeRules = this.getRules().filter(r => r.enabled);
         const scheduledVisits = this.getScheduledVisits();
         const agreement = scheduledVisits.find(v => v.clientId === client.id && v.date === targetDateStr);
-        if (agreement) {
-            score += 1000;
-            reasons.push(`REGLA 8: Visita acordada previamente (${agreement.notes || 'Confirmado'})`);
-        }
+        const isAgreed = !!agreement;
 
-        // REGLA 1: Cliente moroso según cartera (días de mora mayores a forma de pago)
-        if (client.diasMoraMax > 30) {
-            score += 150;
-            reasons.push(`REGLA 1: Moroso con ${client.diasMoraMax} días de morosidad`);
-        }
+        activeRules.forEach(rule => {
+            const applies = this.evaluateRuleForClient(rule, client, targetDateStr);
+            if (applies) {
+                const pts = Number(rule.scorePoints || 0);
+                score += pts;
+                reasons.push(`${rule.name} (+${pts} pts)`);
+            }
+        });
 
-        // REGLA 2: Alta frecuencia de compra
-        if (client.frecuenciaCompraScore >= 8) {
-            score += 120;
-            reasons.push(`REGLA 2: Cliente con alta frecuencia de compra (${client.frecuenciaCompraScore}/10)`);
-        }
-
-        // REGLA 3: Muchas órdenes de garantía abiertas sin resolver
-        if (client.garantiasAbiertas > 0) {
-            score += 130 + (client.garantiasAbiertas * 20);
-            reasons.push(`REGLA 3: ${client.garantiasAbiertas} órdenes de garantía pendientes`);
-        }
-
-        // REGLA 4: Pedido listo para envío con pago pendiente
-        if (client.pedidoListoPagoPendiente) {
-            score += 140;
-            reasons.push(`REGLA 4: Pedido listo de Q${client.montoPedidoListo || 0} pendiente de cobro`);
-        }
-
-        // REGLA 5: Atraso importante en cartera cerca de ruta
-        const totalAtraso = (client.cartera.d31_60 || 0) + (client.cartera.d61_90 || 0) + (client.cartera.d91_120 || 0);
-        if (totalAtraso > 10000) {
-            score += 80;
-            reasons.push(`REGLA 5: Cartera vencida de Q${totalAtraso.toFixed(2)}`);
-        }
-
-        // REGLA 6: Cliente que ha dejado de comprar en los últimos 45 días
-        if (client.diasSinComprar >= 45 && client.diasSinComprar < 120) {
-            score += 90;
-            reasons.push(`REGLA 6: Sin compras en los últimos ${client.diasSinComprar} días`);
-        }
-
-        // REGLA 7: Efectuó pagos pero no ha comprado producto en los últimos 45 días
-        if (client.diasSinComprar >= 45 && client.ultimoPagoDias <= 30) {
-            score += 100;
-            reasons.push(`REGLA 7: Pago reciente (${client.ultimoPagoDias}d) pero deserción en compras (${client.diasSinComprar}d)`);
-        }
-
-        // REGLA 9: Cliente marcado como incobrable (>120 días mora y >60 días sin pago)
-        if (client.esIncobrableCandidate || (client.cartera.d120_mas > 0 && client.ultimoPagoDias > 60)) {
-            score += 70;
-            reasons.push(`REGLA 9: Candidato a recuperación incobrable (>120 días atraso)`);
-        }
-
-        return { score, reasons, isAgreed: !!agreement };
+        return { score, reasons, isAgreed };
     }
 
     /**
@@ -452,15 +607,25 @@ export class RouteEngine {
      */
     planRoute({ regionKey, originCoords, targetDateStr }) {
         const selectedRegion = GUATEMALA_REGIONS[regionKey] || GUATEMALA_REGIONS['central'];
+        const activeRules = this.getRules().filter(r => r.enabled);
 
-        // 1. Filtrar clientes pertenecientes a la región o que tengan acuerdo agendado para hoy
+        // 1. Filtrar clientes pertenecientes a la región o con acuerdo agendado para hoy
         let candidates = DEMO_ROUTE_DATA.filter(c => {
             const matchesRegion = c.regionKey === regionKey || selectedRegion.departments.includes(c.departamento);
             const { isAgreed } = this.evaluateClientPriority(c, targetDateStr);
             return matchesRegion || isAgreed;
         });
 
-        // 2. Evaluar puntuaciones de prioridad
+        // 2. Aplicar reglas de Filtro Estricto (exclude)
+        const excludeRules = activeRules.filter(r => r.type === 'strict_filter' && r.filterAction === 'exclude');
+        if (excludeRules.length > 0) {
+            candidates = candidates.filter(client => {
+                const isExcluded = excludeRules.some(rule => this.evaluateRuleForClient(rule, client, targetDateStr));
+                return !isExcluded;
+            });
+        }
+
+        // 3. Evaluar puntuaciones de prioridad
         candidates = candidates.map(client => {
             const evalResult = this.evaluateClientPriority(client, targetDateStr);
             const distFromOrigin = this.calculateHaversineDistance(
@@ -476,18 +641,22 @@ export class RouteEngine {
             };
         });
 
-        // Aplicar límite de Regla 9: Máximo 1 cliente incobrable por ruta
-        let incobrableCount = 0;
-        candidates = candidates.filter(c => {
-            const isIncobrable = c.esIncobrableCandidate || (c.cartera.d120_mas > 0 && c.ultimoPagoDias > 60);
-            if (isIncobrable) {
-                if (incobrableCount >= 1 && !c.isAgreed) return false;
-                incobrableCount++;
-            }
-            return true;
+        // 4. Aplicar reglas de Filtro Estricto de límite máximo (max_limit)
+        const maxLimitRules = activeRules.filter(r => r.type === 'strict_filter' && r.filterAction === 'max_limit');
+        maxLimitRules.forEach(rule => {
+            const limit = Number(rule.maxLimitValue || 1);
+            let matchCount = 0;
+            candidates = candidates.filter(client => {
+                const matches = this.evaluateRuleForClient(rule, client, targetDateStr);
+                if (matches) {
+                    if (matchCount >= limit && !client.isAgreed) return false;
+                    matchCount++;
+                }
+                return true;
+            });
         });
 
-        // 3. Ordenamiento Estratégico de Ruta:
+        // 5. Ordenamiento Estratégico de Ruta:
         // Primero aseguramos acuerdos agendados y prioridad alta,
         // ordenados de Mayor a Menor distancia desde el origen (Iniciando por el más lejano).
         candidates.sort((a, b) => {
