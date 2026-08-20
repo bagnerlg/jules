@@ -47,15 +47,53 @@ const app = {
     const socket = this.state.socket;
     if (!socket) return;
 
+    socket.on('whatsapp-status', (data) => {
+      console.log('⚡ Evento WhatsApp Status:', data);
+      const msgContainer = document.getElementById('msg-conn-whatsapp');
+      const qrContainer = document.getElementById('whatsapp-qr-container');
+
+      if (!this.state.connections.whatsapp) this.state.connections.whatsapp = {};
+      this.state.connections.whatsapp.status = data.state;
+
+      if (msgContainer) {
+        msgContainer.style.display = 'block';
+        if (data.state === 'qr') {
+          msgContainer.className = 'conn-status-msg success';
+          msgContainer.innerText = 'Código QR de Baileys generado. Escanea con WhatsApp Business.';
+        } else if (data.state === 'connected') {
+          msgContainer.className = 'conn-status-msg success';
+          msgContainer.innerText = `Conectado exitosamente (${data.accountJid || data.accountKey})`;
+        } else if (data.state === 'stopped') {
+          msgContainer.className = 'conn-status-msg error';
+          msgContainer.innerText = 'Sesión de WhatsApp detenida.';
+        } else if (data.state === 'connecting') {
+          msgContainer.className = 'conn-status-msg';
+          msgContainer.innerText = 'Iniciando cliente WhatsApp Baileys...';
+        } else if (data.lastError) {
+          msgContainer.className = 'conn-status-msg error';
+          msgContainer.innerText = `Error: ${data.lastError}`;
+        }
+      }
+
+      if (qrContainer && data.qrDataUrl) {
+        qrContainer.innerHTML = `<img src="${data.qrDataUrl}" alt="Código QR WhatsApp" style="max-width:200px; border-radius:8px;"><p style="font-size:11px; margin-top:6px; color:#555;">Escanea este código en WhatsApp</p>`;
+      } else if (qrContainer && data.state === 'connected') {
+        qrContainer.innerHTML = `<div style="color:#27AE60; font-weight:bold; padding:20px;"><i class="fa-solid fa-circle-check fa-3x"></i><p style="margin-top:8px;">WhatsApp Vinculado</p></div>`;
+      }
+
+      this.saveStateToStorage();
+    });
+
     socket.on('whatsapp-qr', (data) => {
       const qrContainer = document.getElementById('whatsapp-qr-container');
       const msgContainer = document.getElementById('msg-conn-whatsapp');
-      if (qrContainer) {
-        qrContainer.innerHTML = `<img src="${data.qr}" alt="Código QR WhatsApp"><p style="font-size:11px; margin-top:6px; color:#555;">Escanea con WhatsApp Business</p>`;
+      if (qrContainer && data.qr) {
+        qrContainer.innerHTML = `<img src="${data.qr}" alt="Código QR WhatsApp" style="max-width:200px; border-radius:8px;"><p style="font-size:11px; margin-top:6px; color:#555;">Escanea este código en WhatsApp Business</p>`;
       }
       if (msgContainer) {
         msgContainer.className = 'conn-status-msg success';
-        msgContainer.innerText = 'Código QR generado. Listo para ser escaneado.';
+        msgContainer.innerText = 'Código QR recibido. Listo para ser escaneado.';
+        msgContainer.style.display = 'block';
       }
     });
 
@@ -63,13 +101,14 @@ const app = {
       const qrContainer = document.getElementById('whatsapp-qr-container');
       const msgContainer = document.getElementById('msg-conn-whatsapp');
       if (qrContainer) {
-        qrContainer.innerHTML = `<div style="color:#27AE60; font-weight:bold;"><i class="fa-solid fa-circle-check">✔</i><p style="margin-top:8px;">WhatsApp Vinculado</p></div>`;
+        qrContainer.innerHTML = `<div style="color:#27AE60; font-weight:bold; padding:20px;"><i class="fa-solid fa-circle-check fa-3x"></i><p style="margin-top:8px;">WhatsApp Vinculado</p></div>`;
       }
       if (msgContainer) {
         msgContainer.className = 'conn-status-msg success';
-        msgContainer.innerText = `Conectado como: ${data.user.name} (${data.user.id})`;
+        msgContainer.innerText = `Conectado como: ${data.user.id}`;
+        msgContainer.style.display = 'block';
       }
-      this.state.connections.whatsapp = { status: 'conectado', account: data.user.name };
+      this.state.connections.whatsapp = { status: 'conectado', account: data.user.id };
       this.saveStateToStorage();
     });
   },
@@ -173,7 +212,8 @@ const app = {
           isSystem: false,
           fields: [
             { name: 'Código / SKU', key: 'sku', type: 'text', required: true, readSource: 'Google Sheets', writeSource: 'Postgres' },
-            { name: 'Descripción / Producto', key: 'descripcion', type: 'text', required: true, readSource: 'Google Sheets', writeSource: 'Postgres' },
+            { name: 'Descripción del Artículo', key: 'descripcion', type: 'text', required: true, readSource: 'Google Sheets', writeSource: 'Postgres' },
+            { name: 'Unidad de Medida', key: 'unidad_medida', type: 'text', required: false, readSource: 'Manual', writeSource: 'Postgres' },
             { name: 'Precio Venta (Q)', key: 'precio', type: 'number', required: true, readSource: 'Google Sheets', writeSource: 'Postgres' },
             { name: 'Existencia / Stock', key: 'stock', type: 'number', required: false, readSource: 'Supabase', writeSource: 'Supabase' }
           ]
@@ -202,8 +242,8 @@ const app = {
       this.state.catalog = JSON.parse(savedCatalog);
     } else {
       this.state.catalog = [
-        { id: 'cat-1', sku: 'MOTO-125', descripcion: 'Motocicleta 125cc Roja', precio: 8500, stock: 5 },
-        { id: 'cat-2', sku: 'CASCO-DOT', descripcion: 'Casco Certificado DOT', precio: 350, stock: 12 }
+        { id: 'cat-1', sku: 'LIB-001', descripcion: 'Libro Don Quijote de la Mancha', unidad_medida: 'Unidad', precio: 125, stock: 15 },
+        { id: 'cat-2', sku: 'MOTO-125', descripcion: 'Motocicleta 125cc Roja', unidad_medida: 'Unidad', precio: 8500, stock: 5 }
       ];
       localStorage.setItem('admin_catalog', JSON.stringify(this.state.catalog));
     }
@@ -214,8 +254,8 @@ const app = {
       this.state.salesAndExpenses = JSON.parse(savedSales);
     } else {
       this.state.salesAndExpenses = [
-        { id: 'tx-1', date: new Date().toISOString(), type: 'Venta', user: 'admin@admin.com', userName: 'Administrador Principal', concept: 'Venta de Motocicleta 125cc', amount: 8500 },
-        { id: 'tx-2', date: new Date().toISOString(), type: 'Gasto', user: 'carlos@empresa.com', userName: 'Carlos Vendedor', concept: 'Pago de Combustible de Reparto', amount: 150 }
+        { id: 'tx-1', date: new Date().toISOString(), type: 'Venta', user: 'admin@admin.com', userName: 'Administrador Principal', concept: 'Venta de Libro Don Quijote', amount: 125 },
+        { id: 'tx-2', date: new Date().toISOString(), type: 'Gasto', user: 'carlos@empresa.com', userName: 'Carlos Vendedor', concept: 'Pago de Envío Mensajería', amount: 35 }
       ];
       localStorage.setItem('admin_sales', JSON.stringify(this.state.salesAndExpenses));
     }
@@ -361,7 +401,7 @@ const app = {
   renderDashboard() {
     const totalUsers = this.state.users.length;
     const activeUsers = this.state.users.filter(u => u.status === 'Activo').length;
-    const activeConnCount = Object.values(this.state.connections).filter(c => c.status === 'Exitoso' || c.status === 'conectado').length;
+    const activeConnCount = Object.values(this.state.connections).filter(c => c.status === 'Exitoso' || c.status === 'conectado' || c.status === 'connected').length;
     const totalModules = this.state.modules.length;
 
     document.getElementById('dash-total-users').innerText = totalUsers;
@@ -419,7 +459,7 @@ const app = {
 
       connTypes.forEach(ct => {
         const connObj = this.state.connections[ct.key] || {};
-        const isOk = connObj.status === 'Exitoso' || connObj.status === 'conectado';
+        const isOk = connObj.status === 'Exitoso' || connObj.status === 'conectado' || connObj.status === 'connected';
 
         const item = document.createElement('div');
         item.style.cssText = 'display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid #eee; font-size:13px;';
@@ -672,20 +712,24 @@ const app = {
   },
 
   startWhatsAppQR() {
+    const accountKey = this.state.currentUser ? this.state.currentUser.email : 'default';
     if (this.state.socket) {
-      this.state.socket.emit('start-whatsapp');
+      this.state.socket.emit('start-whatsapp', { accountKey });
       const msgEl = document.getElementById('msg-conn-whatsapp');
       if (msgEl) {
         msgEl.className = 'conn-status-msg';
-        msgEl.innerText = 'Solicitando QR al servidor de Baileys...';
+        msgEl.innerText = 'Iniciando WhatsApp Baileys en tiempo real...';
         msgEl.style.display = 'block';
       }
+    } else {
+      alert('WebSocket no disponible');
     }
   },
 
-  simulateWhatsAppConnect() {
+  stopWhatsApp() {
+    const accountKey = this.state.currentUser ? this.state.currentUser.email : 'default';
     if (this.state.socket) {
-      this.state.socket.emit('simulate-whatsapp-connect');
+      this.state.socket.emit('stop-whatsapp', { accountKey });
     }
   },
 
@@ -736,6 +780,7 @@ const app = {
             <option value="number" ${f.type==='number'?'selected':''}>Número</option>
             <option value="date" ${f.type==='date'?'selected':''}>Fecha</option>
             <option value="image" ${f.type==='image'?'selected':''}>Imagen / URL</option>
+            <option value="select" ${f.type==='select'?'selected':''}>Selección / Lista</option>
           </select>
         </td>
         <td>
@@ -799,17 +844,14 @@ const app = {
   },
 
   async suggestFieldsWithAI() {
-    const businessType = document.getElementById('ai-business-type').value.trim();
-    if (!businessType) {
-      alert('Por favor ingresa el giro de negocio (ej. Venta de Motos, Taller Mecánico, Boutique)');
-      return;
-    }
+    const businessType = document.getElementById('ai-business-type')?.value?.trim() || 'Librería / Tienda';
+    const userPrompt = document.getElementById('ai-user-prompt')?.value?.trim() || '';
 
     const mod = this.state.modules.find(m => m.key === this.state.activeEditingModuleKey);
     const apiKey = this.state.connections.openai?.apiKey;
 
     if (!apiKey) {
-      alert('Primero debes configurar y guardar la API Key de OpenAI en la pestaña de Conexiones');
+      alert('Por favor configura y guarda primero tu API Key de OpenAI en la pestaña de Conexiones');
       return;
     }
 
@@ -820,6 +862,7 @@ const app = {
         body: JSON.stringify({
           businessType,
           moduleName: mod.name,
+          userPrompt,
           apiKey
         })
       });
@@ -829,13 +872,55 @@ const app = {
         mod.fields = data.fields;
         this.renderSelectedModuleFields();
         this.saveStateToStorage();
-        alert(`✨ Se sugirieron ${data.fields.length} campos con éxito según el giro "${businessType}"`);
+        alert(`✨ Se sugirieron ${data.fields.length} campos para ${mod.name} segun el giro "${businessType}"`);
         this.logActivity('Diseñador IA', 'Campos Sugeridos por IA', `Giro: ${businessType}`);
       } else {
-        alert('Error al obtener campos IA: ' + data.message);
+        alert('Error al obtener campos IA: ' + (data.message || 'Error desconocido'));
       }
     } catch (err) {
       alert('Error de conexión al sugerir campos IA: ' + err.message);
+    }
+  },
+
+  async quickAISuggestForCatalog() {
+    const businessType = prompt('Ingresa el giro de tu negocio para que la IA estructure el Catálogo (ej. Librería, Taller de Motos, Venta de Repuestos, Boutique):', 'Librería');
+    if (!businessType) return;
+
+    const userPrompt = prompt('Detalla opcionalmente qué artículos vendes o cómo los archivas:', 'Genera los campos que debe contener los artículos de venta para llevar el historial y registro de cada elemento disponible en la tienda');
+
+    this.state.activeEditingModuleKey = 'catalogo';
+    const catalogMod = this.state.modules.find(m => m.key === 'catalogo');
+    const apiKey = this.state.connections.openai?.apiKey;
+
+    if (!apiKey) {
+      alert('Por favor ingresa y guarda tu API Key de OpenAI en la pestaña "Conexiones" antes de usar la IA.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/suggest-fields', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          businessType,
+          moduleName: catalogMod.name,
+          userPrompt: userPrompt || '',
+          apiKey
+        })
+      });
+
+      const data = await res.json();
+      if (data.success && Array.isArray(data.fields)) {
+        catalogMod.fields = data.fields;
+        this.saveStateToStorage();
+        this.renderCatalog();
+        alert(`✨ Se actualizaron ${data.fields.length} campos del Catálogo con la estructura sugerida por IA para "${businessType}".`);
+        this.logActivity('Catálogo', 'Campos Sugeridos IA Catálogo', `Giro: ${businessType}`);
+      } else {
+        alert('Error al sugerir campos: ' + data.message);
+      }
+    } catch (e) {
+      alert('Error al comunicar con OpenAI: ' + e.message);
     }
   },
 
@@ -883,8 +968,9 @@ const app = {
     const catalogMod = this.state.modules.find(m => m.key === 'catalogo') || {};
     const fields = catalogMod.fields || [
       { name: 'SKU', key: 'sku' },
-      { name: 'Descripción', key: 'descripcion' },
-      { name: 'Precio (Q)', key: 'precio' },
+      { name: 'Descripción del Artículo', key: 'descripcion' },
+      { name: 'Unidad de Medida', key: 'unidad_medida' },
+      { name: 'Precio Venta (Q)', key: 'precio' },
       { name: 'Stock', key: 'stock' }
     ];
 
@@ -905,7 +991,7 @@ const app = {
         row.innerHTML = `
           ${cells}
           <td>
-            <button class="btn btn-danger btn-sm" onclick="app.deleteCatalogItem(${idx})">🗑 Eliminat</button>
+            <button class="btn btn-danger btn-sm" onclick="app.deleteCatalogItem(${idx})">🗑 Eliminar</button>
           </td>
         `;
         body.appendChild(row);
