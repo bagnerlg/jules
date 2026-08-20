@@ -660,7 +660,14 @@ const app = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type, config })
       });
-      const data = await res.json();
+
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (parseErr) {
+        data = { success: false, message: 'Respuesta inválida del servidor (' + text.slice(0, 100) + ')' };
+      }
 
       if (msgEl) {
         if (data.success) {
@@ -867,12 +874,19 @@ const app = {
         })
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (pe) {
+        data = { success: false, message: 'Respuesta no válida del servidor: ' + text.slice(0, 100) };
+      }
+
       if (data.success && Array.isArray(data.fields)) {
         mod.fields = data.fields;
         this.renderSelectedModuleFields();
         this.saveStateToStorage();
-        alert(`✨ Se sugirieron ${data.fields.length} campos para ${mod.name} segun el giro "${businessType}"`);
+        alert(`✨ Se sugirieron ${data.fields.length} campos para ${mod.name} según el giro "${businessType}"`);
         this.logActivity('Diseñador IA', 'Campos Sugeridos por IA', `Giro: ${businessType}`);
       } else {
         alert('Error al obtener campos IA: ' + (data.message || 'Error desconocido'));
@@ -909,7 +923,14 @@ const app = {
         })
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (pe) {
+        data = { success: false, message: 'Respuesta no válida del servidor: ' + text.slice(0, 100) };
+      }
+
       if (data.success && Array.isArray(data.fields)) {
         catalogMod.fields = data.fields;
         this.saveStateToStorage();

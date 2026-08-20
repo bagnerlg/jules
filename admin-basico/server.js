@@ -19,6 +19,19 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Helper for safe JSON parsing from fetch responses
+async function safeParseResponse(res) {
+  const text = await res.text();
+  if (!text || !text.trim()) {
+    return { error: { message: `HTTP Status ${res.status} ${res.statusText}` } };
+  }
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    return { error: { message: text.slice(0, 300) } };
+  }
+}
+
 // Instantiate Baileys WhatsApp Manager
 const baileysManager = createBaileysManager({
   authRoot: path.join(__dirname, 'auth'),
@@ -55,17 +68,22 @@ app.post('/api/test-connection', async (req, res) => {
   try {
     switch (type) {
       case 'openai':
-        if (!config || !config.apiKey) {
-          return res.status(400).json({ success: false, message: 'Falta la API Key de OpenAI' });
+        if (!config || !config.apiKey || !config.apiKey.trim()) {
+          return res.status(400).json({ success: false, message: 'Falta ingresar la API Key de OpenAI' });
         }
+        const cleanKey = config.apiKey.trim();
         const aiRes = await fetch('https://api.openai.com/v1/models', {
-          headers: { 'Authorization': `Bearer ${config.apiKey}` }
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${cleanKey}` }
         });
-        if (aiRes.ok) {
+
+        const aiData = await safeParseResponse(aiRes);
+
+        if (aiRes.ok && !aiData.error) {
           return res.json({ success: true, message: 'Conexión exitosa con OpenAI API' });
         } else {
-          const err = await aiRes.json();
-          return res.status(400).json({ success: false, message: err.error?.message || 'Error al conectar con OpenAI' });
+          const errMsg = aiData.error?.message || (typeof aiData.error === 'string' ? aiData.error : 'API Key inválida o sin fondos');
+          return res.status(400).json({ success: false, message: errMsg });
         }
 
       case 'googlesheets':
@@ -83,12 +101,12 @@ app.post('/api/test-connection', async (req, res) => {
         if (!config || !config.accessToken) {
           return res.status(400).json({ success: false, message: 'Access Token de Facebook no provisto' });
         }
-        const fbRes = await fetch(`https://graph.facebook.com/v19.0/me?access_token=${config.accessToken}`);
-        if (fbRes.ok) {
-          const fbData = await fbRes.json();
+        const fbRes = await fetch(`https://graph.facebook.com/v19.0/me?access_token=${config.accessToken.trim()}`);
+        const fbData = await safeParseResponse(fbRes);
+        if (fbRes.ok && !fbData.error) {
           return res.json({ success: true, message: `Conexión exitosa con Facebook API (${fbData.name || 'OK'})` });
         } else {
-          return res.status(400).json({ success: false, message: 'Token de Facebook inválido o expirado' });
+          return res.status(400).json({ success: false, message: fbData.error?.message || 'Token de Facebook inválido o expirado' });
         }
 
       case 'supabase':
@@ -106,7 +124,7 @@ app.post('/api/test-connection', async (req, res) => {
         return res.status(400).json({ success: false, message: 'Tipo de conexión desconocido' });
     }
   } catch (error) {
-    return res.status(500).json({ success: false, message: 'Error de servidor al validar conexión: ' + error.message });
+    return res.status(500).json({ success: false, message: 'Error al probar conexión: ' + error.message });
   }
 });
 
@@ -118,7 +136,7 @@ app.post('/api/suggest-fields', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Falta tipo de negocio o nombre del módulo' });
   }
 
-  if (!apiKey) {
+  if (!apiKey || !apiKey.trim()) {
     return res.status(400).json({ success: false, message: 'Se requiere una API Key de OpenAI para sugerir campos' });
   }
 
@@ -151,7 +169,7 @@ Ejemplo de respuesta válida:
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        'Authorization': `Bearer ${apiKey.trim()}`
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
@@ -160,13 +178,14 @@ Ejemplo de respuesta válida:
       })
     });
 
-    if (!aiRes.ok) {
-      const err = await aiRes.json();
-      return res.status(400).json({ success: false, message: err.error?.message || 'Error al comunicarse con OpenAI' });
+    const aiData = await safeParseResponse(aiRes);
+
+    if (!aiRes.ok || aiData.error) {
+      const msg = aiData.error?.message || 'Error al comunicarse con OpenAI';
+      return res.status(400).json({ success: false, message: msg });
     }
 
-    const aiData = await aiRes.json();
-    const content = aiData.choices[0]?.message?.content || '';
+    const content = aiData.choices?.[0]?.message?.content || '';
 
     // Clean potential markdown wrap
     const jsonStr = content.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -184,7 +203,7 @@ app.post('/api/openai/generate', async (req, res) => {
     const { prompt, image, openai_api_key } = req.body;
     const userPrompt = prompt || "Genera un resumen o respuesta para esta solicitud.";
 
-    if (!openai_api_key) {
+    if (!openai_api_key || !openai_api_key.trim()) {
       return res.status(400).json({ error: "Falta la API Key de OpenAI (openai_api_key)" });
     }
 
@@ -219,15 +238,15 @@ app.post('/api/openai/generate', async (req, res) => {
     const openAiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Authorization": "Bearer " + openai_api_key,
+        "Authorization": "Bearer " + openai_api_key.trim(),
         "Content-Type": "application/json"
       },
       body: JSON.stringify(payload)
     });
 
-    const openAiData = await openAiResponse.json();
-    if (openAiData.error) {
-      return res.status(400).json({ error: openAiData.error.message || "Error de OpenAI" });
+    const openAiData = await safeParseResponse(openAiResponse);
+    if (!openAiResponse.ok || openAiData.error) {
+      return res.status(400).json({ error: openAiData.error?.message || "Error de OpenAI" });
     }
 
     return res.json(openAiData);
