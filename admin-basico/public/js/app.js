@@ -3,7 +3,6 @@
  */
 
 const app = {
-  // Application State stored locally
   state: {
     currentUser: null,
     users: [],
@@ -20,16 +19,20 @@ const app = {
   init() {
     console.log('🚀 Inicializando Admin Básico App...');
 
-    // Connect WebSocket to backend server
+    // Connect WebSocket gracefully if socket.io is available
     if (typeof io !== 'undefined') {
-      this.state.socket = io();
-      this.setupWebSocketListeners();
+      try {
+        this.state.socket = io();
+        this.setupWebSocketListeners();
+      } catch (e) {
+        console.warn('Socket.io client notice:', e);
+      }
     }
 
     // Load initial data from localStorage or create default state
     this.loadStateFromStorage();
 
-    // Check session
+    // Check saved session
     const savedUser = localStorage.getItem('admin_current_user');
     if (savedUser) {
       this.state.currentUser = JSON.parse(savedUser);
@@ -37,7 +40,7 @@ const app = {
 
     this.renderUserBar();
     this.renderTabs();
-    this.renderView('landing');
+    this.renderView(this.state.activeView || 'landing');
   },
 
   setupWebSocketListeners() {
@@ -60,7 +63,7 @@ const app = {
       const qrContainer = document.getElementById('whatsapp-qr-container');
       const msgContainer = document.getElementById('msg-conn-whatsapp');
       if (qrContainer) {
-        qrContainer.innerHTML = `<div style="color:#27AE60; font-weight:bold;"><i class="fa-solid fa-circle-check fa-3x"></i><p style="margin-top:8px;">WhatsApp Vinculado</p></div>`;
+        qrContainer.innerHTML = `<div style="color:#27AE60; font-weight:bold;"><i class="fa-solid fa-circle-check">✔</i><p style="margin-top:8px;">WhatsApp Vinculado</p></div>`;
       }
       if (msgContainer) {
         msgContainer.className = 'conn-status-msg success';
@@ -87,7 +90,7 @@ const app = {
           status: 'Activo',
           avatar: 'https://ui-avatars.com/api/?name=Admin+Basico&background=3F51B5&color=fff',
           connections: ['googlesheets', 'openai', 'whatsapp', 'supabase', 'postgres', 'facebook', 'csv'],
-          permissions: ['dashboard', 'users', 'connections', 'modules-builder', 'catalogo', 'sales-expenses', 'logs']
+          permissions: ['landing', 'dashboard', 'users', 'connections', 'modules-builder', 'catalogo', 'sales-expenses', 'logs']
         },
         {
           id: 'usr-2',
@@ -98,7 +101,7 @@ const app = {
           status: 'Activo',
           avatar: 'https://ui-avatars.com/api/?name=Carlos+Vendedor&background=009688&color=fff',
           connections: ['googlesheets'],
-          permissions: ['catalogo', 'sales-expenses']
+          permissions: ['landing', 'catalogo', 'sales-expenses']
         }
       ];
       localStorage.setItem('admin_users', JSON.stringify(this.state.users));
@@ -121,44 +124,51 @@ const app = {
       localStorage.setItem('admin_connections', JSON.stringify(this.state.connections));
     }
 
-    // Default system modules
+    // Default system modules matching pestañas.jpg themes
     const savedModules = localStorage.getItem('admin_modules');
     if (savedModules) {
       this.state.modules = JSON.parse(savedModules);
     } else {
       this.state.modules = [
         {
+          key: 'landing',
+          name: 'Presentación',
+          icon: '🏠',
+          color: 'teal',
+          isSystem: true
+        },
+        {
           key: 'dashboard',
           name: 'Dashboard',
-          icon: 'fa-solid fa-chart-pie',
-          color: 'teal',
+          icon: '📊',
+          color: 'gold',
           isSystem: true
         },
         {
           key: 'users',
           name: 'Usuarios',
-          icon: 'fa-solid fa-users-gear',
-          color: 'gold',
+          icon: '👤',
+          color: 'coral',
           isSystem: true
         },
         {
           key: 'connections',
           name: 'Conexiones',
-          icon: 'fa-solid fa-plug-zip',
+          icon: '🔌',
           color: 'green',
           isSystem: true
         },
         {
           key: 'modules-builder',
           name: 'Diseñador IA',
-          icon: 'fa-solid fa-wand-magic-sparkles',
+          icon: '🪄',
           color: 'purple',
           isSystem: true
         },
         {
           key: 'catalogo',
           name: 'Catálogo',
-          icon: 'fa-solid fa-boxes-stacked',
+          icon: '📦',
           color: 'blue',
           isSystem: false,
           fields: [
@@ -171,14 +181,14 @@ const app = {
         {
           key: 'sales-expenses',
           name: 'Ventas y Gastos',
-          icon: 'fa-solid fa-receipt',
+          icon: '🧾',
           color: 'coral',
           isSystem: false
         },
         {
           key: 'logs',
           name: 'Logs Audit',
-          icon: 'fa-solid fa-clipboard-list',
+          icon: '📋',
           color: 'teal',
           isSystem: true
         }
@@ -216,7 +226,7 @@ const app = {
       this.state.logs = JSON.parse(savedLogs);
     } else {
       this.state.logs = [
-        { date: new Date().toISOString(), user: 'admin@admin.com', module: 'Sistema', action: 'Inicio de Sistema Central Admin Básico', details: 'Sistemas listos' }
+        { date: new Date().toISOString(), user: 'admin@admin.com', module: 'Sistema', action: 'Inicio de Sistema Central Admin Básico', details: 'Plataforma lista' }
       ];
       localStorage.setItem('admin_logs', JSON.stringify(this.state.logs));
     }
@@ -241,7 +251,7 @@ const app = {
       details: details
     };
     this.state.logs.unshift(newLog);
-    if (this.state.logs.length > 200) this.state.logs.pop(); // Keep last 200 logs
+    if (this.state.logs.length > 200) this.state.logs.pop();
     this.saveStateToStorage();
     this.renderLogs();
   },
@@ -260,48 +270,44 @@ const app = {
           </div>
         </div>
         <button class="btn btn-outline btn-sm" onclick="app.handleLogout()" style="color:#FFF; border-color:rgba(255,255,255,0.3);">
-          <i class="fa-solid fa-right-from-bracket"></i> Salir
+          🚪 Salir
         </button>
       `;
     } else {
       userBar.innerHTML = `
         <button class="btn btn-primary btn-sm" onclick="app.showLoginModal()">
-          <i class="fa-solid fa-right-to-bracket"></i> Iniciar Sesión
+          🔑 Iniciar Sesión
         </button>
       `;
     }
   },
 
   renderTabs() {
-    const navContainer = document.getElementById('main-nav-container');
     const tabsList = document.getElementById('nav-tabs-list');
-    if (!navContainer || !tabsList) return;
+    if (!tabsList) return;
 
-    if (!this.state.currentUser) {
-      navContainer.style.display = 'none';
-      return;
-    }
-
-    navContainer.style.display = 'block';
     tabsList.innerHTML = '';
 
-    const allowedPermissions = this.state.currentUser.permissions || [];
+    const allowedPermissions = this.state.currentUser ? (this.state.currentUser.permissions || []) : ['landing'];
 
     this.state.modules.forEach((mod) => {
-      // Check if user has permission
-      if (this.state.currentUser.role !== 'Administrador' && !allowedPermissions.includes(mod.key)) {
+      // Admin sees all tabs; non-admins or guests see permitted tabs
+      if (this.state.currentUser && this.state.currentUser.role !== 'Administrador' && !allowedPermissions.includes(mod.key) && mod.key !== 'landing') {
         return;
       }
 
       const isActive = this.state.activeView === mod.key ? 'active' : '';
-      const tabEl = document.createElement('div');
+      const tabEl = document.createElement('a');
+      tabEl.href = 'javascript:void(0)';
       tabEl.className = `nav-tab-item ${mod.color || 'teal'} ${isActive}`;
       tabEl.onclick = () => this.switchView(mod.key);
 
+      // Replicate pestañas.jpg structure: White icon block + accent strip + vibrant title banner
       tabEl.innerHTML = `
         <div class="nav-tab-content">
-          <div class="nav-tab-icon"><i class="${mod.icon || 'fa-solid fa-cubes'}"></i></div>
-          <div class="nav-tab-title">${mod.name}</div>
+          <div class="nav-tab-icon-block">${mod.icon || '❖'}</div>
+          <div class="nav-tab-accent-strip"></div>
+          <div class="nav-tab-title-banner">${mod.name}</div>
         </div>
       `;
       tabsList.appendChild(tabEl);
@@ -312,23 +318,20 @@ const app = {
     this.state.activeView = viewKey;
     this.renderTabs();
     this.renderView(viewKey);
-    this.logActivity(viewKey, 'Acceso a Módulo', `El usuario ingresó a la vista ${viewKey}`);
+    this.logActivity(viewKey, 'Navegación Módulo', `Ingresó a ${viewKey}`);
   },
 
   renderView(viewKey) {
-    // Hide all view sections
     document.querySelectorAll('.view-section').forEach(sec => sec.classList.remove('active'));
 
     const targetSection = document.getElementById(`view-${viewKey}`);
     if (targetSection) {
       targetSection.classList.add('active');
     } else {
-      // If rendering dynamic custom module
       const catalogSection = document.getElementById('view-catalogo');
       if (catalogSection) catalogSection.classList.add('active');
     }
 
-    // Trigger view-specific renderers
     switch (viewKey) {
       case 'dashboard':
         this.renderDashboard();
@@ -406,12 +409,12 @@ const app = {
     if (connWidget) {
       connWidget.innerHTML = '';
       const connTypes = [
-        { key: 'googlesheets', label: 'Google Sheets CSV', icon: 'fa-file-csv' },
-        { key: 'openai', label: 'OpenAI API (IA)', icon: 'fa-brain' },
-        { key: 'whatsapp', label: 'WhatsApp Baileys', icon: 'fa-brands fa-whatsapp' },
-        { key: 'supabase', label: 'Supabase Postgres', icon: 'fa-bolt' },
-        { key: 'postgres', label: 'PostgreSQL / SQL', icon: 'fa-database' },
-        { key: 'facebook', label: 'Facebook Graph API', icon: 'fa-brands fa-facebook' }
+        { key: 'googlesheets', label: 'Google Sheets CSV', icon: '📄' },
+        { key: 'openai', label: 'OpenAI API (IA)', icon: '🧠' },
+        { key: 'whatsapp', label: 'WhatsApp Baileys', icon: '💬' },
+        { key: 'supabase', label: 'Supabase Postgres', icon: '⚡' },
+        { key: 'postgres', label: 'PostgreSQL / SQL', icon: '🗄' },
+        { key: 'facebook', label: 'Facebook Graph API', icon: '🌐' }
       ];
 
       connTypes.forEach(ct => {
@@ -421,7 +424,7 @@ const app = {
         const item = document.createElement('div');
         item.style.cssText = 'display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid #eee; font-size:13px;';
         item.innerHTML = `
-          <span><i class="${ct.icon}"></i> ${ct.label}</span>
+          <span>${ct.icon} ${ct.label}</span>
           <span class="badge ${isOk ? 'badge-success' : 'badge-danger'}">
             ${isOk ? 'ACTIVO' : 'INACTIVO'}
           </span>
@@ -461,10 +464,10 @@ const app = {
         <td>${connTags || '<em>Ninguna</em>'}</td>
         <td>
           <button class="btn btn-outline btn-sm" onclick="app.toggleUserStatus('${usr.id}')">
-            <i class="fa-solid fa-power-off"></i> ${usr.status === 'Activo' ? 'Desactivar' : 'Activar'}
+            ⚡ ${usr.status === 'Activo' ? 'Desactivar' : 'Activar'}
           </button>
           <button class="btn btn-primary btn-sm" onclick="app.editUser('${usr.id}')">
-            <i class="fa-solid fa-pen-to-square"></i>
+            ✏ Editar
           </button>
         </td>
       `;
@@ -510,12 +513,10 @@ const app = {
     const status = document.getElementById('user-status').value;
     const avatar = document.getElementById('user-avatar').value || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=3F51B5&color=fff`;
 
-    // Permissions
     const checkedBoxes = document.querySelectorAll('#user-permissions-checkboxes input[type="checkbox"]:checked');
     const permissions = Array.from(checkedBoxes).map(cb => cb.value);
 
     if (id) {
-      // Edit
       const usr = this.state.users.find(u => u.id === id);
       if (usr) {
         usr.name = name;
@@ -527,7 +528,6 @@ const app = {
         usr.permissions = permissions;
       }
     } else {
-      // Create
       const newUser = {
         id: 'usr-' + Date.now(),
         name,
@@ -699,7 +699,7 @@ const app = {
       const pill = document.createElement('div');
       pill.className = `module-pill ${this.state.activeEditingModuleKey === mod.key ? 'active' : ''}`;
       pill.onclick = () => this.selectModuleToEdit(mod.key);
-      pill.innerHTML = `<i class="${mod.icon}"></i> ${mod.name}`;
+      pill.innerHTML = `${mod.icon || '❖'} ${mod.name}`;
       pillsContainer.appendChild(pill);
     });
 
@@ -758,7 +758,7 @@ const app = {
           <input type="checkbox" ${f.required ? 'checked' : ''} onchange="app.updateFieldProp(${idx}, 'required', this.checked)">
         </td>
         <td>
-          <button class="btn btn-danger btn-sm" onclick="app.removeFieldFromModule(${idx})"><i class="fa-solid fa-trash"></i></button>
+          <button class="btn btn-danger btn-sm" onclick="app.removeFieldFromModule(${idx})">🗑</button>
         </td>
       `;
       tbody.appendChild(row);
@@ -852,7 +852,7 @@ const app = {
   createNewModule(e) {
     e.preventDefault();
     const name = document.getElementById('new-mod-name').value.trim();
-    const icon = document.getElementById('new-mod-icon').value.trim();
+    const icon = document.getElementById('new-mod-icon').value.trim() || '🛠';
     const color = document.getElementById('new-mod-color').value;
 
     const key = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
@@ -905,7 +905,7 @@ const app = {
         row.innerHTML = `
           ${cells}
           <td>
-            <button class="btn btn-danger btn-sm" onclick="app.deleteCatalogItem(${idx})"><i class="fa-solid fa-trash"></i></button>
+            <button class="btn btn-danger btn-sm" onclick="app.deleteCatalogItem(${idx})">🗑 Eliminat</button>
           </td>
         `;
         body.appendChild(row);
@@ -1086,7 +1086,6 @@ const app = {
   }
 };
 
-// Initialize app when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
   app.init();
 });

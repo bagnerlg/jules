@@ -9,7 +9,6 @@
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="css/style.css">
-  <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 
@@ -17,7 +16,7 @@
   <header class="top-header">
     <div class="brand-container">
       <div class="brand-logo">
-        <i class="fa-solid fa-shapes"></i>
+        <i class="fa-solid fa-shapes">❖</i>
       </div>
       <div class="brand-title">
         <h1>ADMIN BÁSICO</h1>
@@ -32,9 +31,9 @@
   </header>
 
   <!-- PARALLELOGRAM TOP SLANTED TABS BAR (pestañas.jpg inspired) -->
-  <nav class="nav-tabs-container" id="main-nav-container" style="display: none;">
+  <nav class="nav-tabs-container" id="main-nav-container">
     <div class="nav-tabs-scroll" id="nav-tabs-list">
-      <!-- Tabs injected dynamically -->
+      <!-- Tabs injected dynamically with exact pestañas.jpg parallelogram structure -->
     </div>
   </nav>
 
@@ -45,17 +44,17 @@
     <section id="view-landing" class="view-section active">
       <div class="hero-card">
         <div class="hero-content">
-          <span class="badge-tag"><i class="fa-solid fa-rocket"></i> Transformación Digital</span>
+          <span class="badge-tag"><i class="fa-solid fa-rocket">🚀</i> Transformación Digital</span>
           <h2>Lleva tu Negocio en Papel al Mundo Digital</h2>
           <p>
             Centraliza tus inventarios, ventas, gastos, catálogo y conexiones integradas con Google Sheets, Supabase, SQL, WhatsApp Baileys, Facebook API e Inteligencia Artificial.
           </p>
           <div class="hero-actions">
             <button class="btn btn-primary btn-lg" onclick="app.showLoginModal()">
-              <i class="fa-solid fa-right-to-bracket"></i> Iniciar Sesión Sistema
+              <i class="fa-solid fa-right-to-bracket">🔑</i> Iniciar Sesión Sistema
             </button>
             <button class="btn btn-outline btn-lg" onclick="app.scrollToFeatures()">
-              <i class="fa-solid fa-circle-info"></i> Conocer Características
+              <i class="fa-solid fa-circle-info">ℹ</i> Conocer Características
             </button>
           </div>
         </div>
@@ -69,9 +68,9 @@
             </div>
             <div class="preview-body">
               <div class="metric-row">
-                <div class="metric-mini gold"><i class="fa-solid fa-database"></i> 9+ Conexiones</div>
-                <div class="metric-mini teal"><i class="fa-solid fa-robot"></i> Sugerencia IA</div>
-                <div class="metric-mini purple"><i class="fa-brands fa-whatsapp"></i> WhatsApp Live</div>
+                <div class="metric-mini gold"><i class="fa-solid fa-database">🗄</i> 9+ Conexiones</div>
+                <div class="metric-mini teal"><i class="fa-solid fa-robot">🤖</i> Sugerencia IA</div>
+                <div class="metric-mini purple"><i class="fa-brands fa-whatsapp">💬</i> WhatsApp Live</div>
               </div>
               <div class="mock-chart">
                 <div class="bar bar-1"></div>
@@ -87,28 +86,28 @@
 
       <!-- FEATURES GRID -->
       <div class="section-header-landing" id="features">
-        <h3><i class="fa-solid fa-cubes"></i> Módulos y Capacidades del Sistema</h3>
+        <h3><i class="fa-solid fa-cubes">❖</i> Módulos y Capacidades del Sistema</h3>
         <p>Diseñado para adaptarse a cualquier giro comercial: ventas de motos, repuestos, talleres, tiendas y más.</p>
       </div>
 
       <div class="features-grid">
         <div class="feature-card">
-          <div class="feature-icon teal"><i class="fa-solid fa-users-gear"></i></div>
+          <div class="feature-icon teal"><i class="fa-solid fa-users-gear">👥</i></div>
           <h4>Gestión de Usuarios</h4>
           <p>Control de usuarios activos e inactivos, asignación de fotos de perfil, permisos específicos por módulo y credenciales individuales.</p>
         </div>
         <div class="feature-card">
-          <div class="feature-icon gold"><i class="fa-solid fa-plug-zip"></i></div>
+          <div class="feature-icon gold"><i class="fa-solid fa-plug-zip">🔌</i></div>
           <h4>Multi-Conexiones Integradas</h4>
           <p>Conecta fácilmente con Google Sheets, OneDrive, PostgreSQL, Supabase, MySQL, Facebook API y WhatsApp Baileys en tiempo real.</p>
         </div>
         <div class="feature-card">
-          <div class="feature-icon purple"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+          <div class="feature-icon purple"><i class="fa-solid fa-wand-magic-sparkles">🪄</i></div>
           <h4>Configurador de Módulos e IA</h4>
           <p>Crea módulos dinámicos y usa el botón "Sugerir Campos IA" impulsado por OpenAI para estructurar automáticamente tu base de datos.</p>
         </div>
         <div class="feature-card">
-          <div class="feature-icon blue"><i class="fa-solid fa-chart-line"></i></div>
+          <div class="feature-icon blue"><i class="fa-solid fa-chart-line">📊</i></div>
           <h4>Dashboard Analítico</h4>
           <p>Monitoreo continuo del estado de conexiones, número de usuarios, analítica de ventas vs gastos y registro detallado de auditoría (logs).</p>
         </div>
@@ -118,34 +117,34 @@
     <!-- MODULE 1: DASHBOARD -->
     <section id="view-dashboard" class="view-section">
       <div class="view-header">
-        <h2><i class="fa-solid fa-chart-pie"></i> Dashboard Analítico Central</h2>
+        <h2><i class="fa-solid fa-chart-pie">📊</i> Dashboard Analítico Central</h2>
         <span class="subtitle">Estado global del sistema, analítica de usuarios y monitoreo de conexiones</span>
       </div>
 
       <div class="stats-cards-grid">
         <div class="stat-card border-teal">
-          <div class="stat-icon teal"><i class="fa-solid fa-users"></i></div>
+          <div class="stat-icon teal"><i class="fa-solid fa-users">👥</i></div>
           <div class="stat-info">
             <span class="stat-value" id="dash-total-users">0</span>
             <span class="stat-label">Usuarios Registrados</span>
           </div>
         </div>
         <div class="stat-card border-green">
-          <div class="stat-icon green"><i class="fa-solid fa-user-check"></i></div>
+          <div class="stat-icon green"><i class="fa-solid fa-user-check">👤</i></div>
           <div class="stat-info">
             <span class="stat-value" id="dash-active-users">0</span>
             <span class="stat-label">Usuarios Activos</span>
           </div>
         </div>
         <div class="stat-card border-gold">
-          <div class="stat-icon gold"><i class="fa-solid fa-network-wired"></i></div>
+          <div class="stat-icon gold"><i class="fa-solid fa-network-wired">🌐</i></div>
           <div class="stat-info">
             <span class="stat-value" id="dash-active-connections">0</span>
             <span class="stat-label">Conexiones Validadas</span>
           </div>
         </div>
         <div class="stat-card border-purple">
-          <div class="stat-icon purple"><i class="fa-solid fa-list-check"></i></div>
+          <div class="stat-icon purple"><i class="fa-solid fa-list-check">📋</i></div>
           <div class="stat-info">
             <span class="stat-value" id="dash-total-modules">0</span>
             <span class="stat-label">Módulos Dinámicos</span>
@@ -157,7 +156,7 @@
         <!-- Sales & Expenses per user breakdown -->
         <div class="card-box">
           <div class="card-box-header">
-            <h3><i class="fa-solid fa-money-bill-trend-up"></i> Análisis de Usuarios: Ventas vs Gastos</h3>
+            <h3><i class="fa-solid fa-money-bill-trend-up">📈</i> Análisis de Usuarios: Ventas vs Gastos</h3>
           </div>
           <div class="card-box-body">
             <div class="table-responsive">
@@ -182,7 +181,7 @@
         <!-- System Connections status widget -->
         <div class="card-box">
           <div class="card-box-header">
-            <h3><i class="fa-solid fa-plug"></i> Estado de Conexiones Habilitadas</h3>
+            <h3><i class="fa-solid fa-plug">🔌</i> Estado de Conexiones Habilitadas</h3>
           </div>
           <div class="card-box-body">
             <div class="connections-status-list" id="dash-connections-status">
@@ -197,11 +196,11 @@
     <section id="view-users" class="view-section">
       <div class="view-header flex-between">
         <div>
-          <h2><i class="fa-solid fa-users-gear"></i> Gestión de Usuarios del Sistema</h2>
+          <h2><i class="fa-solid fa-users-gear">👥</i> Gestión de Usuarios del Sistema</h2>
           <span class="subtitle">Alta, baja, perfiles, contraseñas, permisos por módulo y asignación de conexiones</span>
         </div>
         <button class="btn btn-primary" onclick="app.openUserModal()">
-          <i class="fa-solid fa-user-plus"></i> Crear Nuevo Usuario
+          <i class="fa-solid fa-user-plus">➕</i> Crear Nuevo Usuario
         </button>
       </div>
 
@@ -231,7 +230,7 @@
     <!-- MODULE 3: CONEXIONES -->
     <section id="view-connections" class="view-section">
       <div class="view-header">
-        <h2><i class="fa-solid fa-plug-zip"></i> Centro de Conexiones de Datos y Servicios</h2>
+        <h2><i class="fa-solid fa-plug-zip">🔌</i> Centro de Conexiones de Datos y Servicios</h2>
         <span class="subtitle">Configura credenciales, API Keys y vincula fuentes locales o remotas</span>
       </div>
 
@@ -240,7 +239,7 @@
         <!-- GOOGLE SHEETS -->
         <div class="connection-card">
           <div class="conn-card-header green">
-            <div class="conn-icon"><i class="fa-file-csv fa-solid"></i></div>
+            <div class="conn-icon"><i class="fa-file-csv fa-solid">📄</i></div>
             <div class="conn-title">
               <h4>Google Sheets</h4>
               <span>Integración CSV Publicado</span>
@@ -253,10 +252,10 @@
             </div>
             <div class="conn-actions">
               <button class="btn btn-outline btn-sm" onclick="app.testConnection('googlesheets')">
-                <i class="fa-solid fa-vial"></i> Probar Conexión
+                <i class="fa-solid fa-vial">🧪</i> Probar Conexión
               </button>
               <button class="btn btn-success btn-sm" onclick="app.saveConnection('googlesheets')">
-                <i class="fa-solid fa-floppy-disk"></i> Guardar
+                <i class="fa-solid fa-floppy-disk">💾</i> Guardar
               </button>
             </div>
             <div class="conn-status-msg" id="msg-conn-googlesheets"></div>
@@ -266,7 +265,7 @@
         <!-- OPENAI API -->
         <div class="connection-card">
           <div class="conn-card-header purple">
-            <div class="conn-icon"><i class="fa-solid fa-brain"></i></div>
+            <div class="conn-icon"><i class="fa-solid fa-brain">🧠</i></div>
             <div class="conn-title">
               <h4>OpenAI API</h4>
               <span>Sugeridor de Campos e Inteligencia</span>
@@ -279,10 +278,10 @@
             </div>
             <div class="conn-actions">
               <button class="btn btn-outline btn-sm" onclick="app.testConnection('openai')">
-                <i class="fa-solid fa-vial"></i> Probar Conexión
+                <i class="fa-solid fa-vial">🧪</i> Probar Conexión
               </button>
               <button class="btn btn-purple btn-sm" onclick="app.saveConnection('openai')">
-                <i class="fa-solid fa-floppy-disk"></i> Guardar
+                <i class="fa-solid fa-floppy-disk">💾</i> Guardar
               </button>
             </div>
             <div class="conn-status-msg" id="msg-conn-openai"></div>
@@ -292,7 +291,7 @@
         <!-- WHATSAPP BUSINESS BAILEYS -->
         <div class="connection-card">
           <div class="conn-card-header teal">
-            <div class="conn-icon"><i class="fa-brands fa-whatsapp"></i></div>
+            <div class="conn-icon"><i class="fa-brands fa-whatsapp">💬</i></div>
             <div class="conn-title">
               <h4>WhatsApp Business (Baileys)</h4>
               <span>Conexión por QR y WebSockets</span>
@@ -301,16 +300,16 @@
           <div class="conn-card-body align-center">
             <div id="whatsapp-qr-container" class="qr-container">
               <div class="qr-placeholder">
-                <i class="fa-solid fa-qrcode fa-3x"></i>
-                <p>Presiona "Iniciar Sesión QR" para vincular WhatsApp</p>
+                <i class="fa-solid fa-qrcode fa-3x">📱</i>
+                <p>Presiona "Generar Código QR" para vincular WhatsApp</p>
               </div>
             </div>
             <div class="conn-actions mt-15">
               <button class="btn btn-primary btn-sm" onclick="app.startWhatsAppQR()">
-                <i class="fa-solid fa-rotate"></i> Generar Código QR
+                <i class="fa-solid fa-rotate">🔄</i> Generar Código QR
               </button>
               <button class="btn btn-outline btn-sm" onclick="app.simulateWhatsAppConnect()">
-                <i class="fa-solid fa-bolt"></i> Simular Conexión
+                <i class="fa-solid fa-bolt">⚡</i> Simular Conexión
               </button>
             </div>
             <div class="conn-status-msg" id="msg-conn-whatsapp"></div>
@@ -320,7 +319,7 @@
         <!-- SUPABASE -->
         <div class="connection-card">
           <div class="conn-card-header emerald">
-            <div class="conn-icon"><i class="fa-solid fa-bolt-lightning"></i></div>
+            <div class="conn-icon"><i class="fa-solid fa-bolt-lightning">⚡</i></div>
             <div class="conn-title">
               <h4>Supabase DB</h4>
               <span>Base de Datos Cloud PostgreSQL</span>
@@ -337,10 +336,10 @@
             </div>
             <div class="conn-actions">
               <button class="btn btn-outline btn-sm" onclick="app.testConnection('supabase')">
-                <i class="fa-solid fa-vial"></i> Probar Conexión
+                <i class="fa-solid fa-vial">🧪</i> Probar Conexión
               </button>
               <button class="btn btn-success btn-sm" onclick="app.saveConnection('supabase')">
-                <i class="fa-solid fa-floppy-disk"></i> Guardar
+                <i class="fa-solid fa-floppy-disk">💾</i> Guardar
               </button>
             </div>
             <div class="conn-status-msg" id="msg-conn-supabase"></div>
@@ -350,7 +349,7 @@
         <!-- POSTGRESQL / SQL -->
         <div class="connection-card">
           <div class="conn-card-header blue">
-            <div class="conn-icon"><i class="fa-solid fa-database"></i></div>
+            <div class="conn-icon"><i class="fa-solid fa-database">🗄</i></div>
             <div class="conn-title">
               <h4>PostgreSQL / SQL Server</h4>
               <span>Base de Datos Relacional Directa</span>
@@ -370,10 +369,10 @@
             </div>
             <div class="conn-actions">
               <button class="btn btn-outline btn-sm" onclick="app.testConnection('postgres')">
-                <i class="fa-solid fa-vial"></i> Probar Conexión
+                <i class="fa-solid fa-vial">🧪</i> Probar Conexión
               </button>
               <button class="btn btn-primary btn-sm" onclick="app.saveConnection('postgres')">
-                <i class="fa-solid fa-floppy-disk"></i> Guardar
+                <i class="fa-solid fa-floppy-disk">💾</i> Guardar
               </button>
             </div>
             <div class="conn-status-msg" id="msg-conn-postgres"></div>
@@ -383,7 +382,7 @@
         <!-- FACEBOOK GRAPH API -->
         <div class="connection-card">
           <div class="conn-card-header navy">
-            <div class="conn-icon"><i class="fa-brands fa-facebook"></i></div>
+            <div class="conn-icon"><i class="fa-brands fa-facebook">🌐</i></div>
             <div class="conn-title">
               <h4>Facebook Token API</h4>
               <span>Meta Graph API Token</span>
@@ -396,10 +395,10 @@
             </div>
             <div class="conn-actions">
               <button class="btn btn-outline btn-sm" onclick="app.testConnection('facebook')">
-                <i class="fa-solid fa-vial"></i> Probar Token
+                <i class="fa-solid fa-vial">🧪</i> Probar Token
               </button>
               <button class="btn btn-primary btn-sm" onclick="app.saveConnection('facebook')">
-                <i class="fa-solid fa-floppy-disk"></i> Guardar
+                <i class="fa-solid fa-floppy-disk">💾</i> Guardar
               </button>
             </div>
             <div class="conn-status-msg" id="msg-conn-facebook"></div>
@@ -409,7 +408,7 @@
         <!-- ONEDRIVE / CSV / XLSX -->
         <div class="connection-card">
           <div class="conn-card-header gold">
-            <div class="conn-icon"><i class="fa-solid fa-file-excel"></i></div>
+            <div class="conn-icon"><i class="fa-solid fa-file-excel">📊</i></div>
             <div class="conn-title">
               <h4>OneDrive / CSV / XLSX</h4>
               <span>Archivos Locales o Nube</span>
@@ -422,10 +421,10 @@
             </div>
             <div class="conn-actions">
               <button class="btn btn-outline btn-sm" onclick="app.testConnection('csv')">
-                <i class="fa-solid fa-vial"></i> Probar
+                <i class="fa-solid fa-vial">🧪</i> Probar
               </button>
               <button class="btn btn-warning btn-sm" onclick="app.saveConnection('csv')">
-                <i class="fa-solid fa-floppy-disk"></i> Guardar
+                <i class="fa-solid fa-floppy-disk">💾</i> Guardar
               </button>
             </div>
             <div class="conn-status-msg" id="msg-conn-csv"></div>
@@ -439,17 +438,17 @@
     <section id="view-modules-builder" class="view-section">
       <div class="view-header flex-between">
         <div>
-          <h2><i class="fa-solid fa-wand-magic-sparkles"></i> Diseñador de Módulos e IA de Campos</h2>
+          <h2><i class="fa-solid fa-wand-magic-sparkles">🪄</i> Diseñador de Módulos e IA de Campos</h2>
           <span class="subtitle">Crea módulos a medida y define orígenes de lectura/escritura por campo con sugerencias OpenAI</span>
         </div>
         <button class="btn btn-primary" onclick="app.openNewModuleModal()">
-          <i class="fa-solid fa-plus"></i> Crear Nuevo Módulo
+          <i class="fa-solid fa-plus">➕</i> Crear Nuevo Módulo
         </button>
       </div>
 
       <div class="card-box">
         <div class="card-box-header flex-between">
-          <h3><i class="fa-solid fa-sliders"></i> Módulos Existentes en el Sistema</h3>
+          <h3><i class="fa-solid fa-sliders">⚙</i> Módulos Existentes en el Sistema</h3>
         </div>
         <div class="card-box-body">
           <div class="modules-tabs-selector" id="modules-list-selector">
@@ -465,7 +464,7 @@
               <div class="editor-ai-controls">
                 <input type="text" id="ai-business-type" class="form-control form-control-inline" placeholder="Giro de negocio (ej. Venta de Motos, Taller, Librería)">
                 <button class="btn btn-purple" onclick="app.suggestFieldsWithAI()">
-                  <i class="fa-solid fa-robot"></i> Sugerir Campos IA
+                  <i class="fa-solid fa-robot">🤖</i> Sugerir Campos IA
                 </button>
               </div>
             </div>
@@ -492,10 +491,10 @@
 
             <div class="editor-footer-actions mt-15 flex-between">
               <button class="btn btn-outline btn-sm" onclick="app.addFieldToActiveModule()">
-                <i class="fa-solid fa-plus"></i> Añadir Campo Manual
+                <i class="fa-solid fa-plus">➕</i> Añadir Campo Manual
               </button>
               <button class="btn btn-success" onclick="app.saveActiveModuleSchema()">
-                <i class="fa-solid fa-floppy-disk"></i> Guardar Estructura del Módulo
+                <i class="fa-solid fa-floppy-disk">💾</i> Guardar Estructura del Módulo
               </button>
             </div>
           </div>
@@ -507,11 +506,11 @@
     <section id="view-catalogo" class="view-section">
       <div class="view-header flex-between">
         <div>
-          <h2><i class="fa-solid fa-boxes-stacked"></i> Módulo: Catálogo de Productos y Servicios</h2>
+          <h2><i class="fa-solid fa-boxes-stacked">📦</i> Módulo: Catálogo de Productos y Servicios</h2>
           <span class="subtitle">Módulo configurado por defecto para gestión de inventarios e ítems</span>
         </div>
         <button class="btn btn-primary" onclick="app.openCatalogItemModal()">
-          <i class="fa-solid fa-box-archive"></i> Nuevo Ítem de Catálogo
+          <i class="fa-solid fa-box-archive">📦</i> Nuevo Ítem de Catálogo
         </button>
       </div>
 
@@ -535,11 +534,11 @@
     <section id="view-sales-expenses" class="view-section">
       <div class="view-header flex-between">
         <div>
-          <h2><i class="fa-solid fa-receipt"></i> Módulo: Ventas y Gastos por Usuario</h2>
+          <h2><i class="fa-solid fa-receipt">🧾</i> Módulo: Ventas y Gastos por Usuario</h2>
           <span class="subtitle">Registro de transacciones comerciales y gastos operativos por cada usuario</span>
         </div>
         <button class="btn btn-primary" onclick="app.openTransactionModal()">
-          <i class="fa-solid fa-circle-plus"></i> Registrar Movimiento
+          <i class="fa-solid fa-circle-plus">➕</i> Registrar Movimiento
         </button>
       </div>
 
@@ -569,7 +568,7 @@
     <!-- MODULE 7: LOGS DE AUDITORÍA -->
     <section id="view-logs" class="view-section">
       <div class="view-header">
-        <h2><i class="fa-solid fa-clipboard-list"></i> Registro de Logs y Auditoría del Sistema</h2>
+        <h2><i class="fa-solid fa-clipboard-list">📋</i> Registro de Logs y Auditoría del Sistema</h2>
         <span class="subtitle">Historial en tiempo real de accesos, módulos visitados y acciones realizadas por usuario</span>
       </div>
 
@@ -603,7 +602,7 @@
   <div class="modal-overlay" id="modal-login">
     <div class="modal-card">
       <div class="modal-header">
-        <h3><i class="fa-solid fa-right-to-bracket"></i> Acceso al Sistema</h3>
+        <h3><i class="fa-solid fa-right-to-bracket">🔑</i> Acceso al Sistema</h3>
         <button class="close-btn" onclick="app.closeModal('modal-login')">&times;</button>
       </div>
       <div class="modal-body">
@@ -617,11 +616,11 @@
             <input type="password" id="login-password" class="form-control" value="admin123" required>
           </div>
           <div class="login-info-box">
-            <i class="fa-solid fa-circle-info"></i> Acceso inicial predeterminado: <strong>admin@admin.com</strong> / <strong>admin123</strong>
+            <i class="fa-solid fa-circle-info">ℹ</i> Acceso inicial predeterminado: <strong>admin@admin.com</strong> / <strong>admin123</strong>
           </div>
           <div class="modal-actions mt-20">
             <button type="submit" class="btn btn-primary btn-block">
-              <i class="fa-solid fa-key"></i> Ingresar al Panel
+              <i class="fa-solid fa-key">🔑</i> Ingresar al Panel
             </button>
           </div>
         </form>
@@ -633,7 +632,7 @@
   <div class="modal-overlay" id="modal-user">
     <div class="modal-card modal-lg">
       <div class="modal-header">
-        <h3 id="user-modal-title"><i class="fa-solid fa-user-plus"></i> Crear Usuario</h3>
+        <h3 id="user-modal-title"><i class="fa-solid fa-user-plus">👤</i> Crear Usuario</h3>
         <button class="close-btn" onclick="app.closeModal('modal-user')">&times;</button>
       </div>
       <div class="modal-body">
@@ -689,7 +688,7 @@
 
           <div class="modal-actions mt-20">
             <button type="button" class="btn btn-outline" onclick="app.closeModal('modal-user')">Cancelar</button>
-            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Guardar Usuario</button>
+            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk">💾</i> Guardar Usuario</button>
           </div>
         </form>
       </div>
@@ -700,7 +699,7 @@
   <div class="modal-overlay" id="modal-new-module">
     <div class="modal-card">
       <div class="modal-header">
-        <h3><i class="fa-solid fa-plus-minus"></i> Crear Nuevo Módulo Personalizado</h3>
+        <h3><i class="fa-solid fa-plus-minus">➕</i> Crear Nuevo Módulo Personalizado</h3>
         <button class="close-btn" onclick="app.closeModal('modal-new-module')">&times;</button>
       </div>
       <div class="modal-body">
@@ -710,8 +709,8 @@
             <input type="text" id="new-mod-name" class="form-control" placeholder="Ej. Taller de Servicio" required>
           </div>
           <div class="form-group">
-            <label>Ícono FontAwesome:</label>
-            <input type="text" id="new-mod-icon" class="form-control" value="fa-solid fa-cubes" required>
+            <label>Ícono o Emoji:</label>
+            <input type="text" id="new-mod-icon" class="form-control" value="🛠" required>
           </div>
           <div class="form-group">
             <label>Color de la Pestaña:</label>
@@ -726,7 +725,7 @@
           </div>
           <div class="modal-actions mt-20">
             <button type="button" class="btn btn-outline" onclick="app.closeModal('modal-new-module')">Cancelar</button>
-            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Crear Módulo</button>
+            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check">✔</i> Crear Módulo</button>
           </div>
         </form>
       </div>
@@ -737,7 +736,7 @@
   <div class="modal-overlay" id="modal-catalog-item">
     <div class="modal-card modal-lg">
       <div class="modal-header">
-        <h3><i class="fa-solid fa-box"></i> Guardar Ítem en Catálogo</h3>
+        <h3><i class="fa-solid fa-box">📦</i> Guardar Ítem en Catálogo</h3>
         <button class="close-btn" onclick="app.closeModal('modal-catalog-item')">&times;</button>
       </div>
       <div class="modal-body">
@@ -747,7 +746,7 @@
           </div>
           <div class="modal-actions mt-20">
             <button type="button" class="btn btn-outline" onclick="app.closeModal('modal-catalog-item')">Cancelar</button>
-            <button type="submit" class="btn btn-success"><i class="fa-solid fa-floppy-disk"></i> Guardar en Catálogo</button>
+            <button type="submit" class="btn btn-success"><i class="fa-solid fa-floppy-disk">💾</i> Guardar en Catálogo</button>
           </div>
         </form>
       </div>
@@ -758,7 +757,7 @@
   <div class="modal-overlay" id="modal-transaction">
     <div class="modal-card">
       <div class="modal-header">
-        <h3><i class="fa-solid fa-file-invoice-dollar"></i> Registrar Venta o Gasto</h3>
+        <h3><i class="fa-solid fa-file-invoice-dollar">🧾</i> Registrar Venta o Gasto</h3>
         <button class="close-btn" onclick="app.closeModal('modal-transaction')">&times;</button>
       </div>
       <div class="modal-body">
@@ -780,13 +779,14 @@
           </div>
           <div class="modal-actions mt-20">
             <button type="button" class="btn btn-outline" onclick="app.closeModal('modal-transaction')">Cancelar</button>
-            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Registrar Movimiento</button>
+            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk">💾</i> Registrar Movimiento</button>
           </div>
         </form>
       </div>
     </div>
   </div>
 
+  <!-- Optional socket.io loaded gracefully in JS -->
   <script src="js/app.js"></script>
 </body>
 </html>
