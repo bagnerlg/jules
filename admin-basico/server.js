@@ -128,7 +128,7 @@ app.post('/api/test-connection', async (req, res) => {
   }
 });
 
-// OpenAI field suggestion endpoint analyzing business type domain requirements
+// OpenAI field suggestion endpoint with pre-established enterprise architecture prompt
 app.post('/api/suggest-fields', async (req, res) => {
   const { businessType, moduleName, userPrompt, apiKey } = req.body;
 
@@ -140,28 +140,45 @@ app.post('/api/suggest-fields', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Se requiere una API Key de OpenAI para sugerir campos' });
   }
 
-  const prompt = `Eres un arquitecto de datos e ingeniero de software experto.
-El usuario necesita definir los campos oportunos para el módulo "${moduleName}" en un negocio de tipo "${businessType}".
-Instrucción o contexto adicional del usuario: "${userPrompt || `Genera los campos que debe contener los artículos/elementos para ${businessType}, analizando qué se vende y cómo se archiva en inventario en este rubro comercial`}".
+  const prompt = `Eres un Arquitecto Principal de Datos y consultor ERP especializado en estructurar empresas para su digitalización operativa.
+El usuario desea estructurar los campos necesarios para el módulo "${moduleName}" en una empresa del giro de negocio: "${businessType}".
+Instrucción o requerimiento del usuario: "${userPrompt || `Diseñar los campos ideales para procesar inventarios, productos y/o servicios en ${businessType}`}".
 
-Investiga mentalmente este tipo de negocio (${businessType}) y determina una lista completa y estructurada de campos de datos esenciales.
-Por ejemplo, si es una librería, incluye campos como "Código", "Descripción del Artículo", "Unidad de Medida", "Color del Artículo", "Editorial/Marca", "Precio Venta", "Stock Actual", etc. Si es un taller o venta de repuestos, incluye los pertinentes.
+REGLAS OBLIGATORIAS DE ARQUITECTURA DE DATOS:
+1. Si el giro o requerimiento incluye SERVICIOS (por ejemplo: "servicio de cambio de cadena de moto", "cambio de aceite de caja de carro", "alineación y balanceo", "mantenimiento preventivo", "mano de obra"), DEBES incluir campos clave para gestionar servicios como:
+   - "Tipo de Item" (Producto Físico vs Servicio)
+   - "Tiempo Estimado de Ejecución / Horas Mano de Obra"
+   - "Costo de Mano de Obra o Material Requerido"
+   - "Categoría / Sistema" (ej. Motor, Frenos, Transmisión, Papelería, etc.)
+   - "Garantía del Servicio / Producto"
+2. Si es para PRODUCTOS o ARTÍCULOS DE VENTA (librería, motos, repuestos, boutique), incluye:
+   - "Código / SKU"
+   - "Descripción Detallada / Nombre Comercial"
+   - "Unidad de Medida" (Unidad, Servicio, Kit, Caja, Litro, etc.)
+   - "Precio de Venta (Q)"
+   - "Costo Estimado (Q)"
+   - "Stock Mínimo / Reorden"
+   - "Ubicación / Estante"
+3. El objetivo es crear una estructura completa, profesional y práctica que realmente ayude a la empresa a procesar y digitalizar sus operaciones sin omitir ningún dato clave.
 
-Responde ÚNICAMENTE con un arreglo JSON puro (sin markdown ni texto antes o después) de objetos donde cada objeto contenga:
-- "name": (string, nombre legible del campo en español, ej: "Código de Artículo")
-- "key": (string, identificador único en snake_case, ej: "codigo_articulo")
+FORMATO DE RESPUESTA:
+Responde ÚNICAMENTE con un arreglo JSON puro de objetos. Cada objeto debe contener:
+- "name": (string, nombre claro del campo en español)
+- "key": (string, identificador snake_case)
 - "type": (string, uno de: "text", "number", "select", "date", "image", "boolean")
-- "options": (opcional, arreglo de strings si type es "select")
+- "options": (opcional, arreglo de opciones si type es "select")
 - "required": (boolean)
-- "readSource": (string con fuente recomendada de lectura, ej: "Google Sheets", "Supabase", "Manual")
-- "writeSource": (string con fuente recomendada de escritura, ej: "Postgres", "Supabase", "Local")
+- "readSource": (string, ej: "Google Sheets", "Supabase", "Manual")
+- "writeSource": (string, ej: "Postgres", "Supabase", "Local")
 
-Ejemplo de respuesta válida:
+Ejemplo de salida para servicio/producto:
 [
-  {"name": "Código", "key": "codigo", "type": "text", "required": true, "readSource": "Google Sheets", "writeSource": "Postgres"},
-  {"name": "Descripción del Artículo", "key": "descripcion_articulo", "type": "text", "required": true, "readSource": "Manual", "writeSource": "Postgres"},
-  {"name": "Unidad de Medida", "key": "unidad_medida", "type": "select", "options": ["Unidad", "Caja", "Paquete", "Docena"], "required": true, "readSource": "Manual", "writeSource": "Postgres"},
-  {"name": "Color del Artículo", "key": "color_articulo", "type": "text", "required": false, "readSource": "Manual", "writeSource": "Postgres"}
+  {"name": "Código / SKU", "key": "sku", "type": "text", "required": true, "readSource": "Google Sheets", "writeSource": "Postgres"},
+  {"name": "Nombre / Descripción", "key": "descripcion", "type": "text", "required": true, "readSource": "Manual", "writeSource": "Postgres"},
+  {"name": "Tipo de Item", "key": "tipo_item", "type": "select", "options": ["Producto Físico", "Servicio Técnico", "Mano de Obra", "Combo / Kit"], "required": true, "readSource": "Manual", "writeSource": "Postgres"},
+  {"name": "Tiempo Estimado (Horas / Mins)", "key": "tiempo_estimado", "type": "text", "required": false, "readSource": "Manual", "writeSource": "Postgres"},
+  {"name": "Unidad de Medida", "key": "unidad_medida", "type": "select", "options": ["Servicio", "Unidad", "Litro", "Juego", "Hora"], "required": true, "readSource": "Manual", "writeSource": "Postgres"},
+  {"name": "Precio Venta (Q)", "key": "precio_venta", "type": "number", "required": true, "readSource": "Google Sheets", "writeSource": "Postgres"}
 ]`;
 
   try {
@@ -174,7 +191,7 @@ Ejemplo de respuesta válida:
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         messages: [{ role: 'user', content: prompt }],
-        temperature: 0.5
+        temperature: 0.4
       })
     });
 

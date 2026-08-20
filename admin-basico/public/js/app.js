@@ -6,10 +6,15 @@ const app = {
   state: {
     currentUser: null,
     users: [],
+    clients: [],
+    suppliers: [],
+    purchases: [],
+    processes: [],
+    sales: [],
+    expenses: [],
     connections: {},
     modules: [],
     catalog: [],
-    salesAndExpenses: [],
     logs: [],
     activeView: 'landing',
     activeEditingModuleKey: 'catalogo',
@@ -129,7 +134,7 @@ const app = {
           status: 'Activo',
           avatar: 'https://ui-avatars.com/api/?name=Admin+Basico&background=3F51B5&color=fff',
           connections: ['googlesheets', 'openai', 'whatsapp', 'supabase', 'postgres', 'facebook', 'csv'],
-          permissions: ['landing', 'dashboard', 'users', 'connections', 'modules-builder', 'catalogo', 'sales-expenses', 'logs']
+          permissions: ['landing', 'dashboard', 'users', 'clientes', 'proveedores', 'connections', 'modules-builder', 'catalogo', 'compras', 'procesos', 'ventas', 'gastos', 'logs']
         },
         {
           id: 'usr-2',
@@ -140,7 +145,7 @@ const app = {
           status: 'Activo',
           avatar: 'https://ui-avatars.com/api/?name=Carlos+Vendedor&background=009688&color=fff',
           connections: ['googlesheets'],
-          permissions: ['landing', 'catalogo', 'sales-expenses']
+          permissions: ['landing', 'clientes', 'catalogo', 'ventas']
         }
       ];
       localStorage.setItem('admin_users', JSON.stringify(this.state.users));
@@ -169,41 +174,13 @@ const app = {
       this.state.modules = JSON.parse(savedModules);
     } else {
       this.state.modules = [
-        {
-          key: 'landing',
-          name: 'Presentación',
-          icon: '🏠',
-          color: 'teal',
-          isSystem: true
-        },
-        {
-          key: 'dashboard',
-          name: 'Dashboard',
-          icon: '📊',
-          color: 'gold',
-          isSystem: true
-        },
-        {
-          key: 'users',
-          name: 'Usuarios',
-          icon: '👤',
-          color: 'coral',
-          isSystem: true
-        },
-        {
-          key: 'connections',
-          name: 'Conexiones',
-          icon: '🔌',
-          color: 'green',
-          isSystem: true
-        },
-        {
-          key: 'modules-builder',
-          name: 'Diseñador IA',
-          icon: '🪄',
-          color: 'purple',
-          isSystem: true
-        },
+        { key: 'landing', name: 'Presentación', icon: '🏠', color: 'teal', isSystem: true },
+        { key: 'dashboard', name: 'Dashboard', icon: '📊', color: 'gold', isSystem: true },
+        { key: 'users', name: 'Usuarios', icon: '👤', color: 'coral', isSystem: true },
+        { key: 'clientes', name: 'Clientes', icon: '📇', color: 'blue', isSystem: true },
+        { key: 'proveedores', name: 'Proveedores', icon: '🚚', color: 'green', isSystem: true },
+        { key: 'connections', name: 'Conexiones', icon: '🔌', color: 'teal', isSystem: true },
+        { key: 'modules-builder', name: 'Diseñador IA', icon: '🪄', color: 'purple', isSystem: true },
         {
           key: 'catalogo',
           name: 'Catálogo',
@@ -212,28 +189,63 @@ const app = {
           isSystem: false,
           fields: [
             { name: 'Código / SKU', key: 'sku', type: 'text', required: true, readSource: 'Google Sheets', writeSource: 'Postgres' },
-            { name: 'Descripción del Artículo', key: 'descripcion', type: 'text', required: true, readSource: 'Google Sheets', writeSource: 'Postgres' },
+            { name: 'Descripción / Servicio', key: 'descripcion', type: 'text', required: true, readSource: 'Google Sheets', writeSource: 'Postgres' },
+            { name: 'Tipo de Item', key: 'tipo_item', type: 'select', options: ['Producto Físico', 'Servicio Técnico', 'Mano de Obra'], required: true, readSource: 'Manual', writeSource: 'Postgres' },
             { name: 'Unidad de Medida', key: 'unidad_medida', type: 'text', required: false, readSource: 'Manual', writeSource: 'Postgres' },
-            { name: 'Precio Venta (Q)', key: 'precio', type: 'number', required: true, readSource: 'Google Sheets', writeSource: 'Postgres' },
-            { name: 'Existencia / Stock', key: 'stock', type: 'number', required: false, readSource: 'Supabase', writeSource: 'Supabase' }
+            { name: 'Precio Venta (Q)', key: 'precio', type: 'number', required: true, readSource: 'Google Sheets', writeSource: 'Postgres' }
           ]
         },
-        {
-          key: 'sales-expenses',
-          name: 'Ventas y Gastos',
-          icon: '🧾',
-          color: 'coral',
-          isSystem: false
-        },
-        {
-          key: 'logs',
-          name: 'Logs Audit',
-          icon: '📋',
-          color: 'teal',
-          isSystem: true
-        }
+        { key: 'compras', name: 'Compras Materia Prima', icon: '📦', color: 'gold', isSystem: true },
+        { key: 'procesos', name: 'Procesos y Transformación', icon: '⚙', color: 'purple', isSystem: true },
+        { key: 'ventas', name: 'Ventas', icon: '🛍', color: 'green', isSystem: false },
+        { key: 'gastos', name: 'Gastos', icon: '💸', color: 'coral', isSystem: false },
+        { key: 'logs', name: 'Logs Audit', icon: '📋', color: 'teal', isSystem: true }
       ];
       localStorage.setItem('admin_modules', JSON.stringify(this.state.modules));
+    }
+
+    // Default Clients
+    const savedClients = localStorage.getItem('admin_clients');
+    if (savedClients) {
+      this.state.clients = JSON.parse(savedClients);
+    } else {
+      this.state.clients = [
+        { id: 'cli-1', name: 'Taller Central S.A.', tax: '1234567-8', phone: '502 5555-1234', email: 'contacto@tallercentral.com', address: 'Ciudad de Guatemala' }
+      ];
+      localStorage.setItem('admin_clients', JSON.stringify(this.state.clients));
+    }
+
+    // Default Suppliers
+    const savedSuppliers = localStorage.getItem('admin_suppliers');
+    if (savedSuppliers) {
+      this.state.suppliers = JSON.parse(savedSuppliers);
+    } else {
+      this.state.suppliers = [
+        { id: 'sup-1', name: 'Distribuidora de Aceites y Repuestos S.A.', tax: '8765432-1', phone: '502 2222-0000', category: 'Aceites, Cadenas, Filtros' }
+      ];
+      localStorage.setItem('admin_suppliers', JSON.stringify(this.state.suppliers));
+    }
+
+    // Default Purchases
+    const savedPurchases = localStorage.getItem('admin_purchases');
+    if (savedPurchases) {
+      this.state.purchases = JSON.parse(savedPurchases);
+    } else {
+      this.state.purchases = [
+        { id: 'pur-1', date: new Date().toISOString(), supplier: 'Distribuidora de Aceites S.A.', item: 'Aceite de Caja 20W50 (Caja 12 Galones)', qty: 2, total: 650, status: 'Ingresado' }
+      ];
+      localStorage.setItem('admin_purchases', JSON.stringify(this.state.purchases));
+    }
+
+    // Default Processes
+    const savedProcesses = localStorage.getItem('admin_processes');
+    if (savedProcesses) {
+      this.state.processes = JSON.parse(savedProcesses);
+    } else {
+      this.state.processes = [
+        { id: 'proc-1', date: new Date().toISOString(), inputItem: '1 Galón Aceite de Caja + Cadena', qtyInput: 1, outputItem: 'Servicio de Cambio de Aceite y Cadena de Moto', qtyOutput: 1, status: 'Completado' }
+      ];
+      localStorage.setItem('admin_processes', JSON.stringify(this.state.processes));
     }
 
     // Default Catalog items
@@ -242,22 +254,33 @@ const app = {
       this.state.catalog = JSON.parse(savedCatalog);
     } else {
       this.state.catalog = [
-        { id: 'cat-1', sku: 'LIB-001', descripcion: 'Libro Don Quijote de la Mancha', unidad_medida: 'Unidad', precio: 125, stock: 15 },
-        { id: 'cat-2', sku: 'MOTO-125', descripcion: 'Motocicleta 125cc Roja', unidad_medida: 'Unidad', precio: 8500, stock: 5 }
+        { id: 'cat-1', sku: 'SERV-001', descripcion: 'Servicio de Cambio de Aceite de Caja de Carro', tipo_item: 'Servicio Técnico', unidad_medida: 'Servicio', precio: 250 },
+        { id: 'cat-2', sku: 'SERV-002', descripcion: 'Servicio de Cambio de Cadena de Moto', tipo_item: 'Servicio Técnico', unidad_medida: 'Servicio', precio: 175 },
+        { id: 'cat-3', sku: 'MOTO-125', descripcion: 'Motocicleta 125cc Roja', tipo_item: 'Producto Físico', unidad_medida: 'Unidad', precio: 8500 }
       ];
       localStorage.setItem('admin_catalog', JSON.stringify(this.state.catalog));
     }
 
-    // Default Transactions
-    const savedSales = localStorage.getItem('admin_sales');
+    // Default Sales
+    const savedSales = localStorage.getItem('admin_sales_only');
     if (savedSales) {
-      this.state.salesAndExpenses = JSON.parse(savedSales);
+      this.state.sales = JSON.parse(savedSales);
     } else {
-      this.state.salesAndExpenses = [
-        { id: 'tx-1', date: new Date().toISOString(), type: 'Venta', user: 'admin@admin.com', userName: 'Administrador Principal', concept: 'Venta de Libro Don Quijote', amount: 125 },
-        { id: 'tx-2', date: new Date().toISOString(), type: 'Gasto', user: 'carlos@empresa.com', userName: 'Carlos Vendedor', concept: 'Pago de Envío Mensajería', amount: 35 }
+      this.state.sales = [
+        { id: 'sal-1', date: new Date().toISOString(), client: 'Taller Central S.A.', user: 'admin@admin.com', userName: 'Administrador Principal', product: 'Servicio de Cambio de Aceite de Caja', amount: 250 }
       ];
-      localStorage.setItem('admin_sales', JSON.stringify(this.state.salesAndExpenses));
+      localStorage.setItem('admin_sales_only', JSON.stringify(this.state.sales));
+    }
+
+    // Default Expenses
+    const savedExpenses = localStorage.getItem('admin_expenses_only');
+    if (savedExpenses) {
+      this.state.expenses = JSON.parse(savedExpenses);
+    } else {
+      this.state.expenses = [
+        { id: 'exp-1', date: new Date().toISOString(), user: 'carlos@empresa.com', userName: 'Carlos Vendedor', concept: 'Combustible Mensajería y Entrega', amount: 80 }
+      ];
+      localStorage.setItem('admin_expenses_only', JSON.stringify(this.state.expenses));
     }
 
     // Default Logs
@@ -274,10 +297,15 @@ const app = {
 
   saveStateToStorage() {
     localStorage.setItem('admin_users', JSON.stringify(this.state.users));
+    localStorage.setItem('admin_clients', JSON.stringify(this.state.clients));
+    localStorage.setItem('admin_suppliers', JSON.stringify(this.state.suppliers));
+    localStorage.setItem('admin_purchases', JSON.stringify(this.state.purchases));
+    localStorage.setItem('admin_processes', JSON.stringify(this.state.processes));
+    localStorage.setItem('admin_sales_only', JSON.stringify(this.state.sales));
+    localStorage.setItem('admin_expenses_only', JSON.stringify(this.state.expenses));
     localStorage.setItem('admin_connections', JSON.stringify(this.state.connections));
     localStorage.setItem('admin_modules', JSON.stringify(this.state.modules));
     localStorage.setItem('admin_catalog', JSON.stringify(this.state.catalog));
-    localStorage.setItem('admin_sales', JSON.stringify(this.state.salesAndExpenses));
     localStorage.setItem('admin_logs', JSON.stringify(this.state.logs));
   },
 
@@ -379,6 +407,12 @@ const app = {
       case 'users':
         this.renderUsers();
         break;
+      case 'clientes':
+        this.renderClients();
+        break;
+      case 'proveedores':
+        this.renderSuppliers();
+        break;
       case 'connections':
         this.renderConnectionsView();
         break;
@@ -388,8 +422,17 @@ const app = {
       case 'catalogo':
         this.renderCatalog();
         break;
-      case 'sales-expenses':
-        this.renderSalesExpenses();
+      case 'compras':
+        this.renderPurchases();
+        break;
+      case 'procesos':
+        this.renderProcesses();
+        break;
+      case 'ventas':
+        this.renderSales();
+        break;
+      case 'gastos':
+        this.renderExpenses();
         break;
       case 'logs':
         this.renderLogs();
@@ -400,12 +443,12 @@ const app = {
   // --- DASHBOARD RENDERER ---
   renderDashboard() {
     const totalUsers = this.state.users.length;
-    const activeUsers = this.state.users.filter(u => u.status === 'Activo').length;
+    const totalClients = this.state.clients.length;
     const activeConnCount = Object.values(this.state.connections).filter(c => c.status === 'Exitoso' || c.status === 'conectado' || c.status === 'connected').length;
     const totalModules = this.state.modules.length;
 
     document.getElementById('dash-total-users').innerText = totalUsers;
-    document.getElementById('dash-active-users').innerText = activeUsers;
+    document.getElementById('dash-total-clients').innerText = totalClients;
     document.getElementById('dash-active-connections').innerText = activeConnCount;
     document.getElementById('dash-total-modules').innerText = totalModules;
 
@@ -415,12 +458,12 @@ const app = {
       analyticsBody.innerHTML = '';
 
       this.state.users.forEach(usr => {
-        const userSales = this.state.salesAndExpenses
-          .filter(t => t.user === usr.email && t.type === 'Venta')
+        const userSales = this.state.sales
+          .filter(t => t.user === usr.email)
           .reduce((sum, t) => sum + Number(t.amount || 0), 0);
 
-        const userExpenses = this.state.salesAndExpenses
-          .filter(t => t.user === usr.email && t.type === 'Gasto')
+        const userExpenses = this.state.expenses
+          .filter(t => t.user === usr.email)
           .reduce((sum, t) => sum + Number(t.amount || 0), 0);
 
         const balance = userSales - userExpenses;
@@ -472,6 +515,283 @@ const app = {
         connWidget.appendChild(item);
       });
     }
+  },
+
+  // --- CLIENTS MODULE ---
+  renderClients() {
+    const tbody = document.getElementById('clients-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    this.state.clients.forEach((c, idx) => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><code>CLI-${100 + idx}</code></td>
+        <td><strong>${c.name}</strong></td>
+        <td>${c.tax || 'CF'}</td>
+        <td>${c.phone || '-'}</td>
+        <td>${c.email || '-'}</td>
+        <td>${c.address || '-'}</td>
+        <td>
+          <button class="btn btn-danger btn-sm" onclick="app.deleteClient(${idx})">🗑 Eliminar</button>
+        </td>
+      `;
+      tbody.appendChild(row);
+    });
+  },
+
+  openClientModal() {
+    this.openModal('modal-client');
+  },
+
+  saveClient(e) {
+    e.preventDefault();
+    const newClient = {
+      id: 'cli-' + Date.now(),
+      name: document.getElementById('cli-name').value,
+      tax: document.getElementById('cli-tax').value,
+      phone: document.getElementById('cli-phone').value,
+      email: document.getElementById('cli-email').value,
+      address: document.getElementById('cli-address').value
+    };
+    this.state.clients.push(newClient);
+    this.saveStateToStorage();
+    this.closeModal('modal-client');
+    this.renderClients();
+    this.logActivity('Clientes', 'Nuevo Cliente Registrado', newClient.name);
+  },
+
+  deleteClient(idx) {
+    this.state.clients.splice(idx, 1);
+    this.saveStateToStorage();
+    this.renderClients();
+  },
+
+  // --- SUPPLIERS MODULE ---
+  renderSuppliers() {
+    const tbody = document.getElementById('suppliers-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    this.state.suppliers.forEach((s, idx) => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><code>PROV-${100 + idx}</code></td>
+        <td><strong>${s.name}</strong></td>
+        <td>${s.tax || '-'}</td>
+        <td>${s.phone || '-'}</td>
+        <td><span class="badge badge-info">${s.category || 'Materia Prima'}</span></td>
+        <td>
+          <button class="btn btn-danger btn-sm" onclick="app.deleteSupplier(${idx})">🗑 Eliminar</button>
+        </td>
+      `;
+      tbody.appendChild(row);
+    });
+  },
+
+  openSupplierModal() {
+    this.openModal('modal-supplier');
+  },
+
+  saveSupplier(e) {
+    e.preventDefault();
+    const newSup = {
+      id: 'sup-' + Date.now(),
+      name: document.getElementById('sup-name').value,
+      tax: document.getElementById('sup-tax').value,
+      phone: document.getElementById('sup-phone').value,
+      category: document.getElementById('sup-category').value
+    };
+    this.state.suppliers.push(newSup);
+    this.saveStateToStorage();
+    this.closeModal('modal-supplier');
+    this.renderSuppliers();
+    this.logActivity('Proveedores', 'Nuevo Proveedor', newSup.name);
+  },
+
+  deleteSupplier(idx) {
+    this.state.suppliers.splice(idx, 1);
+    this.saveStateToStorage();
+    this.renderSuppliers();
+  },
+
+  // --- PURCHASES / RAW MATERIALS ---
+  renderPurchases() {
+    const tbody = document.getElementById('purchases-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    this.state.purchases.forEach((p, idx) => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><small>${new Date(p.date).toLocaleDateString()}</small></td>
+        <td><strong>${p.supplier}</strong></td>
+        <td>${p.item}</td>
+        <td>${p.qty}</td>
+        <td style="font-weight:700;">Q${Number(p.total).toFixed(2)}</td>
+        <td><span class="badge badge-success">${p.status || 'Ingresado'}</span></td>
+      `;
+      tbody.appendChild(row);
+    });
+  },
+
+  openPurchaseModal() {
+    this.openModal('modal-purchase');
+  },
+
+  savePurchase(e) {
+    e.preventDefault();
+    const newPur = {
+      id: 'pur-' + Date.now(),
+      date: new Date().toISOString(),
+      supplier: document.getElementById('pur-supplier').value,
+      item: document.getElementById('pur-item').value,
+      qty: document.getElementById('pur-qty').value,
+      total: document.getElementById('pur-total').value,
+      status: 'Ingresado'
+    };
+    this.state.purchases.unshift(newPur);
+    this.saveStateToStorage();
+    this.closeModal('modal-purchase');
+    this.renderPurchases();
+    this.logActivity('Compras Materia Prima', 'Ingreso de Compra', `${newPur.item} de ${newPur.supplier}`);
+  },
+
+  // --- PROCESSES / TRANSFORMATION ---
+  renderProcesses() {
+    const tbody = document.getElementById('processes-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    this.state.processes.forEach((proc, idx) => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><small>${new Date(proc.date).toLocaleDateString()}</small></td>
+        <td style="color:#E74C3C;">${proc.inputItem}</td>
+        <td>${proc.qtyInput}</td>
+        <td style="color:#27AE60; font-weight:700;">${proc.outputItem}</td>
+        <td>${proc.qtyOutput}</td>
+        <td><span class="badge badge-success">${proc.status}</span></td>
+      `;
+      tbody.appendChild(row);
+    });
+  },
+
+  openProcessModal() {
+    this.openModal('modal-process');
+  },
+
+  saveProcess(e) {
+    e.preventDefault();
+    const newProc = {
+      id: 'proc-' + Date.now(),
+      date: new Date().toISOString(),
+      inputItem: document.getElementById('proc-input').value,
+      qtyInput: 1,
+      outputItem: document.getElementById('proc-output').value,
+      qtyOutput: document.getElementById('proc-qty').value,
+      status: document.getElementById('proc-status').value
+    };
+    this.state.processes.unshift(newProc);
+    this.saveStateToStorage();
+    this.closeModal('modal-process');
+    this.renderProcesses();
+    this.logActivity('Procesos', 'Transformación Ejecutada', `${newProc.inputItem} -> ${newProc.outputItem}`);
+  },
+
+  // --- SALES MODULE (SEPARATED) ---
+  renderSales() {
+    const tbody = document.getElementById('sales-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    this.state.sales.forEach(s => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><small>${new Date(s.date).toLocaleString()}</small></td>
+        <td><strong>${s.client}</strong></td>
+        <td>${s.userName || s.user}</td>
+        <td>${s.product}</td>
+        <td style="font-weight:700; color:#27AE60;">+Q${Number(s.amount).toFixed(2)}</td>
+        <td><span class="badge badge-success">Completada</span></td>
+      `;
+      tbody.appendChild(row);
+    });
+  },
+
+  openSaleModal() {
+    this.openModal('modal-sale');
+  },
+
+  saveSale(e) {
+    e.preventDefault();
+    const client = document.getElementById('sale-client').value;
+    const product = document.getElementById('sale-product').value;
+    const amount = Number(document.getElementById('sale-amount').value);
+
+    const currentUser = this.state.currentUser || { email: 'admin@admin.com', name: 'Administrador Principal' };
+
+    const newSale = {
+      id: 'sal-' + Date.now(),
+      date: new Date().toISOString(),
+      client,
+      user: currentUser.email,
+      userName: currentUser.name,
+      product,
+      amount
+    };
+
+    this.state.sales.unshift(newSale);
+    this.saveStateToStorage();
+    this.closeModal('modal-sale');
+    this.renderSales();
+    this.logActivity('Ventas', 'Registro de Venta', `${product} a ${client} por Q${amount}`);
+  },
+
+  // --- EXPENSES MODULE (SEPARATED) ---
+  renderExpenses() {
+    const tbody = document.getElementById('expenses-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    this.state.expenses.forEach(exp => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><small>${new Date(exp.date).toLocaleString()}</small></td>
+        <td>${exp.userName || exp.user}</td>
+        <td>${exp.concept}</td>
+        <td style="font-weight:700; color:#E74C3C;">-Q${Number(exp.amount).toFixed(2)}</td>
+        <td><span class="badge badge-success">Procesado</span></td>
+      `;
+      tbody.appendChild(row);
+    });
+  },
+
+  openExpenseModal() {
+    this.openModal('modal-expense');
+  },
+
+  saveExpense(e) {
+    e.preventDefault();
+    const concept = document.getElementById('exp-concept').value;
+    const amount = Number(document.getElementById('exp-amount').value);
+
+    const currentUser = this.state.currentUser || { email: 'admin@admin.com', name: 'Administrador Principal' };
+
+    const newExp = {
+      id: 'exp-' + Date.now(),
+      date: new Date().toISOString(),
+      user: currentUser.email,
+      userName: currentUser.name,
+      concept,
+      amount
+    };
+
+    this.state.expenses.unshift(newExp);
+    this.saveStateToStorage();
+    this.closeModal('modal-expense');
+    this.renderExpenses();
+    this.logActivity('Gastos', 'Registro de Gasto', `${concept} por Q${amount}`);
   },
 
   // --- USERS RENDERER & ACTIONS ---
@@ -851,8 +1171,8 @@ const app = {
   },
 
   async suggestFieldsWithAI() {
-    const businessType = document.getElementById('ai-business-type')?.value?.trim() || 'Librería / Tienda';
-    const userPrompt = document.getElementById('ai-user-prompt')?.value?.trim() || '';
+    const businessType = document.getElementById('ai-business-type')?.value?.trim() || 'Taller y Servicios';
+    const userPrompt = document.getElementById('ai-user-prompt')?.value?.trim() || 'Incluir items de servicios como cambio de aceite de caja, cambio de cadena, repuestos e insumos';
 
     const mod = this.state.modules.find(m => m.key === this.state.activeEditingModuleKey);
     const apiKey = this.state.connections.openai?.apiKey;
@@ -897,10 +1217,10 @@ const app = {
   },
 
   async quickAISuggestForCatalog() {
-    const businessType = prompt('Ingresa el giro de tu negocio para que la IA estructure el Catálogo (ej. Librería, Taller de Motos, Venta de Repuestos, Boutique):', 'Librería');
+    const businessType = prompt('Ingresa el giro de tu negocio para que la IA estructure el Catálogo (ej. Taller de Motos, Servicio Mecánico, Librería):', 'Taller de Motos y Servicios');
     if (!businessType) return;
 
-    const userPrompt = prompt('Detalla opcionalmente qué artículos vendes o cómo los archivas:', 'Genera los campos que debe contener los artículos de venta para llevar el historial y registro de cada elemento disponible en la tienda');
+    const userPrompt = prompt('Detalla los servicios o productos que vendes (ej. servicio de cambio de cadena de moto, cambio de aceite de caja de carro, repuestos):', 'Crea items para servicios como cambio de cadena de moto, cambio de aceite de caja de carro y productos fisicos para inventario');
 
     this.state.activeEditingModuleKey = 'catalogo';
     const catalogMod = this.state.modules.find(m => m.key === 'catalogo');
@@ -989,10 +1309,10 @@ const app = {
     const catalogMod = this.state.modules.find(m => m.key === 'catalogo') || {};
     const fields = catalogMod.fields || [
       { name: 'SKU', key: 'sku' },
-      { name: 'Descripción del Artículo', key: 'descripcion' },
+      { name: 'Descripción / Servicio', key: 'descripcion' },
+      { name: 'Tipo de Item', key: 'tipo_item' },
       { name: 'Unidad de Medida', key: 'unidad_medida' },
-      { name: 'Precio Venta (Q)', key: 'precio' },
-      { name: 'Stock', key: 'stock' }
+      { name: 'Precio Venta (Q)', key: 'precio' }
     ];
 
     if (head) {
@@ -1026,12 +1346,24 @@ const app = {
     const fields = catalogMod.fields || [];
 
     if (container) {
-      container.innerHTML = fields.map(f => `
-        <div class="form-group">
-          <label>${f.name}:</label>
-          <input type="${f.type === 'number' ? 'number' : 'text'}" name="${f.key}" class="form-control" ${f.required ? 'required' : ''}>
-        </div>
-      `).join('');
+      container.innerHTML = fields.map(f => {
+        if (f.type === 'select' && Array.isArray(f.options)) {
+          return `
+            <div class="form-group">
+              <label>${f.name}:</label>
+              <select name="${f.key}" class="form-control">
+                ${f.options.map(opt => `<option value="${opt}">${opt}</option>`).join('')}
+              </select>
+            </div>
+          `;
+        }
+        return `
+          <div class="form-group">
+            <label>${f.name}:</label>
+            <input type="${f.type === 'number' ? 'number' : 'text'}" name="${f.key}" class="form-control" ${f.required ? 'required' : ''}>
+          </div>
+        `;
+      }).join('');
     }
 
     this.openModal('modal-catalog-item');
@@ -1058,63 +1390,6 @@ const app = {
     this.state.catalog.splice(idx, 1);
     this.saveStateToStorage();
     this.renderCatalog();
-  },
-
-  // --- SALES & EXPENSES MODULE ---
-  renderSalesExpenses() {
-    const tbody = document.getElementById('transactions-table-body');
-    if (!tbody) return;
-    tbody.innerHTML = '';
-
-    this.state.salesAndExpenses.forEach(t => {
-      const row = document.createElement('tr');
-      const isSale = t.type === 'Venta';
-
-      row.innerHTML = `
-        <td>${new Date(t.date).toLocaleString()}</td>
-        <td>
-          <span class="badge ${isSale ? 'badge-success' : 'badge-danger'}">
-            ${t.type}
-          </span>
-        </td>
-        <td>${t.userName || t.user}</td>
-        <td>${t.concept}</td>
-        <td style="font-weight:700; color:${isSale ? '#27AE60' : '#E74C3C'};">
-          ${isSale ? '+' : '-'}Q${Number(t.amount).toFixed(2)}
-        </td>
-        <td><span class="badge badge-success">Completado</span></td>
-      `;
-      tbody.appendChild(row);
-    });
-  },
-
-  openTransactionModal() {
-    this.openModal('modal-transaction');
-  },
-
-  saveTransaction(e) {
-    e.preventDefault();
-    const type = document.getElementById('trans-type').value;
-    const concept = document.getElementById('trans-concept').value;
-    const amount = Number(document.getElementById('trans-amount').value);
-
-    const currentUser = this.state.currentUser || { email: 'admin@admin.com', name: 'Administrador Principal' };
-
-    const newTx = {
-      id: 'tx-' + Date.now(),
-      date: new Date().toISOString(),
-      type,
-      user: currentUser.email,
-      userName: currentUser.name,
-      concept,
-      amount
-    };
-
-    this.state.salesAndExpenses.unshift(newTx);
-    this.saveStateToStorage();
-    this.closeModal('modal-transaction');
-    this.renderSalesExpenses();
-    this.logActivity('Ventas y Gastos', `Registro de ${type}`, `${concept} por Q${amount}`);
   },
 
   // --- LOGS AUDIT MODULE ---
