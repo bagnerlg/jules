@@ -1,0 +1,19 @@
+{
+  "name": "admin-basico",
+  "version": "1.0.0",
+  "description": "Sistema Central de Administración con Gestión de Usuarios, Módulos Dinámicos IA, Conexiones y WhatsApp Baileys",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "zip": "node build-zip.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.8",
+    "archiver": "^6.0.2",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "pino": "^10.3.1",
+    "qrcode": "^1.5.3",
+    "socket.io": "^4.7.5"
+  }
+}

@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Básico - Plataforma Central de Gestión</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- TOP HEADER / BRANDING -->
+  <header class="top-header">
+    <div class="brand-container">
+      <div class="brand-logo">
+        <i class="fa-solid fa-shapes">❖</i>
+      </div>
+      <div class="brand-title">
+        <h1>ADMIN BÁSICO</h1>
+        <span>Plataforma Central de Negocios y Conexiones</span>
+      </div>
+    </div>
+
+    <!-- USER BAR / AUTH BUTTONS -->
+    <div class="user-bar" id="user-bar">
+      <!-- Injected by JavaScript -->
+    </div>
+  </header>
+
+  <!-- PARALLELOGRAM TOP SLANTED TABS BAR (pestañas.jpg inspired) -->
+  <nav class="nav-tabs-container" id="main-nav-container">
+    <div class="nav-tabs-scroll" id="nav-tabs-list">
+      <!-- Tabs injected dynamically with exact pestañas.jpg parallelogram structure -->
+    </div>
+  </nav>
+
+  <!-- MAIN CONTAINER -->
+  <main class="main-content" id="main-content">
+
+    <!-- PUBLIC PRESENTATION LANDING PAGE -->
+    <section id="view-landing" class="view-section active">
+      <div class="hero-card">
+        <div class="hero-content">
+          <span class="badge-tag"><i class="fa-solid fa-rocket">🚀</i> Transformación Digital</span>
+          <h2>Lleva tu Negocio en Papel al Mundo Digital</h2>
+          <p>
+            Centraliza tus clientes, proveedores, catálogo, materia prima, procesos de producción, ventas, gastos y conexiones integradas con Google Sheets, Supabase, SQL, WhatsApp Baileys, Facebook API e Inteligencia Artificial.
+          </p>
+          <div class="hero-actions">
+            <button class="btn btn-primary btn-lg" onclick="app.showLoginModal()">
+              <i class="fa-solid fa-right-to-bracket">🔑</i> Iniciar Sesión Sistema
+            </button>
+            <button class="btn btn-outline btn-lg" onclick="app.scrollToFeatures()">
+              <i class="fa-solid fa-circle-info">ℹ</i> Conocer Características
+            </button>
+          </div>
+        </div>
+        <div class="hero-visual">
+          <div class="visual-card-preview">
+            <div class="preview-header">
+              <span class="dot red"></span>
+              <span class="dot yellow"></span>
+              <span class="dot green"></span>
+              <span class="preview-title">Admin Básico Core v1.0</span>
+            </div>
+            <div class="preview-body">
+              <div class="metric-row">
+                <div class="metric-mini gold"><i class="fa-solid fa-database">🗄</i> 9+ Conexiones</div>
+                <div class="metric-mini teal"><i class="fa-solid fa-robot">🤖</i> Sugerencia IA</div>
+                <div class="metric-mini purple"><i class="fa-brands fa-whatsapp">💬</i> WhatsApp Live</div>
+              </div>
+              <div class="mock-chart">
+                <div class="bar bar-1"></div>
+                <div class="bar bar-2"></div>
+                <div class="bar bar-3"></div>
+                <div class="bar bar-4"></div>
+                <div class="bar bar-5"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FEATURES GRID -->
+      <div class="section-header-landing" id="features">
+        <h3><i class="fa-solid fa-cubes">❖</i> Módulos y Capacidades del Sistema</h3>
+        <p>Estructurado para cualquier giro comercial u operativo: librerías, talleres de motos/carros, manufactura, comercios y servicios.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon teal"><i class="fa-solid fa-users-gear">👥</i></div>
+          <h4>Usuarios, Clientes y Proveedores</h4>
+          <p>Gestión completa de accesos, directorio de clientes con historial comercial y registro central de proveedores.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon gold"><i class="fa-solid fa-industry">🏭</i></div>
+          <h4>Materia Prima, Compras y Procesos</h4>
+          <p>Modulo de compras de suministros y módulo de transformación/procesos para convertir materia prima en productos terminados o servicios.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon purple"><i class="fa-solid fa-wand-magic-sparkles">🪄</i></div>
+          <h4>Configurador de Módulos e IA</h4>
+          <p>Crea módulos dinámicos y usa el botón "Sugerir Campos IA" impulsado por OpenAI para estructurar productos físicos o servicios técnicos (ej. cambio de aceite, repuestos, etc.).</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon blue"><i class="fa-solid fa-chart-line">📊</i></div>
+          <h4>Ventas, Gastos y Dashboard</h4>
+          <p>Módulos independientes de Ventas e Ingresos vs. Gastos Operativos con gráficos analíticos y registro continuo de auditoría (logs).</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 1: DASHBOARD -->
+    <section id="view-dashboard" class="view-section">
+      <div class="view-header">
+        <h2><i class="fa-solid fa-chart-pie">📊</i> Dashboard Analítico Central</h2>
+        <span class="subtitle">Estado global del sistema, analítica de usuarios y monitoreo de conexiones</span>
+      </div>
+
+      <div class="stats-cards-grid">
+        <div class="stat-card border-teal">
+          <div class="stat-icon teal"><i class="fa-solid fa-users">👥</i></div>
+          <div class="stat-info">
+            <span class="stat-value" id="dash-total-users">0</span>
+            <span class="stat-label">Usuarios Registrados</span>
+          </div>
+        </div>
+        <div class="stat-card border-green">
+          <div class="stat-icon green"><i class="fa-solid fa-address-card">📇</i></div>
+          <div class="stat-info">
+            <span class="stat-value" id="dash-total-clients">0</span>
+            <span class="stat-label">Clientes / Contactos</span>
+          </div>
+        </div>
+        <div class="stat-card border-gold">
+          <div class="stat-icon gold"><i class="fa-solid fa-network-wired">🌐</i></div>
+          <div class="stat-info">
+            <span class="stat-value" id="dash-active-connections">0</span>
+            <span class="stat-label">Conexiones Validadas</span>
+          </div>
+        </div>
+        <div class="stat-card border-purple">
+          <div class="stat-icon purple"><i class="fa-solid fa-list-check">📋</i></div>
+          <div class="stat-info">
+            <span class="stat-value" id="dash-total-modules">0</span>
+            <span class="stat-label">Módulos Dinámicos</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="dashboard-grid">
+        <!-- Sales & Expenses per user breakdown -->
+        <div class="card-box">
+          <div class="card-box-header">
+            <h3><i class="fa-solid fa-money-bill-trend-up">📈</i> Análisis por Usuario: Ventas Totales vs Gastos</h3>
+          </div>
+          <div class="card-box-body">
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Usuario</th>
+                    <th>Rol</th>
+                    <th>Ventas (+ Ingresos)</th>
+                    <th>Gastos (- Egresos)</th>
+                    <th>Balance / Margen</th>
+                  </tr>
+                </thead>
+                <tbody id="dash-analytics-table">
+                  <!-- Injected by JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- System Connections status widget -->
+        <div class="card-box">
+          <div class="card-box-header">
+            <h3><i class="fa-solid fa-plug">🔌</i> Estado de Conexiones Habilitadas</h3>
+          </div>
+          <div class="card-box-body">
+            <div class="connections-status-list" id="dash-connections-status">
+              <!-- Injected by JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 2: USUARIOS -->
+    <section id="view-users" class="view-section">
+      <div class="view-header flex-between">
+        <div>
+          <h2><i class="fa-solid fa-users-gear">👥</i> Gestión de Usuarios del Sistema</h2>
+          <span class="subtitle">Alta, baja, perfiles, contraseñas, permisos por módulo y asignación de conexiones</span>
+        </div>
+        <button class="btn btn-primary" onclick="app.openUserModal()">
+          <i class="fa-solid fa-user-plus">➕</i> Crear Nuevo Usuario
+        </button>
+      </div>
+
+      <div class="card-box">
+        <div class="card-box-body">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Usuario / Perfil</th>
+                  <th>Correo</th>
+                  <th>Rol</th>
+                  <th>Estado</th>
+                  <th>Conexiones Asignadas</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="users-table-body">
+                <!-- Injected by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE: CLIENTES (NUEVO) -->
+    <section id="view-clientes" class="view-section">
+      <div class="view-header flex-between">
+        <div>
+          <h2><i class="fa-solid fa-address-book">📇</i> Gestión e Ingreso de Clientes</h2>
+          <span class="subtitle">Directorio de clientes, datos de contacto, NIT/DPI y tipo de cliente</span>
+        </div>
+        <button class="btn btn-primary" onclick="app.openClientModal()">
+          <i class="fa-solid fa-user-plus">➕</i> Registrar Cliente
+        </button>
+      </div>
+
+      <div class="card-box">
+        <div class="card-box-body">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Nombre Completo / Empresa</th>
+                  <th>NIT / DPI</th>
+                  <th>Teléfono</th>
+                  <th>Correo</th>
+                  <th>Dirección</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="clients-table-body">
+                <!-- Injected by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE: PROVEEDORES (NUEVO) -->
+    <section id="view-proveedores" class="view-section">
+      <div class="view-header flex-between">
+        <div>
+          <h2><i class="fa-solid fa-truck-field">🚚</i> Gestión de Proveedores</h2>
+          <span class="subtitle">Registro de proveedores de materia prima, insumos, repuestos y servicios</span>
+        </div>
+        <button class="btn btn-primary" onclick="app.openSupplierModal()">
+          <i class="fa-solid fa-plus">➕</i> Registrar Proveedor
+        </button>
+      </div>
+
+      <div class="card-box">
+        <div class="card-box-body">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Proveedor / Razón Social</th>
+                  <th>NIT / RFC</th>
+                  <th>Teléfono / Contacto</th>
+                  <th>Categoría / Rubro</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="suppliers-table-body">
+                <!-- Injected by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 3: CONEXIONES -->
+    <section id="view-connections" class="view-section">
+      <div class="view-header">
+        <h2><i class="fa-solid fa-plug-zip">🔌</i> Centro de Conexiones de Datos y Servicios</h2>
+        <span class="subtitle">Configura credenciales, API Keys y vincula fuentes locales o remotas</span>
+      </div>
+
+      <div class="connections-grid">
+
+        <!-- GOOGLE SHEETS -->
+        <div class="connection-card">
+          <div class="conn-card-header green">
+            <div class="conn-icon"><i class="fa-file-csv fa-solid">📄</i></div>
+            <div class="conn-title">
+              <h4>Google Sheets</h4>
+              <span>Integración CSV Publicado</span>
+            </div>
+          </div>
+          <div class="conn-card-body">
+            <div class="form-group">
+              <label>URL CSV de Google Sheets:</label>
+              <input type="text" id="conn-gs-url" class="form-control" placeholder="https://docs.google.com/.../pub?output=csv">
+            </div>
+            <div class="conn-actions">
+              <button class="btn btn-outline btn-sm" onclick="app.testConnection('googlesheets')">
+                <i class="fa-solid fa-vial">🧪</i> Probar Conexión
+              </button>
+              <button class="btn btn-success btn-sm" onclick="app.saveConnection('googlesheets')">
+                <i class="fa-solid fa-floppy-disk">💾</i> Guardar
+              </button>
+            </div>
+            <div class="conn-status-msg" id="msg-conn-googlesheets"></div>
+          </div>
+        </div>
+
+        <!-- OPENAI API -->
+        <div class="connection-card">
+          <div class="conn-card-header purple">
+            <div class="conn-icon"><i class="fa-solid fa-brain">🧠</i></div>
+            <div class="conn-title">
+              <h4>OpenAI API</h4>
+              <span>Sugeridor de Campos e Inteligencia</span>
+            </div>
+          </div>
+          <div class="conn-card-body">
+            <div class="form-group">
+              <label>API Key de OpenAI (sk-...):</label>
+              <input type="password" id="conn-openai-key" class="form-control" placeholder="sk-proj-...">
+            </div>
+            <div class="conn-actions">
+              <button class="btn btn-outline btn-sm" onclick="app.testConnection('openai')">
+                <i class="fa-solid fa-vial">🧪</i> Probar Conexión
+              </button>
+              <button class="btn btn-purple btn-sm" onclick="app.saveConnection('openai')">
+                <i class="fa-solid fa-floppy-disk">💾</i> Guardar
+              </button>
+            </div>
+            <div class="conn-status-msg" id="msg-conn-openai"></div>
+          </div>
+        </div>
+
+        <!-- WHATSAPP BUSINESS BAILEYS -->
+        <div class="connection-card">
+          <div class="conn-card-header teal">
+            <div class="conn-icon"><i class="fa-brands fa-whatsapp">💬</i></div>
+            <div class="conn-title">
+              <h4>WhatsApp Business (Baileys)</h4>
+              <span>Conexión por QR y WebSockets</span>
+            </div>
+          </div>
+          <div class="conn-card-body align-center">
+            <div id="whatsapp-qr-container" class="qr-container">
+              <div class="qr-placeholder">
+                <i class="fa-solid fa-qrcode fa-3x">📱</i>
+                <p>Presiona "Iniciar WhatsApp Baileys" para vincular la sesión</p>
+              </div>
+            </div>
+            <div class="conn-actions mt-15">
+              <button class="btn btn-primary btn-sm" onclick="app.startWhatsAppQR()">
+                <i class="fa-solid fa-play">▶</i> Iniciar WhatsApp
+              </button>
+              <button class="btn btn-danger btn-sm" onclick="app.stopWhatsApp()">
+                <i class="fa-solid fa-stop">⏹</i> Detener
+              </button>
+            </div>
+            <div class="conn-status-msg" id="msg-conn-whatsapp"></div>
+          </div>
+        </div>
+
+        <!-- SUPABASE -->
+        <div class="connection-card">
+          <div class="conn-card-header emerald">
+            <div class="conn-icon"><i class="fa-solid fa-bolt-lightning">⚡</i></div>
+            <div class="conn-title">
+              <h4>Supabase DB</h4>
+              <span>Base de Datos Cloud PostgreSQL</span>
+            </div>
+          </div>
+          <div class="conn-card-body">
+            <div class="form-group">
+              <label>Supabase URL:</label>
+              <input type="text" id="conn-supa-url" class="form-control" placeholder="https://xyz.supabase.co">
+            </div>
+            <div class="form-group">
+              <label>Anon Key / Service Key:</label>
+              <input type="password" id="conn-supa-key" class="form-control" placeholder="eyJhbGci...">
+            </div>
+            <div class="conn-actions">
+              <button class="btn btn-outline btn-sm" onclick="app.testConnection('supabase')">
+                <i class="fa-solid fa-vial">🧪</i> Probar Conexión
+              </button>
+              <button class="btn btn-success btn-sm" onclick="app.saveConnection('supabase')">
+                <i class="fa-solid fa-floppy-disk">💾</i> Guardar
+              </button>
+            </div>
+            <div class="conn-status-msg" id="msg-conn-supabase"></div>
+          </div>
+        </div>
+
+        <!-- POSTGRESQL / SQL -->
+        <div class="connection-card">
+          <div class="conn-card-header blue">
+            <div class="conn-icon"><i class="fa-solid fa-database">🗄</i></div>
+            <div class="conn-title">
+              <h4>PostgreSQL / SQL Server</h4>
+              <span>Base de Datos Relacional Directa</span>
+            </div>
+          </div>
+          <div class="conn-card-body">
+            <div class="form-group">
+              <label>Host / Servidor:</label>
+              <input type="text" id="conn-pg-host" class="form-control" placeholder="localhost / db.empresa.com">
+            </div>
+            <div class="form-group">
+              <label>Nombre BD & Usuario:</label>
+              <div class="grid-2">
+                <input type="text" id="conn-pg-db" class="form-control" placeholder="BD Name">
+                <input type="text" id="conn-pg-user" class="form-control" placeholder="User">
+              </div>
+            </div>
+            <div class="conn-actions">
+              <button class="btn btn-outline btn-sm" onclick="app.testConnection('postgres')">
+                <i class="fa-solid fa-vial">🧪</i> Probar Conexión
+              </button>
+              <button class="btn btn-primary btn-sm" onclick="app.saveConnection('postgres')">
+                <i class="fa-solid fa-floppy-disk">💾</i> Guardar
+              </button>
+            </div>
+            <div class="conn-status-msg" id="msg-conn-postgres"></div>
+          </div>
+        </div>
+
+        <!-- FACEBOOK GRAPH API -->
+        <div class="connection-card">
+          <div class="conn-card-header navy">
+            <div class="conn-icon"><i class="fa-brands fa-facebook">🌐</i></div>
+            <div class="conn-title">
+              <h4>Facebook Token API</h4>
+              <span>Meta Graph API Token</span>
+            </div>
+          </div>
+          <div class="conn-card-body">
+            <div class="form-group">
+              <label>Page / User Access Token:</label>
+              <input type="password" id="conn-fb-token" class="form-control" placeholder="EAA...">
+            </div>
+            <div class="conn-actions">
+              <button class="btn btn-outline btn-sm" onclick="app.testConnection('facebook')">
+                <i class="fa-solid fa-vial">🧪</i> Probar Token
+              </button>
+              <button class="btn btn-primary btn-sm" onclick="app.saveConnection('facebook')">
+                <i class="fa-solid fa-floppy-disk">💾</i> Guardar
+              </button>
+            </div>
+            <div class="conn-status-msg" id="msg-conn-facebook"></div>
+          </div>
+        </div>
+
+        <!-- ONEDRIVE / CSV / XLSX -->
+        <div class="connection-card">
+          <div class="conn-card-header gold">
+            <div class="conn-icon"><i class="fa-solid fa-file-excel">📊</i></div>
+            <div class="conn-title">
+              <h4>OneDrive / CSV / XLSX</h4>
+              <span>Archivos Locales o Nube</span>
+            </div>
+          </div>
+          <div class="conn-card-body">
+            <div class="form-group">
+              <label>Ruta / Enlace OneDrive o Local:</label>
+              <input type="text" id="conn-file-path" class="form-control" placeholder="https://onedrive.live.com/... o C:\archivos\datos.xlsx">
+            </div>
+            <div class="conn-actions">
+              <button class="btn btn-outline btn-sm" onclick="app.testConnection('csv')">
+                <i class="fa-solid fa-vial">🧪</i> Probar
+              </button>
+              <button class="btn btn-warning btn-sm" onclick="app.saveConnection('csv')">
+                <i class="fa-solid fa-floppy-disk">💾</i> Guardar
+              </button>
+            </div>
+            <div class="conn-status-msg" id="msg-conn-csv"></div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- MODULE 4: MÓDULOS Y CONFIGURACIÓN DE CAMPOS -->
+    <section id="view-modules-builder" class="view-section">
+      <div class="view-header flex-between">
+        <div>
+          <h2><i class="fa-solid fa-wand-magic-sparkles">🪄</i> Diseñador de Módulos e IA de Campos</h2>
+          <span class="subtitle">Crea módulos a medida y define orígenes de lectura/escritura por campo con sugerencias OpenAI</span>
+        </div>
+        <button class="btn btn-primary" onclick="app.openNewModuleModal()">
+          <i class="fa-solid fa-plus">➕</i> Crear Nuevo Módulo
+        </button>
+      </div>
+
+      <div class="card-box">
+        <div class="card-box-header flex-between">
+          <h3><i class="fa-solid fa-sliders">⚙</i> Módulos Existentes en el Sistema</h3>
+        </div>
+        <div class="card-box-body">
+          <div class="modules-tabs-selector" id="modules-list-selector">
+            <!-- Dynamic module select pills -->
+          </div>
+
+          <div id="selected-module-editor" class="module-editor-container mt-20" style="display:none;">
+            <div class="editor-top-bar" style="flex-direction:column; align-items:stretch; gap:12px;">
+              <div class="flex-between">
+                <div>
+                  <h4 id="editor-module-title">Módulo: Catálogo</h4>
+                  <span class="badge" id="editor-module-key">catalogo</span>
+                </div>
+                <button class="btn btn-purple" onclick="app.suggestFieldsWithAI()">
+                  <i class="fa-solid fa-robot">🤖</i> Sugerir Campos IA
+                </button>
+              </div>
+              <div class="grid-2">
+                <input type="text" id="ai-business-type" class="form-control" placeholder="Giro de negocio (ej. Taller de Motos, Servicio Mecánico, Librería)">
+                <input type="text" id="ai-user-prompt" class="form-control" placeholder="Ej. Incluir servicios como 'cambio de aceite de caja', 'cambio de cadena', repuestos...">
+              </div>
+            </div>
+
+            <!-- FIELDS SCHEMA TABLE -->
+            <div class="table-responsive mt-15">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Nombre Visible</th>
+                    <th>Clave / Campo BD</th>
+                    <th>Tipo de Dato</th>
+                    <th>Fuente Lectura (Read)</th>
+                    <th>Fuente Escritura (Write)</th>
+                    <th>Requerido</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="module-fields-table-body">
+                  <!-- Fields injected by JS -->
+                </tbody>
+              </table>
+            </div>
+
+            <div class="editor-footer-actions mt-15 flex-between">
+              <button class="btn btn-outline btn-sm" onclick="app.addFieldToActiveModule()">
+                <i class="fa-solid fa-plus">➕</i> Añadir Campo Manual
+              </button>
+              <button class="btn btn-success" onclick="app.saveActiveModuleSchema()">
+                <i class="fa-solid fa-floppy-disk">💾</i> Guardar Estructura del Módulo
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 5: CATÁLOGO DE PRODUCTOS Y SERVICIOS -->
+    <section id="view-catalogo" class="view-section">
+      <div class="view-header flex-between">
+        <div>
+          <h2><i class="fa-solid fa-boxes-stacked">📦</i> Módulo: Catálogo de Productos y Servicios</h2>
+          <span class="subtitle">Gestión de artículos de venta, repuestos y servicios técnicos (ej. cambio de aceite, servicio de motor, etc.)</span>
+        </div>
+        <div style="display:flex; gap:10px;">
+          <button class="btn btn-purple" onclick="app.quickAISuggestForCatalog()">
+            <i class="fa-solid fa-robot">🤖</i> Sugerir Campos IA
+          </button>
+          <button class="btn btn-primary" onclick="app.openCatalogItemModal()">
+            <i class="fa-solid fa-box-archive">📦</i> Nuevo Producto / Servicio
+          </button>
+        </div>
+      </div>
+
+      <div class="card-box">
+        <div class="card-box-body">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead id="catalog-table-head">
+                <!-- Dynamic header from field config -->
+              </thead>
+              <tbody id="catalog-table-body">
+                <!-- Items injected by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE: COMPRAS Y MATERIA PRIMA (NUEVO) -->
+    <section id="view-compras" class="view-section">
+      <div class="view-header flex-between">
+        <div>
+          <h2><i class="fa-solid fa-boxes-packing">📦</i> Compras de Materia Prima y Materiales</h2>
+          <span class="subtitle">Registro e ingreso de suministros, materia prima e insumos de proveedores</span>
+        </div>
+        <button class="btn btn-primary" onclick="app.openPurchaseModal()">
+          <i class="fa-solid fa-cart-plus">➕</i> Registrar Compra / Material
+        </button>
+      </div>
+
+      <div class="card-box">
+        <div class="card-box-body">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Proveedor</th>
+                  <th>Material / Insumo</th>
+                  <th>Cantidad</th>
+                  <th>Costo Total (Q)</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody id="purchases-table-body">
+                <!-- Injected by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE: PROCESOS Y TRANSFORMACIÓN (NUEVO) -->
+    <section id="view-procesos" class="view-section">
+      <div class="view-header flex-between">
+        <div>
+          <h2><i class="fa-solid fa-gears">⚙</i> Procesos de Transformación</h2>
+          <span class="subtitle">Módulo donde la materia prima o materiales se transforman en productos terminados o servicios listos para venta</span>
+        </div>
+        <button class="btn btn-primary" onclick="app.openProcessModal()">
+          <i class="fa-solid fa-flask">🧪</i> Nuevo Proceso de Transformación
+        </button>
+      </div>
+
+      <div class="card-box">
+        <div class="card-box-body">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Fecha / Orden</th>
+                  <th>Materia Prima Consumida</th>
+                  <th>Cantidad Usada</th>
+                  <th>Producto Terminado / Servicio Generado</th>
+                  <th>Unidades Producidas</th>
+                  <th>Estado Proceso</th>
+                </tr>
+              </thead>
+              <tbody id="processes-table-body">
+                <!-- Injected by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE: VENTAS (SEPARADO) -->
+    <section id="view-ventas" class="view-section">
+      <div class="view-header flex-between">
+        <div>
+          <h2><i class="fa-solid fa-cart-shopping">🛍</i> Módulo: Registro de Ventas</h2>
+          <span class="subtitle">Módulo dedicado exclusivamente al registro de ventas e ingresos comerciales</span>
+        </div>
+        <button class="btn btn-success" onclick="app.openSaleModal()">
+          <i class="fa-solid fa-circle-plus">➕</i> Registrar Nueva Venta
+        </button>
+      </div>
+
+      <div class="card-box">
+        <div class="card-box-body">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Fecha y Hora</th>
+                  <th>Cliente</th>
+                  <th>Vendedor / Usuario</th>
+                  <th>Producto / Servicio</th>
+                  <th>Monto Venta (Q)</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody id="sales-table-body">
+                <!-- Injected by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE: GASTOS (SEPARADO) -->
+    <section id="view-gastos" class="view-section">
+      <div class="view-header flex-between">
+        <div>
+          <h2><i class="fa-solid fa-file-invoice-dollar">💸</i> Módulo: Registro de Gastos</h2>
+          <span class="subtitle">Módulo dedicado al control de egresos, pagos operativos y servicios administrativos</span>
+        </div>
+        <button class="btn btn-danger" onclick="app.openExpenseModal()">
+          <i class="fa-solid fa-circle-minus">➕</i> Registrar Nuevo Gasto
+        </button>
+      </div>
+
+      <div class="card-box">
+        <div class="card-box-body">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Fecha y Hora</th>
+                  <th>Usuario Que Registra</th>
+                  <th>Categoría / Concepto</th>
+                  <th>Monto Gasto (Q)</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody id="expenses-table-body">
+                <!-- Injected by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 7: LOGS DE AUDITORÍA -->
+    <section id="view-logs" class="view-section">
+      <div class="view-header">
+        <h2><i class="fa-solid fa-clipboard-list">📋</i> Registro de Logs y Auditoría del Sistema</h2>
+        <span class="subtitle">Historial en tiempo real de accesos, módulos visitados y acciones realizadas por usuario</span>
+      </div>
+
+      <div class="card-box">
+        <div class="card-box-body">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Fecha y Hora</th>
+                  <th>Usuario</th>
+                  <th>Módulo</th>
+                  <th>Acción / Evento Realizado</th>
+                  <th>Detalles Adicionales</th>
+                </tr>
+              </thead>
+              <tbody id="logs-table-body">
+                <!-- Logs injected by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODALS -->
+
+  <!-- CLIENT MODAL -->
+  <div class="modal-overlay" id="modal-client">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-address-card">📇</i> Registrar Cliente</h3>
+        <button class="close-btn" onclick="app.closeModal('modal-client')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="app.saveClient(event)">
+          <div class="form-group">
+            <label>Nombre Completo / Empresa:</label>
+            <input type="text" id="cli-name" class="form-control" required placeholder="Ej. Taller Central S.A. / María López">
+          </div>
+          <div class="grid-2">
+            <div class="form-group">
+              <label>NIT o DPI:</label>
+              <input type="text" id="cli-tax" class="form-control" placeholder="1234567-8 / CF">
+            </div>
+            <div class="form-group">
+              <label>Teléfono:</label>
+              <input type="text" id="cli-phone" class="form-control" placeholder="502 5555-1234">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Correo Electrónico:</label>
+            <input type="email" id="cli-email" class="form-control" placeholder="cliente@correo.com">
+          </div>
+          <div class="form-group">
+            <label>Dirección:</label>
+            <input type="text" id="cli-address" class="form-control" placeholder="Ciudad de Guatemala">
+          </div>
+          <div class="modal-actions mt-20">
+            <button type="button" class="btn btn-outline" onclick="app.closeModal('modal-client')">Cancelar</button>
+            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk">💾</i> Guardar Cliente</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUPPLIER MODAL -->
+  <div class="modal-overlay" id="modal-supplier">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-truck-field">🚚</i> Registrar Proveedor</h3>
+        <button class="close-btn" onclick="app.closeModal('modal-supplier')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="app.saveSupplier(event)">
+          <div class="form-group">
+            <label>Nombre del Proveedor / Razón Social:</label>
+            <input type="text" id="sup-name" class="form-control" required placeholder="Ej. Distribuidora de Repuestos S.A.">
+          </div>
+          <div class="grid-2">
+            <div class="form-group">
+              <label>NIT / RFC:</label>
+              <input type="text" id="sup-tax" class="form-control" placeholder="8765432-1">
+            </div>
+            <div class="form-group">
+              <label>Teléfono Contacto:</label>
+              <input type="text" id="sup-phone" class="form-control" placeholder="502 2222-0000">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Categoría / Tipo de Insumos:</label>
+            <input type="text" id="sup-category" class="form-control" placeholder="Materia prima, Aceites, Cadenas, Papelería">
+          </div>
+          <div class="modal-actions mt-20">
+            <button type="button" class="btn btn-outline" onclick="app.closeModal('modal-supplier')">Cancelar</button>
+            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk">💾</i> Guardar Proveedor</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- PURCHASE / RAW MATERIAL MODAL -->
+  <div class="modal-overlay" id="modal-purchase">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-cart-flatbed">📦</i> Registrar Compra de Materia Prima</h3>
+        <button class="close-btn" onclick="app.closeModal('modal-purchase')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="app.savePurchase(event)">
+          <div class="form-group">
+            <label>Proveedor:</label>
+            <input type="text" id="pur-supplier" class="form-control" required placeholder="Nombre del proveedor">
+          </div>
+          <div class="form-group">
+            <label>Materia Prima / Insumo:</label>
+            <input type="text" id="pur-item" class="form-control" required placeholder="Ej. Aceite de Caja 20W50 / Cadenas de Transmisión">
+          </div>
+          <div class="grid-2">
+            <div class="form-group">
+              <label>Cantidad:</label>
+              <input type="number" id="pur-qty" class="form-control" value="1" required>
+            </div>
+            <div class="form-group">
+              <label>Costo Total (Q):</label>
+              <input type="number" step="0.01" id="pur-total" class="form-control" required placeholder="0.00">
+            </div>
+          </div>
+          <div class="modal-actions mt-20">
+            <button type="button" class="btn btn-outline" onclick="app.closeModal('modal-purchase')">Cancelar</button>
+            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk">💾</i> Registrar Compra</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROCESS / TRANSFORMATION MODAL -->
+  <div class="modal-overlay" id="modal-process">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-gears">⚙</i> Nuevo Proceso de Transformación</h3>
+        <button class="close-btn" onclick="app.closeModal('modal-process')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="app.saveProcess(event)">
+          <div class="form-group">
+            <label>Materia Prima / Material Consumido:</label>
+            <input type="text" id="proc-input" class="form-control" required placeholder="Ej. 1 Galón de Aceite + Cadena Nueva">
+          </div>
+          <div class="form-group">
+            <label>Producto Terminado / Servicio Generado:</label>
+            <input type="text" id="proc-output" class="form-control" required placeholder="Ej. Servicio de Cambio de Aceite y Cadena de Moto">
+          </div>
+          <div class="grid-2">
+            <div class="form-group">
+              <label>Cantidad Producida:</label>
+              <input type="number" id="proc-qty" class="form-control" value="1" required>
+            </div>
+            <div class="form-group">
+              <label>Estado del Proceso:</label>
+              <select id="proc-status" class="form-control">
+                <option value="Completado">Completado</option>
+                <option value="En Proceso">En Proceso</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-actions mt-20">
+            <button type="button" class="btn btn-outline" onclick="app.closeModal('modal-process')">Cancelar</button>
+            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-gears">⚙</i> Procesar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- SALE MODAL -->
+  <div class="modal-overlay" id="modal-sale">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-cart-shopping">🛍</i> Registrar Nueva Venta</h3>
+        <button class="close-btn" onclick="app.closeModal('modal-sale')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="app.saveSale(event)">
+          <div class="form-group">
+            <label>Cliente:</label>
+            <input type="text" id="sale-client" class="form-control" placeholder="Nombre o NIT de cliente" required>
+          </div>
+          <div class="form-group">
+            <label>Producto / Servicio:</label>
+            <input type="text" id="sale-product" class="form-control" placeholder="Ej. Servicio de Cambio de Aceite de Caja" required>
+          </div>
+          <div class="form-group">
+            <label>Monto Venta (Q):</label>
+            <input type="number" step="0.01" id="sale-amount" class="form-control" required placeholder="0.00">
+          </div>
+          <div class="modal-actions mt-20">
+            <button type="button" class="btn btn-outline" onclick="app.closeModal('modal-sale')">Cancelar</button>
+            <button type="submit" class="btn btn-success"><i class="fa-solid fa-floppy-disk">💾</i> Guardar Venta</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- EXPENSE MODAL -->
+  <div class="modal-overlay" id="modal-expense">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-file-invoice-dollar">💸</i> Registrar Nuevo Gasto</h3>
+        <button class="close-btn" onclick="app.closeModal('modal-expense')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="app.saveExpense(event)">
+          <div class="form-group">
+            <label>Categoría / Concepto del Gasto:</label>
+            <input type="text" id="exp-concept" class="form-control" placeholder="Ej. Alquiler de Local, Combustible, Mantenimiento" required>
+          </div>
+          <div class="form-group">
+            <label>Monto Gasto (Q):</label>
+            <input type="number" step="0.01" id="exp-amount" class="form-control" required placeholder="0.00">
+          </div>
+          <div class="modal-actions mt-20">
+            <button type="button" class="btn btn-outline" onclick="app.closeModal('modal-expense')">Cancelar</button>
+            <button type="submit" class="btn btn-danger"><i class="fa-solid fa-floppy-disk">💾</i> Guardar Gasto</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOGIN MODAL -->
+  <div class="modal-overlay" id="modal-login">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-right-to-bracket">🔑</i> Acceso al Sistema</h3>
+        <button class="close-btn" onclick="app.closeModal('modal-login')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="app.handleLogin(event)">
+          <div class="form-group">
+            <label>Correo Electrónico:</label>
+            <input type="email" id="login-email" class="form-control" value="admin@admin.com" required>
+          </div>
+          <div class="form-group">
+            <label>Contraseña:</label>
+            <input type="password" id="login-password" class="form-control" value="admin123" required>
+          </div>
+          <div class="login-info-box">
+            <i class="fa-solid fa-circle-info">ℹ</i> Acceso inicial predeterminado: <strong>admin@admin.com</strong> / <strong>admin123</strong>
+          </div>
+          <div class="modal-actions mt-20">
+            <button type="submit" class="btn btn-primary btn-block">
+              <i class="fa-solid fa-key">🔑</i> Ingresar al Panel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- USER FORM MODAL -->
+  <div class="modal-overlay" id="modal-user">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3 id="user-modal-title"><i class="fa-solid fa-user-plus">👤</i> Crear Usuario</h3>
+        <button class="close-btn" onclick="app.closeModal('modal-user')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="app.saveUser(event)">
+          <input type="hidden" id="user-edit-id">
+
+          <div class="grid-2">
+            <div class="form-group">
+              <label>Nombre Completo:</label>
+              <input type="text" id="user-name" class="form-control" required placeholder="Ej. Juan Pérez">
+            </div>
+            <div class="form-group">
+              <label>Correo Electrónico:</label>
+              <input type="email" id="user-email" class="form-control" required placeholder="juan@empresa.com">
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="form-group">
+              <label>Contraseña:</label>
+              <input type="password" id="user-password" class="form-control" placeholder="••••••••">
+            </div>
+            <div class="form-group">
+              <label>Rol de Usuario:</label>
+              <select id="user-role" class="form-control">
+                <option value="Administrador">Administrador</option>
+                <option value="Vendedor">Vendedor</option>
+                <option value="Operador">Operador</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="form-group">
+              <label>Estado de Usuario:</label>
+              <select id="user-status" class="form-control">
+                <option value="Activo">Activo</option>
+                <option value="Inactivo">Inactivo</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>URL Imagen de Perfil / Avatar:</label>
+              <input type="text" id="user-avatar" class="form-control" placeholder="https://ui-avatars.com/api/?name=User">
+            </div>
+          </div>
+
+          <div class="form-group mt-15">
+            <label>Permisos de Módulos Habilitados:</label>
+            <div class="checkbox-group-grid" id="user-permissions-checkboxes">
+              <!-- Checkboxes injected dynamically -->
+            </div>
+          </div>
+
+          <div class="modal-actions mt-20">
+            <button type="button" class="btn btn-outline" onclick="app.closeModal('modal-user')">Cancelar</button>
+            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk">💾</i> Guardar Usuario</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- CREATE MODULE MODAL -->
+  <div class="modal-overlay" id="modal-new-module">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-plus-minus">➕</i> Crear Nuevo Módulo Personalizado</h3>
+        <button class="close-btn" onclick="app.closeModal('modal-new-module')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="app.createNewModule(event)">
+          <div class="form-group">
+            <label>Nombre del Módulo:</label>
+            <input type="text" id="new-mod-name" class="form-control" placeholder="Ej. Taller de Servicio" required>
+          </div>
+          <div class="form-group">
+            <label>Ícono o Emoji:</label>
+            <input type="text" id="new-mod-icon" class="form-control" value="🛠" required>
+          </div>
+          <div class="form-group">
+            <label>Color de la Pestaña:</label>
+            <select id="new-mod-color" class="form-control">
+              <option value="teal">Turquesa / Teal</option>
+              <option value="gold">Dorado / Gold</option>
+              <option value="green">Verde / Emerald</option>
+              <option value="purple">Púrpura / Violet</option>
+              <option value="blue">Azul / Blue</option>
+              <option value="coral">Rojo Coral / Coral</option>
+            </select>
+          </div>
+          <div class="modal-actions mt-20">
+            <button type="button" class="btn btn-outline" onclick="app.closeModal('modal-new-module')">Cancelar</button>
+            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check">✔</i> Crear Módulo</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- CATALOG ITEM MODAL -->
+  <div class="modal-overlay" id="modal-catalog-item">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-box">📦</i> Guardar Ítem o Servicio en Catálogo</h3>
+        <button class="close-btn" onclick="app.closeModal('modal-catalog-item')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="app.saveCatalogItem(event)" id="form-catalog-fields">
+          <div id="dynamic-catalog-form-fields">
+            <!-- Dynamic inputs based on fields schema -->
+          </div>
+          <div class="modal-actions mt-20">
+            <button type="button" class="btn btn-outline" onclick="app.closeModal('modal-catalog-item')">Cancelar</button>
+            <button type="submit" class="btn btn-success"><i class="fa-solid fa-floppy-disk">💾</i> Guardar en Catálogo</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Socket.io client library -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

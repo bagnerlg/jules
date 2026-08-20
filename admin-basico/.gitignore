@@ -1,0 +1,5 @@
+node_modules/
+admin-basico/node_modules/
+*.zip
+admin-basico.zip
+.DS_Store
