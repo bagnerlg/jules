@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Básico - Plataforma Central de Gestión</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+
+  <!-- TOP HEADER / BRANDING -->
+  <header class="top-header">
+    <div class="brand-container">
+      <div class="brand-logo">
+        <i class="fa-solid fa-shapes"></i>
+      </div>
+      <div class="brand-title">
+        <h1>ADMIN BÁSICO</h1>
+        <span>Plataforma Central de Negocios y Conexiones</span>
+      </div>
+    </div>
+
+    <!-- USER BAR / AUTH BUTTONS -->
+    <div class="user-bar" id="user-bar">
+      <!-- Injected by JavaScript -->
+    </div>
+  </header>
+
+  <!-- PARALLELOGRAM TOP SLANTED TABS BAR (pestañas.jpg inspired) -->
+  <nav class="nav-tabs-container" id="main-nav-container" style="display: none;">
+    <div class="nav-tabs-scroll" id="nav-tabs-list">
+      <!-- Tabs injected dynamically -->
+    </div>
+  </nav>
+
+  <!-- MAIN CONTAINER -->
+  <main class="main-content" id="main-content">
+
+    <!-- PUBLIC PRESENTATION LANDING PAGE -->
+    <section id="view-landing" class="view-section active">
+      <div class="hero-card">
+        <div class="hero-content">
+          <span class="badge-tag"><i class="fa-solid fa-rocket"></i> Transformación Digital</span>
+          <h2>Lleva tu Negocio en Papel al Mundo Digital</h2>
+          <p>
+            Centraliza tus inventarios, ventas, gastos, catálogo y conexiones integradas con Google Sheets, Supabase, SQL, WhatsApp Baileys, Facebook API e Inteligencia Artificial.
+          </p>
+          <div class="hero-actions">
+            <button class="btn btn-primary btn-lg" onclick="app.showLoginModal()">
+              <i class="fa-solid fa-right-to-bracket"></i> Iniciar Sesión Sistema
+            </button>
+            <button class="btn btn-outline btn-lg" onclick="app.scrollToFeatures()">
+              <i class="fa-solid fa-circle-info"></i> Conocer Características
+            </button>
+          </div>
+        </div>
+        <div class="hero-visual">
+          <div class="visual-card-preview">
+            <div class="preview-header">
+              <span class="dot red"></span>
+              <span class="dot yellow"></span>
+              <span class="dot green"></span>
+              <span class="preview-title">Admin Básico Core v1.0</span>
+            </div>
+            <div class="preview-body">
+              <div class="metric-row">
+                <div class="metric-mini gold"><i class="fa-solid fa-database"></i> 9+ Conexiones</div>
+                <div class="metric-mini teal"><i class="fa-solid fa-robot"></i> Sugerencia IA</div>
+                <div class="metric-mini purple"><i class="fa-brands fa-whatsapp"></i> WhatsApp Live</div>
+              </div>
+              <div class="mock-chart">
+                <div class="bar bar-1"></div>
+                <div class="bar bar-2"></div>
+                <div class="bar bar-3"></div>
+                <div class="bar bar-4"></div>
+                <div class="bar bar-5"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FEATURES GRID -->
+      <div class="section-header-landing" id="features">
+        <h3><i class="fa-solid fa-cubes"></i> Módulos y Capacidades del Sistema</h3>
+        <p>Diseñado para adaptarse a cualquier giro comercial: ventas de motos, repuestos, talleres, tiendas y más.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon teal"><i class="fa-solid fa-users-gear"></i></div>
+          <h4>Gestión de Usuarios</h4>
+          <p>Control de usuarios activos e inactivos, asignación de fotos de perfil, permisos específicos por módulo y credenciales individuales.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon gold"><i class="fa-solid fa-plug-zip"></i></div>
+          <h4>Multi-Conexiones Integradas</h4>
+          <p>Conecta fácilmente con Google Sheets, OneDrive, PostgreSQL, Supabase, MySQL, Facebook API y WhatsApp Baileys en tiempo real.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon purple"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+          <h4>Configurador de Módulos e IA</h4>
+          <p>Crea módulos dinámicos y usa el botón "Sugerir Campos IA" impulsado por OpenAI para estructurar automáticamente tu base de datos.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon blue"><i class="fa-solid fa-chart-line"></i></div>
+          <h4>Dashboard Analítico</h4>
+          <p>Monitoreo continuo del estado de conexiones, número de usuarios, analítica de ventas vs gastos y registro detallado de auditoría (logs).</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 1: DASHBOARD -->
+    <section id="view-dashboard" class="view-section">
+      <div class="view-header">
+        <h2><i class="fa-solid fa-chart-pie"></i> Dashboard Analítico Central</h2>
+        <span class="subtitle">Estado global del sistema, analítica de usuarios y monitoreo de conexiones</span>
+      </div>
+
+      <div class="stats-cards-grid">
+        <div class="stat-card border-teal">
+          <div class="stat-icon teal"><i class="fa-solid fa-users"></i></div>
+          <div class="stat-info">
+            <span class="stat-value" id="dash-total-users">0</span>
+            <span class="stat-label">Usuarios Registrados</span>
+          </div>
+        </div>
+        <div class="stat-card border-green">
+          <div class="stat-icon green"><i class="fa-solid fa-user-check"></i></div>
+          <div class="stat-info">
+            <span class="stat-value" id="dash-active-users">0</span>
+            <span class="stat-label">Usuarios Activos</span>
+          </div>
+        </div>
+        <div class="stat-card border-gold">
+          <div class="stat-icon gold"><i class="fa-solid fa-network-wired"></i></div>
+          <div class="stat-info">
+            <span class="stat-value" id="dash-active-connections">0</span>
+            <span class="stat-label">Conexiones Validadas</span>
+          </div>
+        </div>
+        <div class="stat-card border-purple">
+          <div class="stat-icon purple"><i class="fa-solid fa-list-check"></i></div>
+          <div class="stat-info">
+            <span class="stat-value" id="dash-total-modules">0</span>
+            <span class="stat-label">Módulos Dinámicos</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="dashboard-grid">
+        <!-- Sales & Expenses per user breakdown -->
+        <div class="card-box">
+          <div class="card-box-header">
+            <h3><i class="fa-solid fa-money-bill-trend-up"></i> Análisis de Usuarios: Ventas vs Gastos</h3>
+          </div>
+          <div class="card-box-body">
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Usuario</th>
+                    <th>Rol</th>
+                    <th>Ventas Totales</th>
+                    <th>Gastos Totales</th>
+                    <th>Balance / Margen</th>
+                  </tr>
+                </thead>
+                <tbody id="dash-analytics-table">
+                  <!-- Injected by JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- System Connections status widget -->
+        <div class="card-box">
+          <div class="card-box-header">
+            <h3><i class="fa-solid fa-plug"></i> Estado de Conexiones Habilitadas</h3>
+          </div>
+          <div class="card-box-body">
+            <div class="connections-status-list" id="dash-connections-status">
+              <!-- Injected by JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 2: USUARIOS -->
+    <section id="view-users" class="view-section">
+      <div class="view-header flex-between">
+        <div>
+          <h2><i class="fa-solid fa-users-gear"></i> Gestión de Usuarios del Sistema</h2>
+          <span class="subtitle">Alta, baja, perfiles, contraseñas, permisos por módulo y asignación de conexiones</span>
+        </div>
+        <button class="btn btn-primary" onclick="app.openUserModal()">
+          <i class="fa-solid fa-user-plus"></i> Crear Nuevo Usuario
+        </button>
+      </div>
+
+      <div class="card-box">
+        <div class="card-box-body">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Usuario / Perfil</th>
+                  <th>Correo</th>
+                  <th>Rol</th>
+                  <th>Estado</th>
+                  <th>Conexiones Asignadas</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="users-table-body">
+                <!-- Injected by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 3: CONEXIONES -->
+    <section id="view-connections" class="view-section">
+      <div class="view-header">
+        <h2><i class="fa-solid fa-plug-zip"></i> Centro de Conexiones de Datos y Servicios</h2>
+        <span class="subtitle">Configura credenciales, API Keys y vincula fuentes locales o remotas</span>
+      </div>
+
+      <div class="connections-grid">
+
+        <!-- GOOGLE SHEETS -->
+        <div class="connection-card">
+          <div class="conn-card-header green">
+            <div class="conn-icon"><i class="fa-file-csv fa-solid"></i></div>
+            <div class="conn-title">
+              <h4>Google Sheets</h4>
+              <span>Integración CSV Publicado</span>
+            </div>
+          </div>
+          <div class="conn-card-body">
+            <div class="form-group">
+              <label>URL CSV de Google Sheets:</label>
+              <input type="text" id="conn-gs-url" class="form-control" placeholder="https://docs.google.com/.../pub?output=csv">
+            </div>
+            <div class="conn-actions">
+              <button class="btn btn-outline btn-sm" onclick="app.testConnection('googlesheets')">
+                <i class="fa-solid fa-vial"></i> Probar Conexión
+              </button>
+              <button class="btn btn-success btn-sm" onclick="app.saveConnection('googlesheets')">
+                <i class="fa-solid fa-floppy-disk"></i> Guardar
+              </button>
+            </div>
+            <div class="conn-status-msg" id="msg-conn-googlesheets"></div>
+          </div>
+        </div>
+
+        <!-- OPENAI API -->
+        <div class="connection-card">
+          <div class="conn-card-header purple">
+            <div class="conn-icon"><i class="fa-solid fa-brain"></i></div>
+            <div class="conn-title">
+              <h4>OpenAI API</h4>
+              <span>Sugeridor de Campos e Inteligencia</span>
+            </div>
+          </div>
+          <div class="conn-card-body">
+            <div class="form-group">
+              <label>API Key de OpenAI (sk-...):</label>
+              <input type="password" id="conn-openai-key" class="form-control" placeholder="sk-proj-...">
+            </div>
+            <div class="conn-actions">
+              <button class="btn btn-outline btn-sm" onclick="app.testConnection('openai')">
+                <i class="fa-solid fa-vial"></i> Probar Conexión
+              </button>
+              <button class="btn btn-purple btn-sm" onclick="app.saveConnection('openai')">
+                <i class="fa-solid fa-floppy-disk"></i> Guardar
+              </button>
+            </div>
+            <div class="conn-status-msg" id="msg-conn-openai"></div>
+          </div>
+        </div>
+
+        <!-- WHATSAPP BUSINESS BAILEYS -->
+        <div class="connection-card">
+          <div class="conn-card-header teal">
+            <div class="conn-icon"><i class="fa-brands fa-whatsapp"></i></div>
+            <div class="conn-title">
+              <h4>WhatsApp Business (Baileys)</h4>
+              <span>Conexión por QR y WebSockets</span>
+            </div>
+          </div>
+          <div class="conn-card-body align-center">
+            <div id="whatsapp-qr-container" class="qr-container">
+              <div class="qr-placeholder">
+                <i class="fa-solid fa-qrcode fa-3x"></i>
+                <p>Presiona "Iniciar Sesión QR" para vincular WhatsApp</p>
+              </div>
+            </div>
+            <div class="conn-actions mt-15">
+              <button class="btn btn-primary btn-sm" onclick="app.startWhatsAppQR()">
+                <i class="fa-solid fa-rotate"></i> Generar Código QR
+              </button>
+              <button class="btn btn-outline btn-sm" onclick="app.simulateWhatsAppConnect()">
+                <i class="fa-solid fa-bolt"></i> Simular Conexión
+              </button>
+            </div>
+            <div class="conn-status-msg" id="msg-conn-whatsapp"></div>
+          </div>
+        </div>
+
+        <!-- SUPABASE -->
+        <div class="connection-card">
+          <div class="conn-card-header emerald">
+            <div class="conn-icon"><i class="fa-solid fa-bolt-lightning"></i></div>
+            <div class="conn-title">
+              <h4>Supabase DB</h4>
+              <span>Base de Datos Cloud PostgreSQL</span>
+            </div>
+          </div>
+          <div class="conn-card-body">
+            <div class="form-group">
+              <label>Supabase URL:</label>
+              <input type="text" id="conn-supa-url" class="form-control" placeholder="https://xyz.supabase.co">
+            </div>
+            <div class="form-group">
+              <label>Anon Key / Service Key:</label>
+              <input type="password" id="conn-supa-key" class="form-control" placeholder="eyJhbGci...">
+            </div>
+            <div class="conn-actions">
+              <button class="btn btn-outline btn-sm" onclick="app.testConnection('supabase')">
+                <i class="fa-solid fa-vial"></i> Probar Conexión
+              </button>
+              <button class="btn btn-success btn-sm" onclick="app.saveConnection('supabase')">
+                <i class="fa-solid fa-floppy-disk"></i> Guardar
+              </button>
+            </div>
+            <div class="conn-status-msg" id="msg-conn-supabase"></div>
+          </div>
+        </div>
+
+        <!-- POSTGRESQL / SQL -->
+        <div class="connection-card">
+          <div class="conn-card-header blue">
+            <div class="conn-icon"><i class="fa-solid fa-database"></i></div>
+            <div class="conn-title">
+              <h4>PostgreSQL / SQL Server</h4>
+              <span>Base de Datos Relacional Directa</span>
+            </div>
+          </div>
+          <div class="conn-card-body">
+            <div class="form-group">
+              <label>Host / Servidor:</label>
+              <input type="text" id="conn-pg-host" class="form-control" placeholder="localhost / db.empresa.com">
+            </div>
+            <div class="form-group">
+              <label>Nombre BD & Usuario:</label>
+              <div class="grid-2">
+                <input type="text" id="conn-pg-db" class="form-control" placeholder="BD Name">
+                <input type="text" id="conn-pg-user" class="form-control" placeholder="User">
+              </div>
+            </div>
+            <div class="conn-actions">
+              <button class="btn btn-outline btn-sm" onclick="app.testConnection('postgres')">
+                <i class="fa-solid fa-vial"></i> Probar Conexión
+              </button>
+              <button class="btn btn-primary btn-sm" onclick="app.saveConnection('postgres')">
+                <i class="fa-solid fa-floppy-disk"></i> Guardar
+              </button>
+            </div>
+            <div class="conn-status-msg" id="msg-conn-postgres"></div>
+          </div>
+        </div>
+
+        <!-- FACEBOOK GRAPH API -->
+        <div class="connection-card">
+          <div class="conn-card-header navy">
+            <div class="conn-icon"><i class="fa-brands fa-facebook"></i></div>
+            <div class="conn-title">
+              <h4>Facebook Token API</h4>
+              <span>Meta Graph API Token</span>
+            </div>
+          </div>
+          <div class="conn-card-body">
+            <div class="form-group">
+              <label>Page / User Access Token:</label>
+              <input type="password" id="conn-fb-token" class="form-control" placeholder="EAA...">
+            </div>
+            <div class="conn-actions">
+              <button class="btn btn-outline btn-sm" onclick="app.testConnection('facebook')">
+                <i class="fa-solid fa-vial"></i> Probar Token
+              </button>
+              <button class="btn btn-primary btn-sm" onclick="app.saveConnection('facebook')">
+                <i class="fa-solid fa-floppy-disk"></i> Guardar
+              </button>
+            </div>
+            <div class="conn-status-msg" id="msg-conn-facebook"></div>
+          </div>
+        </div>
+
+        <!-- ONEDRIVE / CSV / XLSX -->
+        <div class="connection-card">
+          <div class="conn-card-header gold">
+            <div class="conn-icon"><i class="fa-solid fa-file-excel"></i></div>
+            <div class="conn-title">
+              <h4>OneDrive / CSV / XLSX</h4>
+              <span>Archivos Locales o Nube</span>
+            </div>
+          </div>
+          <div class="conn-card-body">
+            <div class="form-group">
+              <label>Ruta / Enlace OneDrive o Local:</label>
+              <input type="text" id="conn-file-path" class="form-control" placeholder="https://onedrive.live.com/... o C:\archivos\datos.xlsx">
+            </div>
+            <div class="conn-actions">
+              <button class="btn btn-outline btn-sm" onclick="app.testConnection('csv')">
+                <i class="fa-solid fa-vial"></i> Probar
+              </button>
+              <button class="btn btn-warning btn-sm" onclick="app.saveConnection('csv')">
+                <i class="fa-solid fa-floppy-disk"></i> Guardar
+              </button>
+            </div>
+            <div class="conn-status-msg" id="msg-conn-csv"></div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- MODULE 4: MÓDULOS Y CONFIGURACIÓN DE CAMPOS -->
+    <section id="view-modules-builder" class="view-section">
+      <div class="view-header flex-between">
+        <div>
+          <h2><i class="fa-solid fa-wand-magic-sparkles"></i> Diseñador de Módulos e IA de Campos</h2>
+          <span class="subtitle">Crea módulos a medida y define orígenes de lectura/escritura por campo con sugerencias OpenAI</span>
+        </div>
+        <button class="btn btn-primary" onclick="app.openNewModuleModal()">
+          <i class="fa-solid fa-plus"></i> Crear Nuevo Módulo
+        </button>
+      </div>
+
+      <div class="card-box">
+        <div class="card-box-header flex-between">
+          <h3><i class="fa-solid fa-sliders"></i> Módulos Existentes en el Sistema</h3>
+        </div>
+        <div class="card-box-body">
+          <div class="modules-tabs-selector" id="modules-list-selector">
+            <!-- Dynamic module select pills -->
+          </div>
+
+          <div id="selected-module-editor" class="module-editor-container mt-20" style="display:none;">
+            <div class="editor-top-bar">
+              <div>
+                <h4 id="editor-module-title">Módulo: Catálogo</h4>
+                <span class="badge" id="editor-module-key">catalogo</span>
+              </div>
+              <div class="editor-ai-controls">
+                <input type="text" id="ai-business-type" class="form-control form-control-inline" placeholder="Giro de negocio (ej. Venta de Motos, Taller, Librería)">
+                <button class="btn btn-purple" onclick="app.suggestFieldsWithAI()">
+                  <i class="fa-solid fa-robot"></i> Sugerir Campos IA
+                </button>
+              </div>
+            </div>
+
+            <!-- FIELDS SCHEMA TABLE -->
+            <div class="table-responsive mt-15">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Nombre Visible</th>
+                    <th>Clave / Campo BD</th>
+                    <th>Tipo de Dato</th>
+                    <th>Fuente Lectura (Read)</th>
+                    <th>Fuente Escritura (Write)</th>
+                    <th>Requerido</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="module-fields-table-body">
+                  <!-- Fields injected by JS -->
+                </tbody>
+              </table>
+            </div>
+
+            <div class="editor-footer-actions mt-15 flex-between">
+              <button class="btn btn-outline btn-sm" onclick="app.addFieldToActiveModule()">
+                <i class="fa-solid fa-plus"></i> Añadir Campo Manual
+              </button>
+              <button class="btn btn-success" onclick="app.saveActiveModuleSchema()">
+                <i class="fa-solid fa-floppy-disk"></i> Guardar Estructura del Módulo
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 5: CATÁLOGO (DEFAULT CREATED MODULE) -->
+    <section id="view-catalogo" class="view-section">
+      <div class="view-header flex-between">
+        <div>
+          <h2><i class="fa-solid fa-boxes-stacked"></i> Módulo: Catálogo de Productos y Servicios</h2>
+          <span class="subtitle">Módulo configurado por defecto para gestión de inventarios e ítems</span>
+        </div>
+        <button class="btn btn-primary" onclick="app.openCatalogItemModal()">
+          <i class="fa-solid fa-box-archive"></i> Nuevo Ítem de Catálogo
+        </button>
+      </div>
+
+      <div class="card-box">
+        <div class="card-box-body">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead id="catalog-table-head">
+                <!-- Dynamic header from field config -->
+              </thead>
+              <tbody id="catalog-table-body">
+                <!-- Items injected by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 6: VENTAS Y GASTOS -->
+    <section id="view-sales-expenses" class="view-section">
+      <div class="view-header flex-between">
+        <div>
+          <h2><i class="fa-solid fa-receipt"></i> Módulo: Ventas y Gastos por Usuario</h2>
+          <span class="subtitle">Registro de transacciones comerciales y gastos operativos por cada usuario</span>
+        </div>
+        <button class="btn btn-primary" onclick="app.openTransactionModal()">
+          <i class="fa-solid fa-circle-plus"></i> Registrar Movimiento
+        </button>
+      </div>
+
+      <div class="card-box">
+        <div class="card-box-body">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Fecha / Hora</th>
+                  <th>Tipo</th>
+                  <th>Usuario</th>
+                  <th>Concepto / Descripción</th>
+                  <th>Monto (Q)</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody id="transactions-table-body">
+                <!-- Transactions injected by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 7: LOGS DE AUDITORÍA -->
+    <section id="view-logs" class="view-section">
+      <div class="view-header">
+        <h2><i class="fa-solid fa-clipboard-list"></i> Registro de Logs y Auditoría del Sistema</h2>
+        <span class="subtitle">Historial en tiempo real de accesos, módulos visitados y acciones realizadas por usuario</span>
+      </div>
+
+      <div class="card-box">
+        <div class="card-box-body">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Fecha y Hora</th>
+                  <th>Usuario</th>
+                  <th>Módulo</th>
+                  <th>Acción / Evento Realizado</th>
+                  <th>Detalles Adicionales</th>
+                </tr>
+              </thead>
+              <tbody id="logs-table-body">
+                <!-- Logs injected by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODALS -->
+
+  <!-- LOGIN MODAL -->
+  <div class="modal-overlay" id="modal-login">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-right-to-bracket"></i> Acceso al Sistema</h3>
+        <button class="close-btn" onclick="app.closeModal('modal-login')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="app.handleLogin(event)">
+          <div class="form-group">
+            <label>Correo Electrónico:</label>
+            <input type="email" id="login-email" class="form-control" value="admin@admin.com" required>
+          </div>
+          <div class="form-group">
+            <label>Contraseña:</label>
+            <input type="password" id="login-password" class="form-control" value="admin123" required>
+          </div>
+          <div class="login-info-box">
+            <i class="fa-solid fa-circle-info"></i> Acceso inicial predeterminado: <strong>admin@admin.com</strong> / <strong>admin123</strong>
+          </div>
+          <div class="modal-actions mt-20">
+            <button type="submit" class="btn btn-primary btn-block">
+              <i class="fa-solid fa-key"></i> Ingresar al Panel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- USER FORM MODAL -->
+  <div class="modal-overlay" id="modal-user">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3 id="user-modal-title"><i class="fa-solid fa-user-plus"></i> Crear Usuario</h3>
+        <button class="close-btn" onclick="app.closeModal('modal-user')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="app.saveUser(event)">
+          <input type="hidden" id="user-edit-id">
+
+          <div class="grid-2">
+            <div class="form-group">
+              <label>Nombre Completo:</label>
+              <input type="text" id="user-name" class="form-control" required placeholder="Ej. Juan Pérez">
+            </div>
+            <div class="form-group">
+              <label>Correo Electrónico:</label>
+              <input type="email" id="user-email" class="form-control" required placeholder="juan@empresa.com">
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="form-group">
+              <label>Contraseña:</label>
+              <input type="password" id="user-password" class="form-control" placeholder="••••••••">
+            </div>
+            <div class="form-group">
+              <label>Rol de Usuario:</label>
+              <select id="user-role" class="form-control">
+                <option value="Administrador">Administrador</option>
+                <option value="Vendedor">Vendedor</option>
+                <option value="Operador">Operador</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="form-group">
+              <label>Estado de Usuario:</label>
+              <select id="user-status" class="form-control">
+                <option value="Activo">Activo</option>
+                <option value="Inactivo">Inactivo</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>URL Imagen de Perfil / Avatar:</label>
+              <input type="text" id="user-avatar" class="form-control" placeholder="https://ui-avatars.com/api/?name=User">
+            </div>
+          </div>
+
+          <div class="form-group mt-15">
+            <label>Permisos de Módulos Habilitados:</label>
+            <div class="checkbox-group-grid" id="user-permissions-checkboxes">
+              <!-- Checkboxes injected dynamically -->
+            </div>
+          </div>
+
+          <div class="modal-actions mt-20">
+            <button type="button" class="btn btn-outline" onclick="app.closeModal('modal-user')">Cancelar</button>
+            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Guardar Usuario</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- CREATE MODULE MODAL -->
+  <div class="modal-overlay" id="modal-new-module">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-plus-minus"></i> Crear Nuevo Módulo Personalizado</h3>
+        <button class="close-btn" onclick="app.closeModal('modal-new-module')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="app.createNewModule(event)">
+          <div class="form-group">
+            <label>Nombre del Módulo:</label>
+            <input type="text" id="new-mod-name" class="form-control" placeholder="Ej. Taller de Servicio" required>
+          </div>
+          <div class="form-group">
+            <label>Ícono FontAwesome:</label>
+            <input type="text" id="new-mod-icon" class="form-control" value="fa-solid fa-cubes" required>
+          </div>
+          <div class="form-group">
+            <label>Color de la Pestaña:</label>
+            <select id="new-mod-color" class="form-control">
+              <option value="teal">Turquesa / Teal</option>
+              <option value="gold">Dorado / Gold</option>
+              <option value="green">Verde / Emerald</option>
+              <option value="purple">Púrpura / Violet</option>
+              <option value="blue">Azul / Blue</option>
+              <option value="coral">Rojo Coral / Coral</option>
+            </select>
+          </div>
+          <div class="modal-actions mt-20">
+            <button type="button" class="btn btn-outline" onclick="app.closeModal('modal-new-module')">Cancelar</button>
+            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Crear Módulo</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- CATALOG ITEM MODAL -->
+  <div class="modal-overlay" id="modal-catalog-item">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-box"></i> Guardar Ítem en Catálogo</h3>
+        <button class="close-btn" onclick="app.closeModal('modal-catalog-item')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="app.saveCatalogItem(event)" id="form-catalog-fields">
+          <div id="dynamic-catalog-form-fields">
+            <!-- Dynamic inputs based on fields schema -->
+          </div>
+          <div class="modal-actions mt-20">
+            <button type="button" class="btn btn-outline" onclick="app.closeModal('modal-catalog-item')">Cancelar</button>
+            <button type="submit" class="btn btn-success"><i class="fa-solid fa-floppy-disk"></i> Guardar en Catálogo</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRANSACTION MODAL -->
+  <div class="modal-overlay" id="modal-transaction">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-file-invoice-dollar"></i> Registrar Venta o Gasto</h3>
+        <button class="close-btn" onclick="app.closeModal('modal-transaction')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="app.saveTransaction(event)">
+          <div class="form-group">
+            <label>Tipo de Movimiento:</label>
+            <select id="trans-type" class="form-control" required>
+              <option value="Venta">Venta (+ Ingreso)</option>
+              <option value="Gasto">Gasto (- Egreso)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Concepto / Descripción:</label>
+            <input type="text" id="trans-concept" class="form-control" placeholder="Ej. Venta de Casco de Moto u Repuesto" required>
+          </div>
+          <div class="form-group">
+            <label>Monto (Q):</label>
+            <input type="number" step="0.01" id="trans-amount" class="form-control" placeholder="0.00" required>
+          </div>
+          <div class="modal-actions mt-20">
+            <button type="button" class="btn btn-outline" onclick="app.closeModal('modal-transaction')">Cancelar</button>
+            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Registrar Movimiento</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
