@@ -314,7 +314,7 @@ export class PEPSModule {
                     <div class="modal-body-gci">
                         <div class="d-flex justify-content-between align-items-center mb-3">
                             <p class="text-muted extra-small m-0">
-                                Defina condiciones con operadores numéricos/texto (`>`, `<`, `>=`, `<=`, `==`, `!=`, `contiene`) y conectores lógicos (`Y` / `O`). Las órdenes que coincidan serán **excluidas automáticamente** de fábrica.
+                                Defina condiciones con operadores numéricos/texto (&gt;, &lt;, &gt;=, &lt;=, ==, !=, contiene) y conectores lógicos (Y / O). Las órdenes que coincidan serán **excluidas automáticamente** de fábrica.
                             </p>
                             <button id="btn-add-peps-rule" class="btn btn-xs btn-primary-gradient">
                                 <i class="fa-solid fa-plus me-1"></i> Nueva Regla
