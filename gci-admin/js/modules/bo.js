@@ -240,50 +240,73 @@ export class BOModule {
         try {
             const res = await fetch(APPS_SCRIPT_BO_URL, { redirect: 'follow' });
             if (res.ok) {
-                const rawItems = await res.json();
-                if (Array.isArray(rawItems) && rawItems.length > 0) {
-                    // Agrupar los ítems por número de pedido (DocEntry o U_IDFRONT o Cliente)
+                const data = await res.json();
+
+                // El Apps Script devuelve un objeto { ok: true, resumen: {...}, vt: [...] } o bien una lista directa
+                let rawItems = [];
+                if (Array.isArray(data)) {
+                    rawItems = data;
+                } else if (data && Array.isArray(data.vt)) {
+                    rawItems = data.vt;
+                } else if (data && Array.isArray(data.bo)) {
+                    rawItems = data.bo;
+                } else if (data && Array.isArray(data.items)) {
+                    rawItems = data.items;
+                }
+
+                if (rawItems.length > 0) {
+                    // Agrupar los ítems por número de pedido (NumSAP / DocEntry / U_IDFRONT / Cliente)
                     const groupsMap = new Map();
 
                     rawItems.forEach(item => {
-                        const orderKey = item.DocEntry ? `DOC-${item.DocEntry}` : (item.U_IDFRONT ? `FRT-${item.U_IDFRONT}` : `PED-${item.Cliente}`);
+                        const numSap = item.NumSAP || item.DocEntry || "";
+                        const uIdFront = item.U_IDFRONT || "";
+                        const clientRaw = item.Cliente || "Cliente General";
 
-                        // Parsear Cliente ("323193235 - Cristian Julio Alberto Macz Caal")
+                        const orderKey = numSap ? `SAP-${numSap}` : (uIdFront ? `FRT-${uIdFront}` : `PED-${clientRaw}`);
+
+                        // Parsear Cliente ("51350394 - DIEGO ARMANDO , RIVAS SALGUERO")
                         let clientCode = "";
-                        let clientName = item.Cliente || "Cliente General";
-                        if (item.Cliente && item.Cliente.includes(" - ")) {
-                            const parts = item.Cliente.split(" - ");
+                        let clientName = clientRaw;
+                        if (clientRaw.includes(" - ")) {
+                            const parts = clientRaw.split(" - ");
                             clientCode = parts[0].trim();
                             clientName = parts.slice(1).join(" - ").trim();
                         } else {
-                            clientCode = String(item.Tel1 || Math.floor(10000000 + Math.random() * 90000000));
+                            clientCode = String(item.Tel1 || item.Telefono || Math.floor(10000000 + Math.random() * 90000000));
                         }
 
                         // Parsear Fecha
-                        let fecha = item.FechaCreado ? item.FechaCreado.split('T')[0] : new Date().toISOString().split('T')[0];
+                        let rawDate = item.Fecha || item.FechaCreado || new Date().toISOString();
+                        let fecha = String(rawDate).split('T')[0];
 
-                        // Calcular item price
-                        const itemQty = parseInt(item.Pedido || item.Pedido_Final || 1, 10);
-                        const itemTotal = parseFloat(item.TPedidoQTZ || 0);
+                        // Parsear cantidades y precios (QMonto / TPedidoQTZ)
+                        const itemQty = parseInt(item.Unidades || item.Pedido || item.Pedido_Final || 1, 10);
+                        const itemTotal = parseFloat(item.QMonto || item.TPedidoQTZ || 0);
+
+                        // Parsear SKU / Producto
+                        const skuRaw = item.SKU || item.ItemCode || "GEN-001";
+                        const prodName = item.Producto || (skuRaw.includes(" - ") ? skuRaw.split(" - ").slice(1).join(" - ") : skuRaw);
 
                         if (!groupsMap.has(orderKey)) {
+                            const sapDoc = String(numSap || uIdFront || orderKey);
                             groupsMap.set(orderKey, {
-                                pedidoId: item.U_IDFRONT ? `PED-${item.U_IDFRONT}` : `PED-${item.DocEntry || orderKey}`,
-                                docEntry: String(item.DocEntry || orderKey),
+                                pedidoId: uIdFront ? `PED-${uIdFront}` : (numSap ? `PED-${numSap}` : orderKey),
+                                docEntry: sapDoc,
                                 clienteId: clientCode,
                                 clienteNombre: clientName,
-                                telefono: String(item.Tel1 || ''),
+                                telefono: String(item.Tel1 || item.Telefono || ''),
                                 fechaPedido: fecha,
                                 antiguedadDias: Math.max(1, Math.floor((new Date() - new Date(fecha)) / (1000 * 60 * 60 * 24))),
                                 montoTotal: 0,
                                 tipoCobro: item.TIPO === 'DIGITAL' ? 'Crédito' : 'Contado',
-                                diasMora: item.DocEntry % 3 === 0 ? 15 : 0,
-                                montoMora: item.DocEntry % 3 === 0 ? 2500.00 : 0.00,
+                                diasMora: (parseInt(sapDoc, 10) || 0) % 3 === 0 ? 15 : 0,
+                                montoMora: (parseInt(sapDoc, 10) || 0) % 3 === 0 ? 2500.00 : 0.00,
                                 creditoActivo: 40000.00,
                                 frecuenciaCompraScore: 8,
                                 frecuenciaPagoScore: 8,
-                                departamento: item.Departamento || "Guatemala",
-                                municipio: item.Municipio || "Guatemala",
+                                departamento: item.Depto || item.Departamento || "Guatemala",
+                                municipio: item.Muni || item.Municipio || "Guatemala",
                                 ruta: item.Ruta || "Vendedor General",
                                 canal: item.Canal || "CLAN 1",
                                 estadoPEPS: "Pendiente",
@@ -294,8 +317,8 @@ export class BOModule {
                         const currentOrder = groupsMap.get(orderKey);
                         currentOrder.montoTotal += itemTotal;
                         currentOrder.items.push({
-                            itemCode: item.ItemCode || 'ITEM-GEN',
-                            producto: item.Producto || 'Producto General',
+                            itemCode: skuRaw.split(" - ")[0],
+                            producto: prodName,
                             cantidad: itemQty,
                             total: itemTotal
                         });
