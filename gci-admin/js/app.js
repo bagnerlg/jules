@@ -7,10 +7,14 @@ import { renderDashboardModule } from './modules/dashboard.js';
 import { renderApiConfigModule } from './modules/api-config.js';
 import { renderFileManagerModule } from './modules/file-manager.js';
 import { RoutesModule } from './modules/routes.js';
+import { BOModule } from './modules/bo.js';
+import { PEPSModule } from './modules/peps.js';
 
 // Instancias únicas de los módulos orientados a objetos
 const clientsInstance = new ClientsModule();
 const routesInstance = new RoutesModule();
+const boInstance = new BOModule();
+const pepsInstance = new PEPSModule();
 
 // Módulo App Global
 export const GCIApp = {
@@ -22,6 +26,8 @@ export const GCIApp = {
         'dashboard': { title: 'Dashboard', render: renderDashboardModule },
         'file-manager': { title: 'Archivos Locales', render: renderFileManagerModule },
         'agenda-rutas': { title: 'Agenda de Rutas', render: (container) => { container.innerHTML = routesInstance.render(); routesInstance.initEvents(); } },
+        'bo': { title: 'BO - Back Office', render: (container) => { container.innerHTML = boInstance.render(); boInstance.initEvents(); } },
+        'peps': { title: 'PEPS - Producción y Votación', render: (container) => { container.innerHTML = pepsInstance.render(); pepsInstance.initEvents(); } },
         'api-config': { title: 'Conexiones & APIs', render: renderApiConfigModule },
         'supabase-view': { title: 'Supabase DB', render: () => renderPlaceholderModule('Supabase DB', 'fa-database', '059669') },
         'sap-view': { title: 'SAP Business One', render: () => renderPlaceholderModule('SAP Business One', 'fa-building-columns', '1e40af') },
